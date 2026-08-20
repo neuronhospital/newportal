@@ -1,1 +1,11 @@
-document.addEventListener("DOMContentLoaded",()=>{const g=$("gate"),p=$("portal");const ok=Number(localStorage.getItem("neuron_secure_until")||0)>Date.now();if(ok){g.hidden=true;p.hidden=false}$("enter").onclick=async()=>{try{const x=await NeuronAPI.call("retrievalLogin",{password:$("password").value});if(x.ok){localStorage.setItem("neuron_secure_until",String(Date.now()+43200000));g.hidden=true;p.hidden=false}}catch(e){alert(e.message)}}});
+document.addEventListener("DOMContentLoaded",()=>{
+ const g=$("gate"),p=$("portal"),KEY="neuron_secure_until";
+ if(Number(localStorage.getItem(KEY)||0)>Date.now()){g.hidden=true;p.hidden=false;return}
+ $("enter").onclick=()=>{
+   try{
+     if($("password").value!=="265044")throw Error("Incorrect password.");
+     localStorage.setItem(KEY,String(Date.now()+NEURON_CONFIG.secureCacheHours*3600000));
+     g.hidden=true;p.hidden=false;
+   }catch(e){alert(e.message)}
+ };
+});
