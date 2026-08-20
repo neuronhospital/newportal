@@ -133,6 +133,34 @@ document.addEventListener("DOMContentLoaded",()=>{
     });
   }
 
+  async function setFollowupDefaultDate(city){
+    const today=U.parts();
+    let y=today.y, m=today.m;
+    // Search forward only for the first scheduled date that is today or later.
+    // The calendar itself remains collapsed; this helper only sets the field.
+    for(let step=0;step<13;step++){
+      const dates=await getCalendarDates(y,m,city);
+      const valid=(dates||[]).filter(k=>{
+        const q=String(k).replace(/\\D/g,"");
+        if(q.length!==8)return false;
+        const d=Number(q.slice(0,2)), mm=Number(q.slice(2,4)), yy=Number(q.slice(4,8));
+        return yy>today.y || (yy===today.y && (mm>today.m || (mm===today.m && d>=today.d)));
+      }).sort();
+      if(valid.length){
+        $("date").value=U.date(valid[0]);
+        $("date").dataset.key=valid[0];
+        calendarYear=y; calendarMonth=m;
+        $("cal").hidden=true;
+        return;
+      }
+      m++;
+      if(m>12){m=1;y++;}
+    }
+    $("date").value="";
+    delete $("date").dataset.key;
+    $("cal").hidden=true;
+  }
+
   $("city").onchange=()=>{
     $("next").value=$("city").value;
     // Keep today's date displayed as the default appointment-date value.
@@ -160,11 +188,10 @@ document.addEventListener("DOMContentLoaded",()=>{
           $("city").value=x.city; $("next").value=x.nextFollowupCity||x.city;
           $("newFields").hidden=false; enableAfterWhatsApp();
           const now=U.parts();calendarYear=now.y;calendarMonth=now.m;
-          // Follow-up date defaults to the next/current date context for the
-          // selected visiting city. renderCalendar() determines the first
-          // valid visit date and keeps past/unavailable dates disabled.
-          $("date").value=""; delete $("date").dataset.key;
-          renderCalendar();
+          // Follow-up date defaults to the first available visit date for
+          // the selected visiting city. The calendar stays collapsed until
+          // the receptionist clicks the date field.
+          setFollowupDefaultDate(x.city);
         };
         $("patients").appendChild(b);
         if(r.patients.length===1)b.click();
