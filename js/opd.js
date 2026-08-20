@@ -3,6 +3,14 @@ document.addEventListener("DOMContentLoaded",()=>{
   let type="Follow-up", verified=false, selected=null;
   let calendarYear=U.parts().y, calendarMonth=U.parts().m;
 
+  // Show today's India-local date in the appointment field by default.
+  // The field remains disabled until WhatsApp verification, and the calendar
+  // remains collapsed until the user taps the date field.
+  const setTodayDateDisplay=()=>{
+    const p=U.parts();
+    $("date").value=String(p.d).padStart(2,"0")+"-"+String(p.m).padStart(2,"0")+"-"+p.y;
+  };
+
   const fillCities=()=>{
     $("city").innerHTML=cities.map(x=>`<option value="${x}">${x}</option>`).join("");
     $("next").innerHTML=cities.map(x=>`<option value="${x}">${x}</option>`).join("");
@@ -16,7 +24,8 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("followFields").hidden=mode!=="Follow-up";
     $("newFields").hidden=mode!=="New";
 
-    ["followWa","name","age","address","ref","wa","date"].forEach(id=>{$(id).value="";});
+    ["followWa","name","age","address","ref","wa"].forEach(id=>{$(id).value="";});
+    setTodayDateDisplay();
     $("unit").value="years";
     $("city").value="Latur"; $("next").value="Latur";
     $("city").disabled=true; $("date").disabled=true; $("next").disabled=true; $("book").disabled=true;
@@ -230,4 +239,5 @@ document.addEventListener("DOMContentLoaded",()=>{
 
   fillCities();
   resetFields("Follow-up");
+  setTodayDateDisplay();
 });
