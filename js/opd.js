@@ -35,12 +35,21 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("city").disabled=false; $("date").disabled=false; $("next").disabled=false; $("book").disabled=false;
   };
 
+  /*
+   * IMPORTANT: Do not rewrite the input value on every keystroke.
+   * Replacing el.value during input can interfere with Android/mobile
+   * backspace behavior, especially when several words are present.
+   *
+   * While typing, the field is left untouched so spaces and Backspace
+   * behave exactly like a normal input. Capitalization is applied when
+   * the user leaves the field and again immediately before submission.
+   */
   const titleTyping=(el)=>{
-    const trailing=/\s$/.test(el.value);
-    const v=U.titleTyping(el.value);
-    el.value=trailing ? v+" " : v;
+    el.value=U.titleTyping(el.value);
   };
-  ["name","address","ref"].forEach(id=>$(id).addEventListener("input",e=>titleTyping(e.target)));
+  ["name","address","ref"].forEach(id=>{
+    $(id).addEventListener("blur",e=>titleTyping(e.target));
+  });
 
   const updatePaymentUI=()=>{
     const split=$("payMode").value==="Split";
