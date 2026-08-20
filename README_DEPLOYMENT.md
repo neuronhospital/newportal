@@ -1,6 +1,6 @@
-# NEURON Hospital multi-page portal — HTML78-v2 / CODE78-v2
+# NEURON Hospital multi-page portal — HTML78-v3 / CODE78-v3
 
-1. Deploy `code78-v2.gs` as the Apps Script web app.
+1. Deploy `code78-v3.gs` as the Apps Script web app.
 2. Open `js/config.js` and replace `PASTE_YOUR_APPS_SCRIPT_EXEC_URL_HERE` with the deployed `/exec` URL.
 3. Upload the complete folder to GitHub Pages.
 4. Put `doctor_photo.jpg` in `assets/` if it is not already there.
