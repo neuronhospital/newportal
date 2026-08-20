@@ -157,10 +157,14 @@ document.addEventListener("DOMContentLoaded",()=>{
         b.onclick=()=>{
           selected=x; document.querySelectorAll(".patient-option").forEach(z=>z.classList.remove("selected")); b.classList.add("selected");
           $("name").value=U.title(x.name); $("age").value=x.age; $("unit").value=x.ageUnit||"years"; $("address").value=U.title(x.address||""); $("ref").value=U.title(x.referredBy||"");
-          $("wa").value=x.whatsapp||p; $("city").value=x.city; $("next").value=x.nextFollowupCity||x.city;
-          $("date").value=""; delete $("date").dataset.key;
+          $("city").value=x.city; $("next").value=x.nextFollowupCity||x.city;
           $("newFields").hidden=false; enableAfterWhatsApp();
           const now=U.parts();calendarYear=now.y;calendarMonth=now.m;
+          // Follow-up date defaults to the next/current date context for the
+          // selected visiting city. renderCalendar() determines the first
+          // valid visit date and keeps past/unavailable dates disabled.
+          $("date").value=""; delete $("date").dataset.key;
+          renderCalendar();
         };
         $("patients").appendChild(b);
         if(r.patients.length===1)b.click();
