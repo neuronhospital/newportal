@@ -135,7 +135,10 @@ document.addEventListener("DOMContentLoaded",()=>{
 
   $("city").onchange=()=>{
     $("next").value=$("city").value;
-    $("date").value=""; delete $("date").dataset.key;
+    // Keep today's date displayed as the default appointment-date value.
+    // The calendar remains the mechanism for selecting a different
+    // available future visit date.
+    setTodayDateDisplay(); delete $("date").dataset.key;
     const now=U.parts();calendarYear=now.y;calendarMonth=now.m;
     if(verified)renderCalendar();
   };
