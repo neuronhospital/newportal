@@ -25,7 +25,8 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("newFields").hidden=mode!=="New";
 
     ["followWa","name","age","address","ref","wa"].forEach(id=>{$(id).value="";});
-    setTodayDateDisplay();
+    $("date").value="";
+    delete $("date").dataset.key;
     $("unit").value="years";
     $("city").value="Latur"; $("next").value="Latur";
     $("city").disabled=true; $("date").disabled=true; $("next").disabled=true; $("book").disabled=true;
@@ -80,8 +81,8 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("payMode").onchange=updatePaymentUI;
   $("cash").oninput=updateSplitTotal; $("online").oninput=updateSplitTotal;
 
-  $("follow").onclick=()=>resetFields("Follow-up");
-  $("new").onclick=()=>resetFields("New");
+  $("follow").onclick=async()=>{resetFields("Follow-up"); await setNextAvailableDate($("city").value); $("cal").hidden=true;};
+  $("new").onclick=async()=>{resetFields("New"); await setNextAvailableDate($("city").value); $("cal").hidden=true;};
 
   $("wa").oninput=e=>e.target.value=U.phone(e.target.value);
   $("followWa").oninput=e=>e.target.value=U.phone(e.target.value);
@@ -161,14 +162,39 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("cal").hidden=true;
   }
 
-  $("city").onchange=()=>{
+  async function setNextAvailableDate(city){
+    const today=U.parts();
+    let y=today.y, m=today.m;
+    for(let step=0;step<13;step++){
+      const dates=await getCalendarDates(y,m,city);
+      const valid=(dates||[]).map(k=>String(k).replace(/\\D/g,"")).filter(k=>{
+        if(k.length!==8)return false;
+        const d=Number(k.slice(0,2)), mm=Number(k.slice(2,4)), yy=Number(k.slice(4,8));
+        return yy>today.y || (yy===today.y && (mm>today.m || (mm===today.m && d>=today.d)));
+      }).sort();
+      if(valid.length){
+        $("date").value=U.date(valid[0]);
+        $("date").dataset.key=valid[0];
+        calendarYear=y; calendarMonth=m;
+        return;
+      }
+      m++;
+      if(m>12){m=1;y++;}
+    }
+    $("date").value="";
+    delete $("date").dataset.key;
+  }
+
+  $("city").onchange=async()=>{
     $("next").value=$("city").value;
-    // Keep today's date displayed as the default appointment-date value.
-    // The calendar remains the mechanism for selecting a different
-    // available future visit date.
-    setTodayDateDisplay(); delete $("date").dataset.key;
+    delete $("date").dataset.key;
     const now=U.parts();calendarYear=now.y;calendarMonth=now.m;
-    if(verified)renderCalendar();
+    if(verified){
+      await setNextAvailableDate($("city").value);
+    }else{
+      setTodayDateDisplay();
+    }
+    $("cal").hidden=true;
   };
   $("date").onclick=()=>renderCalendar();
 
@@ -289,5 +315,5 @@ document.addEventListener("DOMContentLoaded",()=>{
 
   fillCities();
   resetFields("Follow-up");
-  setTodayDateDisplay();
+  setNextAvailableDate($("city").value);
 });
