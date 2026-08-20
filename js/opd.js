@@ -174,8 +174,15 @@ document.addEventListener("DOMContentLoaded",()=>{
 
   $("load").onclick=async()=>{
     const p=U.phone($("followWa").value);
-    if(!U.validPhone(p)){ $("followStatus").textContent="Enter a valid number."; return; }
-    $("followStatus").textContent="Loading patient details…"; $("load").disabled=true;
+    $("followStatus").textContent=""; $("patients").innerHTML="";
+    if(!U.validPhone(p)){
+      $("followStatus").textContent="Enter a valid 10-digit WhatsApp number.";
+      $("followStatus").style.color="#b42318";
+      return;
+    }
+    $("followStatus").textContent="Searching patient records…";
+    $("followStatus").style.color="#7b1fa2";
+    $("load").disabled=true;
     try{
       const r=await NeuronAPI.call("getPatientHistoryByWhatsApp",{whatsapp:p});
       $("patients").innerHTML="";
@@ -196,8 +203,17 @@ document.addEventListener("DOMContentLoaded",()=>{
         $("patients").appendChild(b);
         if(r.patients.length===1)b.click();
       });
-      $("followStatus").textContent=`${r.patients.length} patient(s) found.`;
-    }catch(e){$("followStatus").textContent=e.message;}
+      if(!r.patients || !r.patients.length){
+        $("followStatus").textContent="No patient found for this WhatsApp number.";
+        $("followStatus").style.color="#b42318";
+      }else{
+        $("followStatus").textContent=`${r.patients.length} patient(s) found.`;
+        $("followStatus").style.color="#168a4a";
+      }
+    }catch(e){
+      $("followStatus").textContent="Unable to retrieve patient details: "+(e.message||"Network/server error.");
+      $("followStatus").style.color="#b42318";
+    }
     finally{$("load").disabled=false;}
   };
 
