@@ -9,3 +9,5 @@
 .report-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.total-row th,.total-row td{font-weight:900;background:#f3f0f7}.download-row{margin-top:14px;display:flex;justify-content:center;align-items:center}.download-row .btn{width:auto}
 
 button.button-clicked{background:#168a4a!important;color:#fff!important;border-color:#168a4a!important;transform:translateY(1px)}
+
+.record-unavailable{margin-top:14px;padding:18px;text-align:center;font-weight:600}
