@@ -32,4 +32,35 @@ document.addEventListener("DOMContentLoaded",()=>{const isOPD=document.body.data
      if(total)total.textContent=`Total Paid: ₹${(Number($("cash").value)||0)+(Number($("online").value)||0)}`;
    }
  }));
- $("save").onclick=async()=>{if(!selected)return;const id=U.uuid("upd"),m=$("mode").value,c=m==="Cash"?Number($("charge").value)||0:m==="Online"?0:Number($("cash").value)||0,o=m==="Online"?Number($("charge").value)||0:Number($("online").value)||0,p={updateRequestId:id,appointmentId:selected.appointmentId,city:selected.city,whatsapp:selected.whatsapp,whatsappNew:isOPD?U.phone($("editWa").value):selected.whatsapp,name:U.title($("name").value),age:Number($("age").value),ageUnit:$("unit").value,address:U.title($("address").value),referredBy:U.title($("ref").value)};if(isOPD){p.opdCharges=c+o;p.opdPaymentMode=m;p.opdCashPaid=c;p.opdOnlinePaid=o}else{p.eegCharges=c+o;p.eegPaymentMode=m;p.eegCashPaid=c;p.eegOnlinePaid=o}const action=isOPD?"updateOPDDetails":"updateEEGDetails";await IDB.put("tx",{id,type:isOPD?"OPD_UPDATE":"EEG_UPDATE",status:"pending",payload:p});try{const r=await NeuronAPI.call(action,p,25000);await IDB.put("tx",{id,type:isOPD?"OPD_UPDATE":"EEG_UPDATE",status:"complete",payload:p,result:r});$("confirmation").hidden=false;$("confirmation").innerHTML=`<div class="success"><div class="success-icon">✓</div><h2>Details Updated</h2><p>Appointment ID: <b>${U.esc(r.appointmentId)}</b></p><p>Updated values are now saved in the spreadsheet.</p></div>`}catch(e){await IDB.put("tx",{id,type:isOPD?"OPD_UPDATE":"EEG_UPDATE",status:"uncertain",payload:p});alert("Update status is uncertain. Do not repeat it until the original request is checked.")}}});
+ $("save").onclick=async()=>{if(!selected)return;const id=U.uuid("upd"),m=$("mode").value,c=m==="Cash"?Number($("charge").value)||0:m==="Online"?0:Number($("cash").value)||0,o=m==="Online"?Number($("charge").value)||0:Number($("online").value)||0,p={updateRequestId:id,appointmentId:selected.appointmentId,city:selected.city,whatsapp:selected.whatsapp,whatsappNew:isOPD?U.phone($("editWa").value):selected.whatsapp,name:U.title($("name").value),age:Number($("age").value),ageUnit:$("unit").value,address:U.title($("address").value),referredBy:U.title($("ref").value)};if(isOPD){p.opdCharges=c+o;p.opdPaymentMode=m;p.opdCashPaid=c;p.opdOnlinePaid=o}else{p.eegCharges=c+o;p.eegPaymentMode=m;p.eegCashPaid=c;p.eegOnlinePaid=o}const action=isOPD?"updateOPDDetails":"updateEEGDetails";
+if(isOPD && !/^[6-9]\d{9}$/.test(U.phone($("editWa").value))){
+  $("status").textContent="Enter a valid 10-digit WhatsApp Number.";
+  $("status").style.color="#b42318";
+  return;
+}
+$("confirmation").hidden=true;
+$("confirmation").innerHTML="";
+await IDB.put("tx",{id,type:isOPD?"OPD_UPDATE":"EEG_UPDATE",status:"pending",payload:p});try{
+ const r=await NeuronAPI.call(action,p,25000);
+ await IDB.put("tx",{id,type:isOPD?"OPD_UPDATE":"EEG_UPDATE",status:"complete",payload:p,result:r});
+ const before=r.before||{},after=r.after||{};
+ const labels=isOPD
+   ? [["name","Patient Name"],["age","Age"],["address","Address"],["whatsapp","WhatsApp Number"],["referredBy","Referred By"],["nextFollowupCity","Next Follow-up City"],["opdCharges","OPD Charges"],["opdPaymentMode","Payment Mode"],["opdCashPaid","Cash"],["opdOnlinePaid","Online"]]
+   : [["name","Patient Name"],["age","Age"],["address","Address"],["referredBy","Referred By"],["eegCharges","EEG Charges"],["eegPaymentMode","Payment Mode"],["eegCashPaid","Cash"],["eegOnlinePaid","Online"]];
+ const fmt=v=>v==null||v===""?"—":String(v);
+ const changes=labels.filter(([k])=>String(before[k]??"")!==String(after[k]??""));
+ let changeHtml=changes.length
+   ? changes.map(([k,label])=>`<p><b>${U.esc(label)}:</b> ${U.esc(fmt(before[k]))} → <b>${U.esc(fmt(after[k]))}</b></p>`).join("")
+   : "<p>No field values changed.</p>";
+ $("confirmation").hidden=false;
+ $("confirmation").innerHTML=`<div class="success"><div class="success-icon">✓</div><h2>Details Updated</h2><p>Appointment ID: <b>${U.esc(r.appointmentId)}</b></p><div class="updated-values">${changeHtml}</div></div>`;
+}catch(e){
+ const msg=String(e&&e.message||"");
+ if(isOPD && /invalid whatsapp|valid 10-digit whatsapp/i.test(msg)){
+   $("status").textContent="Enter a valid 10-digit WhatsApp Number.";
+   $("status").style.color="#b42318";
+   return;
+ }
+ await IDB.put("tx",{id,type:isOPD?"OPD_UPDATE":"EEG_UPDATE",status:"uncertain",payload:p});
+ alert("Update status is uncertain. Do not repeat it until the original request is checked.");
+}}});

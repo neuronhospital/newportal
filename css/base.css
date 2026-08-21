@@ -11,3 +11,5 @@
 button.button-clicked{background:#168a4a!important;color:#fff!important;border-color:#168a4a!important;transform:translateY(1px)}
 
 .record-unavailable{margin-top:14px;padding:18px;text-align:center;font-weight:600}
+
+.updated-values{margin-top:12px;text-align:left}.updated-values p{margin:7px 0}
