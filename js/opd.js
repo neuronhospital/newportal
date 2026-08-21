@@ -23,6 +23,9 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("new").classList.toggle("active",mode==="New");
     $("followFields").hidden=mode!=="Follow-up";
     $("newFields").hidden=mode!=="New";
+    // The follow-up patient is already identified by followWa. The separate
+    // booking WhatsApp field is only needed for New patients.
+    $("newWhatsAppField").hidden=mode==="Follow-up";
 
     ["followWa","name","age","address","ref","wa"].forEach(id=>{$(id).value="";});
     $("date").value="";
@@ -265,7 +268,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       ageUnit:$("unit").value,
       address:U.title($("address").value),
       referredBy:U.title($("ref").value),
-      whatsapp:U.phone($("wa").value),
+      whatsapp:U.phone(type==="Follow-up"?$("followWa").value:$("wa").value),
       city:$("city").value,
       appointmentDate:$("date").dataset.key,
       nextFollowupCity:$("next").value,
