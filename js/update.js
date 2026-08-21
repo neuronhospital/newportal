@@ -14,14 +14,19 @@ document.addEventListener("DOMContentLoaded",()=>{
       $("confirmation").innerHTML="";
       $("opdUpdateProgress").hidden=true;
       $("opdUpdateProgress").textContent="";
+      $("status").textContent="";
+    };
+    const setUpdateIdle=()=>{
+      $("save").disabled=false;
+      $("save").textContent="Update Details";
+      $("save").style.backgroundColor="";
     };
     $("load").onclick=async()=>{
       resetOPD();
-      $("status").textContent="";
       try{
         const r=await NeuronAPI.call("getEEGPatientsByWhatsApp",{whatsapp:U.phone($("wa").value),city:$("city").value});
         $("patients").innerHTML="";
-        r.patients.forEach((x,i)=>{
+        r.patients.forEach(x=>{
           const b=document.createElement("button");
           b.className="patient-option";
           b.innerHTML=`<b>${U.esc(x.name)}</b><small>${x.age} ${U.esc(x.ageUnit)} • ${U.date(x.date)}</small>`;
@@ -30,19 +35,19 @@ document.addEventListener("DOMContentLoaded",()=>{
             original={name:x.name||"",age:Number(x.age),ageUnit:x.ageUnit||"",address:x.address||"",referredBy:x.referredBy||"",whatsapp:x.whatsapp||"",charge:Number(x.opdCharges)||0,mode:x.opdPaymentMode||"Cash",cash:Number(x.opdCashPaid)||0,online:Number(x.opdOnlinePaid)||0};
             document.querySelectorAll(".patient-option").forEach(z=>z.classList.remove("selected"));
             b.classList.add("selected");
-            $("edit").hidden=false;
             $("confirmation").hidden=true;
             $("confirmation").innerHTML="";
-            $("name").value=x.name;
-            $("age").value=x.age;
-            $("unit").value=x.ageUnit;
-            $("address").value=x.address;
+            $("edit").hidden=false;
+            $("name").value=x.name||"";
+            $("age").value=x.age??"";
+            $("unit").value=x.ageUnit||"years";
+            $("address").value=x.address||"";
             $("ref").value=x.referredBy||"";
-            $("editWa").value=x.whatsapp;
-            $("charge").value=x.opdCharges;
+            $("editWa").value=x.whatsapp||"";
+            $("charge").value=x.opdCharges??0;
             $("mode").value=x.opdPaymentMode||"Cash";
-            $("cash").value=x.opdCashPaid||0;
-            $("online").value=x.opdOnlinePaid||0;
+            $("cash").value=x.opdCashPaid??0;
+            $("online").value=x.opdOnlinePaid??0;
             $("mode").onchange();
           };
           $("patients").appendChild(b);
@@ -85,26 +90,22 @@ document.addEventListener("DOMContentLoaded",()=>{
       $("opdUpdateProgress").textContent="Wait we are updating OPD details to system...";
       $("confirmation").hidden=true;
       $("confirmation").innerHTML="";
-      await IDB.put("tx",{id,type:"OPD_UPDATE",status:"pending",payload:p});
       try{
+        await IDB.put("tx",{id,type:"OPD_UPDATE",status:"pending",payload:p});
         const r=await NeuronAPI.call("updateOPDDetails",p,25000);
         await IDB.put("tx",{id,type:"OPD_UPDATE",status:"complete",payload:p,result:r});
         const list=changed.length?changed.map(v=>`<li><b>${U.esc(v.label)}</b>: ${U.esc(String(v.before))} → <b>${U.esc(String(v.after))}</b></li>`).join(""):"<li>No values were changed.</li>";
         $("confirmation").hidden=false;
         $("confirmation").innerHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Details Updated</h2><p>Appointment ID: <b>${U.esc(r.appointmentId)}</b></p><p><b>Changed and updated values:</b></p><ul>${list}</ul></div>`;
-        $("opdUpdateProgress").hidden=true;
-        $("opdUpdateProgress").textContent="";
-        $("save").disabled=false;
-        $("save").textContent="Update Details";
-        $("save").style.backgroundColor="";
+        original={name:p.name,age:p.age,ageUnit:p.ageUnit,address:p.address,referredBy:p.referredBy,whatsapp:p.whatsappNew,charge:p.opdCharges,mode:p.opdPaymentMode,cash:p.opdCashPaid,online:p.opdOnlinePaid};
+        selected={...selected,whatsapp:p.whatsappNew,name:p.name,age:p.age,ageUnit:p.ageUnit,address:p.address,referredBy:p.referredBy,opdCharges:p.opdCharges,opdPaymentMode:p.opdPaymentMode,opdCashPaid:p.opdCashPaid,opdOnlinePaid:p.opdOnlinePaid};
       }catch(e){
         await IDB.put("tx",{id,type:"OPD_UPDATE",status:"uncertain",payload:p});
+        alert("Update status is uncertain. Do not repeat it until the original request is checked.");
+      }finally{
         $("opdUpdateProgress").hidden=true;
         $("opdUpdateProgress").textContent="";
-        $("save").disabled=false;
-        $("save").textContent="Update Details";
-        $("save").style.backgroundColor="";
-        alert("Update status is uncertain. Do not repeat it until the original request is checked.");
+        setUpdateIdle();
       }
     };
   }else{
