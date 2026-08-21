@@ -221,8 +221,13 @@ document.addEventListener("DOMContentLoaded",()=>{
           selected=x; document.querySelectorAll(".patient-option").forEach(z=>z.classList.remove("selected")); b.classList.add("selected");
           $("name").value=U.title(x.name); $("age").value=x.age; $("unit").value=x.ageUnit||"years"; $("address").value=U.title(x.address||""); $("ref").value=U.title(x.referredBy||"");
           $("city").value=x.city; $("next").value=x.nextFollowupCity||x.city;
-          $("newFields").hidden=false;
+          // Explicitly reveal the complete Follow-up editing/booking stage.
+          // Use both hidden-property and attribute removal so the staged UI
+          // cannot remain collapsed after patient selection.
           $("bookingFields").hidden=false;
+          $("bookingFields").removeAttribute("hidden");
+          $("newFields").hidden=false;
+          $("newFields").removeAttribute("hidden");
           enableAfterWhatsApp();
           const now=U.parts();calendarYear=now.y;calendarMonth=now.m;
           // Follow-up date defaults to the first available visit date for
