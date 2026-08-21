@@ -25,6 +25,9 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("newFields").hidden=mode!=="New";
     // In Follow-up mode, show only patient retrieval until a patient is selected.
     $("bookingFields").hidden=mode==="Follow-up";
+    // The Follow-up flow uses followWa only for retrieval; the New-patient
+    // WhatsApp field must remain hidden until New mode is selected.
+    $("newWhatsAppField").hidden=mode==="Follow-up";
 
     ["followWa","name","age","address","ref","wa"].forEach(id=>{$(id).value="";});
     $("date").value="";
@@ -201,6 +204,9 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("date").onclick=()=>renderCalendar();
 
   $("load").onclick=async()=>{
+    // Starting a new patient retrieval must collapse any previous booking confirmation.
+    $("confirmation").hidden=true;
+    $("confirmation").innerHTML="";
     const p=U.phone($("followWa").value);
     $("followStatus").textContent=""; $("patients").innerHTML="";
     if(!U.validPhone(p)){
