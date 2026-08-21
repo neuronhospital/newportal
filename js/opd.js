@@ -23,9 +23,8 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("new").classList.toggle("active",mode==="New");
     $("followFields").hidden=mode!=="Follow-up";
     $("newFields").hidden=mode!=="New";
-    // The follow-up patient is already identified by followWa. The separate
-    // booking WhatsApp field is only needed for New patients.
-    $("newWhatsAppField").hidden=mode==="Follow-up";
+    // In Follow-up mode, show only patient retrieval until a patient is selected.
+    $("bookingFields").hidden=mode==="Follow-up";
 
     ["followWa","name","age","address","ref","wa"].forEach(id=>{$(id).value="";});
     $("date").value="";
@@ -222,7 +221,9 @@ document.addEventListener("DOMContentLoaded",()=>{
           selected=x; document.querySelectorAll(".patient-option").forEach(z=>z.classList.remove("selected")); b.classList.add("selected");
           $("name").value=U.title(x.name); $("age").value=x.age; $("unit").value=x.ageUnit||"years"; $("address").value=U.title(x.address||""); $("ref").value=U.title(x.referredBy||"");
           $("city").value=x.city; $("next").value=x.nextFollowupCity||x.city;
-          $("newFields").hidden=false; enableAfterWhatsApp();
+          $("newFields").hidden=false;
+          $("bookingFields").hidden=false;
+          enableAfterWhatsApp();
           const now=U.parts();calendarYear=now.y;calendarMonth=now.m;
           // Follow-up date defaults to the first available visit date for
           // the selected visiting city. The calendar stays collapsed until
@@ -268,6 +269,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       ageUnit:$("unit").value,
       address:U.title($("address").value),
       referredBy:U.title($("ref").value),
+      // Follow-up uses the verified retrieval number; New uses its own WhatsApp field.
       whatsapp:U.phone(type==="Follow-up"?$("followWa").value:$("wa").value),
       city:$("city").value,
       appointmentDate:$("date").dataset.key,
