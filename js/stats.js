@@ -176,6 +176,10 @@ document.addEventListener("DOMContentLoaded",()=>{
    const safeCity=String(r.city||"All").replace(/[^a-z0-9]+/gi,"_");
    const safePeriod=String(r.period||"report").replace(/[^a-z0-9-]+/gi,"_");
    a.href=url;a.download=`NEURON_${safeCity}_${safePeriod}_${mode}.csv`;
-   document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+   document.body.appendChild(a);
+   a.click();
+   // Keep the object URL alive briefly; some mobile browsers cancel the
+   // download if it is revoked immediately after click().
+   setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},1500);
  }
 });

@@ -6,7 +6,16 @@ window.NeuronAPI={
   const c=new AbortController(),t=setTimeout(()=>c.abort(),timeout);
   try{
    const r=await fetch(u,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({action,...data}),signal:c.signal,cache:"no-store"});
-   const j=await r.json();if(j.ok===false)throw Error(j.error||"Server request failed.");return j;
+   const text=await r.text();
+   let j;
+   try{
+     j=JSON.parse(text);
+   }catch(_){
+     const preview=String(text||"").replace(/\\s+/g," ").slice(0,180);
+     throw Error(`Server returned an invalid response (HTTP ${r.status}). ${preview||"No response body."}`);
+   }
+   if(j.ok===false)throw Error(j.error||"Server request failed.");
+   return j;
   }catch(e){if(e.name==="AbortError")throw Error("Network timeout. The request may still have been recorded.");throw e}
   finally{clearTimeout(t)}
  }
