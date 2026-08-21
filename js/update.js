@@ -17,14 +17,21 @@ document.addEventListener("DOMContentLoaded",()=>{const isOPD=document.body.data
      await new Promise(resolve=>setTimeout(resolve,700*attempt));
    }
  }
- $("patients").innerHTML="";r.patients.forEach((x,i)=>{const b=document.createElement("button");b.className="patient-option";b.innerHTML=`<b>${U.esc(x.name)}</b><small>${x.age} ${U.esc(x.ageUnit)} • ${U.date(x.date)}</small>`;b.onclick=()=>{selected=x;document.querySelectorAll(".patient-option").forEach(z=>z.classList.remove("selected"));b.classList.add("selected");$("edit").hidden=false;$("name").value=x.name;$("age").value=x.age;$("unit").value=x.ageUnit;$("address").value=x.address||"";$("ref").value=x.referredBy||"";if(isOPD){$("editWa").value=x.whatsapp;$("charge").value=x.opdCharges||0;$("mode").value=x.opdPaymentMode||((Number(x.opdCashPaid)>0&&Number(x.opdOnlinePaid)>0)?"Split":Number(x.opdOnlinePaid)>0?"Online":"Cash");$("cash").value=x.opdCashPaid||0;$("online").value=x.opdOnlinePaid||0}else{$("charge").value=x.eegCharges||0} $("mode").dispatchEvent(new Event("change"));};$("patients").appendChild(b);if(r.patients.length===1)b.click()})}catch(e){$("status").textContent=e.message;$("status").style.color="#b42318";}
+ $("patients").innerHTML="";r.patients.forEach((x,i)=>{const b=document.createElement("button");b.className="patient-option";b.innerHTML=`<b>${U.esc(x.name)}</b><small>${x.age} ${U.esc(x.ageUnit)} • ${U.date(x.date)}</small>`;b.onclick=()=>{selected=x;document.querySelectorAll(".patient-option").forEach(z=>z.classList.remove("selected"));b.classList.add("selected");$("edit").hidden=false;$("name").value=x.name;$("age").value=x.age;$("unit").value=x.ageUnit;$("address").value=x.address||"";$("ref").value=x.referredBy||"";if(isOPD){$("editWa").value=x.whatsapp;$("charge").value=x.opdCharges||0;$("mode").value=x.opdPaymentMode||((Number(x.opdCashPaid)>0&&Number(x.opdOnlinePaid)>0)?"Split":Number(x.opdOnlinePaid)>0?"Online":"Cash");$("cash").value=x.opdCashPaid||0;$("online").value=x.opdOnlinePaid||0;let paid=document.getElementById("originalOpdPaid");if(!paid){paid=document.createElement("div");paid.id="originalOpdPaid";paid.className="original-paid";$("charge").parentElement.insertAdjacentElement("afterend",paid)}const pm=$("mode").value;window.__opdOriginalTotalPaid=Number(x.opdTotalPaid)||0;paid.textContent=`OPD Charges Paid in (${pm}): ₹${window.__opdOriginalTotalPaid}`;}else{$("charge").value=x.eegCharges||0} $("mode").dispatchEvent(new Event("change"));};$("patients").appendChild(b);if(r.patients.length===1)b.click()})}catch(e){$("status").textContent=e.message;$("status").style.color="#b42318";}
  finally{btn.disabled=false;btn.textContent=oldText;}
 };$("mode").onchange=()=>{
- const split=$("mode").value==="Split";
- $("cash").parentElement.parentElement.hidden=!split;
- $("online").parentElement.parentElement.hidden=!split;
- $("cash").disabled=!split;
- $("online").disabled=!split;
+ const mode=$("mode").value;
+ const split=mode==="Split";
+ const paid=document.getElementById("originalOpdPaid");
+ if(paid && window.__opdOriginalTotalPaid!==undefined){
+   paid.textContent=`OPD Charges Paid in (${mode}): ₹${window.__opdOriginalTotalPaid}`;
+ }
+ $("cash").parentElement.parentElement.hidden=!(mode==="Cash"||split);
+ $("online").parentElement.parentElement.hidden=!(mode==="Online"||split);
+ $("cash").disabled=false;
+ $("online").disabled=false;
+ $("cash").readOnly=false;
+ $("online").readOnly=false;
  let total=document.getElementById("splitUpdateTotal");
  if(split){
    if(!total){
@@ -46,7 +53,10 @@ document.addEventListener("DOMContentLoaded",()=>{const isOPD=document.body.data
      if(total)total.textContent=`Total Paid: ₹${(Number($("cash").value)||0)+(Number($("online").value)||0)}`;
    }
  }));
- $("save").onclick=async()=>{if(!selected)return;const id=U.uuid("upd"),m=$("mode").value,c=m==="Cash"?Number($("charge").value)||0:m==="Online"?0:Number($("cash").value)||0,o=m==="Online"?Number($("charge").value)||0:Number($("online").value)||0,p={updateRequestId:id,appointmentId:selected.appointmentId,city:selected.city,whatsapp:selected.whatsapp,whatsappNew:isOPD?U.phone($("editWa").value):selected.whatsapp,name:U.title($("name").value),age:Number($("age").value),ageUnit:$("unit").value,address:U.title($("address").value),referredBy:U.title($("ref").value)};if(isOPD){p.opdCharges=c+o;p.opdPaymentMode=m;p.opdCashPaid=c;p.opdOnlinePaid=o}else{p.eegCharges=c+o;p.eegPaymentMode=m;p.eegCashPaid=c;p.eegOnlinePaid=o}const action=isOPD?"updateOPDDetails":"updateEEGDetails";
+ $("save").onclick=async()=>{if(!selected)return;const id=U.uuid("upd"),m=$("mode").value,
+ c=m==="Cash"?(Number($("cash").value)||0):(m==="Split"?(Number($("cash").value)||0):0),
+ o=m==="Online"?(Number($("online").value)||0):(m==="Split"?(Number($("online").value)||0):0),
+ p={updateRequestId:id,appointmentId:selected.appointmentId,city:selected.city,whatsapp:selected.whatsapp,whatsappNew:isOPD?U.phone($("editWa").value):selected.whatsapp,name:U.title($("name").value),age:Number($("age").value),ageUnit:$("unit").value,address:U.title($("address").value),referredBy:U.title($("ref").value)};if(isOPD){p.opdCharges=c+o;p.opdPaymentMode=m;p.opdCashPaid=c;p.opdOnlinePaid=o}else{p.eegCharges=c+o;p.eegPaymentMode=m;p.eegCashPaid=c;p.eegOnlinePaid=o}const action=isOPD?"updateOPDDetails":"updateEEGDetails";
 if(isOPD && !/^[6-9]\d{9}$/.test(U.phone($("editWa").value))){
   $("status").textContent="Enter a valid 10-digit WhatsApp Number.";
   $("status").style.color="#b42318";
