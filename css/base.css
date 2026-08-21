@@ -13,3 +13,5 @@ button.button-clicked{background:#168a4a!important;color:#fff!important;border-c
 .record-unavailable{margin-top:14px;padding:18px;text-align:center;font-weight:600}
 
 .updated-values{margin-top:12px;text-align:left}.updated-values p{margin:7px 0}
+
+.original-paid{margin:8px 0 12px;padding:10px 12px;border-radius:8px;font-weight:700;background:#f6f1fa;text-align:left}
