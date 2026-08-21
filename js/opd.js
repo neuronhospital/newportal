@@ -11,6 +11,44 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("date").value=String(p.d).padStart(2,"0")+"-"+String(p.m).padStart(2,"0")+"-"+p.y;
   };
 
+  // Recalculate the patient's approximate current age from the age recorded
+  // at the original registration date. Follow-up age is rounded to the
+  // nearest whole number and the most appropriate unit is selected.
+  const currentFollowupAge=(age,ageUnit,registrationDate)=>{
+    const n=Number(age);
+    const raw=String(registrationDate||"").replace(/\D/g,"");
+    if(!Number.isFinite(n)||n<0||raw.length!==8)return{value:n,unit:ageUnit||"years"};
+
+    const rd=Number(raw.slice(0,2)), rm=Number(raw.slice(2,4)), ry=Number(raw.slice(4,8));
+    const reg=new Date(Date.UTC(ry,rm-1,rd));
+    if(!Number.isFinite(reg.getTime()))return{value:n,unit:ageUnit||"years"};
+
+    // Reconstruct an approximate birth date from the recorded registration age.
+    let birth=new Date(reg.getTime());
+    const u=String(ageUnit||"years").toLowerCase();
+    if(u.startsWith("day")) birth.setUTCDate(birth.getUTCDate()-Math.round(n));
+    else if(u.startsWith("month")){
+      const whole=Math.floor(n), frac=n-whole;
+      birth.setUTCMonth(birth.getUTCMonth()-whole);
+      if(frac)birth.setUTCDate(birth.getUTCDate()-Math.round(frac*30));
+    }else{
+      const whole=Math.floor(n), frac=n-whole;
+      birth.setUTCFullYear(birth.getUTCFullYear()-whole);
+      if(frac)birth.setUTCMonth(birth.getUTCMonth()-Math.round(frac*12));
+    }
+
+    const now=U.parts();
+    const today=new Date(Date.UTC(now.y,now.m-1,now.d));
+    let months=(today.getUTCFullYear()-birth.getUTCFullYear())*12+(today.getUTCMonth()-birth.getUTCMonth());
+    if(today.getUTCDate()<birth.getUTCDate())months--;
+    months=Math.max(0,months);
+
+    if(months>=12)return{value:Math.max(1,Math.round((months/12)*2)/2),unit:"years"};
+    if(months>=1)return{value:Math.max(1,Math.round(months)),unit:"months"};
+    const days=Math.max(0,Math.round((today.getTime()-birth.getTime())/86400000));
+    return{value:days,unit:"days"};
+  };
+
   const fillCities=()=>{
     $("city").innerHTML=cities.map(x=>`<option value="${x}">${x}</option>`).join("");
     $("next").innerHTML=cities.map(x=>`<option value="${x}">${x}</option>`).join("");
@@ -225,7 +263,11 @@ document.addEventListener("DOMContentLoaded",()=>{
         b.innerHTML=`<b>${U.esc(x.name)}</b><small>${U.esc(x.age)} ${U.esc(x.ageUnit)} • ${U.esc(x.city)} • ${U.date(x.date)}</small>`;
         b.onclick=()=>{
           selected=x; document.querySelectorAll(".patient-option").forEach(z=>z.classList.remove("selected")); b.classList.add("selected");
-          $("name").value=U.title(x.name); $("age").value=x.age; $("unit").value=x.ageUnit||"years"; $("address").value=U.title(x.address||""); $("ref").value=U.title(x.referredBy||"");
+          $("name").value=U.title(x.name);
+          const followupAge=currentFollowupAge(x.age,x.ageUnit,x.date);
+          $("age").value=followupAge.value;
+          $("unit").value=followupAge.unit;
+          $("address").value=U.title(x.address||""); $("ref").value=U.title(x.referredBy||"");
           $("city").value=x.city; $("next").value=x.nextFollowupCity||x.city;
           // Explicitly reveal the complete Follow-up editing/booking stage.
           // Use both hidden-property and attribute removal so the staged UI
