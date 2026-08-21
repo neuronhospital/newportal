@@ -3,7 +3,21 @@ document.addEventListener("DOMContentLoaded",()=>{const isOPD=document.body.data
  btn.disabled=true; btn.textContent="Retrieving…";
  $("status").textContent="Retrieving patient information from the server…";
  $("status").style.color="#7b1fa2";
- try{const r=await NeuronAPI.call("getEEGPatientsByWhatsApp",{whatsapp:U.phone($("wa").value),city:$("city").value});$("patients").innerHTML="";r.patients.forEach((x,i)=>{const b=document.createElement("button");b.className="patient-option";b.innerHTML=`<b>${U.esc(x.name)}</b><small>${x.age} ${U.esc(x.ageUnit)} • ${U.date(x.date)}</small>`;b.onclick=()=>{selected=x;document.querySelectorAll(".patient-option").forEach(z=>z.classList.remove("selected"));b.classList.add("selected");$("edit").hidden=false;$("name").value=x.name;$("age").value=x.age;$("unit").value=x.ageUnit;$("address").value=x.address||"";$("ref").value=x.referredBy||"";if(isOPD){$("editWa").value=x.whatsapp;$("charge").value=x.opdCharges||0;$("mode").value=x.opdPaymentMode||((Number(x.opdCashPaid)>0&&Number(x.opdOnlinePaid)>0)?"Split":Number(x.opdOnlinePaid)>0?"Online":"Cash");$("cash").value=x.opdCashPaid||0;$("online").value=x.opdOnlinePaid||0}else{$("charge").value=x.eegCharges||0} $("mode").dispatchEvent(new Event("change"));};$("patients").appendChild(b);if(r.patients.length===1)b.click()})}catch(e){$("status").textContent=e.message;$("status").style.color="#b42318";}
+ try{
+ let r;
+ const readPayload={whatsapp:U.phone($("wa").value),city:$("city").value};
+ for(let attempt=1;attempt<=3;attempt++){
+   try{
+     r=await NeuronAPI.call("getEEGPatientsByWhatsApp",readPayload,25000);
+     break;
+   }catch(err){
+     const msg=String(err&&err.message||"");
+     if(!/HTTP 404/i.test(msg)||attempt===3)throw err;
+     $("status").textContent=`Retrieving patient information… retry ${attempt}/2`;
+     await new Promise(resolve=>setTimeout(resolve,700*attempt));
+   }
+ }
+ $("patients").innerHTML="";r.patients.forEach((x,i)=>{const b=document.createElement("button");b.className="patient-option";b.innerHTML=`<b>${U.esc(x.name)}</b><small>${x.age} ${U.esc(x.ageUnit)} • ${U.date(x.date)}</small>`;b.onclick=()=>{selected=x;document.querySelectorAll(".patient-option").forEach(z=>z.classList.remove("selected"));b.classList.add("selected");$("edit").hidden=false;$("name").value=x.name;$("age").value=x.age;$("unit").value=x.ageUnit;$("address").value=x.address||"";$("ref").value=x.referredBy||"";if(isOPD){$("editWa").value=x.whatsapp;$("charge").value=x.opdCharges||0;$("mode").value=x.opdPaymentMode||((Number(x.opdCashPaid)>0&&Number(x.opdOnlinePaid)>0)?"Split":Number(x.opdOnlinePaid)>0?"Online":"Cash");$("cash").value=x.opdCashPaid||0;$("online").value=x.opdOnlinePaid||0}else{$("charge").value=x.eegCharges||0} $("mode").dispatchEvent(new Event("change"));};$("patients").appendChild(b);if(r.patients.length===1)b.click()})}catch(e){$("status").textContent=e.message;$("status").style.color="#b42318";}
  finally{btn.disabled=false;btn.textContent=oldText;}
 };$("mode").onchange=()=>{
  const split=$("mode").value==="Split";

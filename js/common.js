@@ -21,5 +21,5 @@ document.addEventListener("DOMContentLoaded",()=>{
    setTimeout(()=>b.classList.remove("button-clicked"),700);
  });
 
- if(f)f.innerHTML=`<footer class="footer"><div class="container"><div class="footer-nav"><a href="index.html">Home</a><a href="opd_booking.html">OPD Booking</a><a href="eeg_booking.html">EEG Booking</a><a href="opd_update.html">Update OPD</a><a href="eeg_update.html">Update EEG</a><a href="statistics.html">Statistics</a></div><div class="footer-contact"><b>NEURON Hospital, Latur</b><br>Near Patil Plaza, Ausa Road, Latur</div><div class="version">21-08-2026-03:00:00-HTML78-v19-CODE78-v19</div></div></footer>`;
+ if(f)f.innerHTML=`<footer class="footer"><div class="container"><div class="footer-nav"><a href="index.html">Home</a><a href="opd_booking.html">OPD Booking</a><a href="eeg_booking.html">EEG Booking</a><a href="opd_update.html">Update OPD</a><a href="eeg_update.html">Update EEG</a><a href="statistics.html">Statistics</a></div><div class="footer-contact"><b>NEURON Hospital, Latur</b><br>Near Patil Plaza, Ausa Road, Latur</div><div class="version">21-08-2026-03:00:00-HTML78-v21-CODE78-v21</div></div></footer>`;
 });
