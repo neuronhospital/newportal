@@ -53,11 +53,6 @@ document.addEventListener("DOMContentLoaded",()=>{
    const t=r.totals||{};
    const mode=r.showMode||$("show").value;
    const rows=rowsFor(mode,r.rows||[]);
-   if(rows.length===0){
-     $("results").innerHTML=`<div class="report-head"><b>${esc(r.city)}</b> • ${esc(r.periodLabel||"")}</div>
-       <div class="status record-unavailable">Record is not available for <b>${esc(r.city)}</b> for <b>${esc(r.periodLabel||"")}</b> in <b>${esc(mode==="patient"?"Patient":mode==="eeg"?"EEG":"Patient + EEG")}</b>.</div>`;
-     return;
-   }
    let html=`<div class="report-head"><b>${esc(r.city)}</b> • ${esc(r.periodLabel||"")}`;
    html+=` <span class="data-state ${state==="CURRENT"?"data-current":"data-cached"}">${state==="CURRENT"?"Current":"Cached"}</span></div>`;
 
@@ -181,10 +176,6 @@ document.addEventListener("DOMContentLoaded",()=>{
    const safeCity=String(r.city||"All").replace(/[^a-z0-9]+/gi,"_");
    const safePeriod=String(r.period||"report").replace(/[^a-z0-9-]+/gi,"_");
    a.href=url;a.download=`NEURON_${safeCity}_${safePeriod}_${mode}.csv`;
-   document.body.appendChild(a);
-   a.click();
-   // Keep the object URL alive briefly; some mobile browsers cancel the
-   // download if it is revoked immediately after click().
-   setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},1500);
+   document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
  }
 });

@@ -1,31 +1,9 @@
 document.addEventListener("DOMContentLoaded",()=>{
  const g=$("gate"),p=$("portal"),KEY="neuron_secure_until",TOKEN="neuron_retrieval_token";
  const showPortal=()=>{g.hidden=true;p.hidden=false;};
- const clearSession=()=>{
-   localStorage.removeItem(TOKEN);
-   localStorage.removeItem(KEY);
- };
- const hasCachedAccess=Number(localStorage.getItem(KEY)||0)>Date.now();
- if(hasCachedAccess){
-   const tok=localStorage.getItem(TOKEN)||"";
-   if(!tok){
-     clearSession();
-   }else{
-     // Validate the cached backend session when online. If offline, retain
-     // the 12-hour local access so the portal remains usable offline.
-     NeuronAPI.call("validateRetrievalSession",{token:tok},10000)
-       .then(()=>showPortal())
-       .catch(e=>{
-         const msg=String(e&&e.message||"");
-         if(/session expired|invalid retrieval session/i.test(msg)){
-           clearSession();
-           g.hidden=false;p.hidden=true;
-         }else{
-           showPortal();
-         }
-       });
-     return;
-   }
+ if(Number(localStorage.getItem(KEY)||0)>Date.now()){
+   showPortal();
+   return;
  }
  $("enter").onclick=async()=>{
    const btn=$("enter"); btn.disabled=true; btn.textContent="Verifying…";
