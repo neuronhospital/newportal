@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#7b1fa2"><link rel="stylesheet" href="css/base.css"><title>OPD Booking | NEURON Hospital</title></head>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#7b1fa2"><link rel="stylesheet" href="css/base.css"><title>OPD Booking | NEURON Hospital</title><style>.required-field::before{content:"*";color:#d32f2f;font-weight:700;margin-right:4px}</style></head>
 <body data-title="OPD Booking"><div id="header"></div><main><div class="container">
 <section class="page-title"><h1>OPD Booking Portal</h1><p>Book a new or follow-up appointment</p></section>
 
@@ -10,7 +10,7 @@
 
   <!-- Follow-up retrieval is shown ONLY in Follow-up mode. -->
   <div id="followFields" style="margin-top:14px">
-    <label>WhatsApp Number</label>
+    <label class="required-field">WhatsApp Number</label>
     <div class="input-row">
       <div class="prefix-wrap"><span class="prefix">+91</span><input id="followWa" maxlength="10" inputmode="numeric" autocomplete="tel"></div>
       <button id="load" class="btn btn-secondary" type="button">Load</button>
@@ -22,13 +22,13 @@
   <div id="bookingFields" hidden>
   <div id="newFields" hidden>
     <div class="grid" style="margin-top:14px">
-      <div class="field"><label>Patient's Name</label><input id="name" autocomplete="name"></div>
-      <div class="field"><label>Age</label><div class="input-row"><input id="age" type="number" step=".1" min="0.01"><select id="unit"><option value="years">Years</option><option value="months">Months</option><option value="days">Days</option></select></div></div>
+      <div class="field"><label class="required-field">Patient's Name</label><input id="name" autocomplete="name"></div>
+      <div class="field"><label class="required-field">Age</label><div class="input-row"><input id="age" type="number" step=".1" min="0.01"><select id="unit"><option value="years">Years</option><option value="months">Months</option><option value="days">Days</option></select></div></div>
       <div class="field full"><label>Patient Address</label><textarea id="address" autocomplete="street-address"></textarea></div>
       <div class="field full"><label>Referred By Dr./Hospital</label><input id="ref"></div>
 
       <div id="newWhatsAppField" class="field full">
-        <label>WhatsApp Number</label>
+        <label class="required-field">WhatsApp Number</label>
         <div class="input-row">
           <div class="prefix-wrap"><span class="prefix">+91</span><input id="wa" maxlength="10" inputmode="numeric" autocomplete="tel"></div>
           <button id="waBtn" class="wa-icon-btn" type="button" aria-label="Open WhatsApp" title="Open WhatsApp">
@@ -44,21 +44,21 @@
   </div>
 
   <div class="grid" style="margin-top:14px">
-    <div class="field"><label>Payment Mode</label><select id="payMode"><option>Cash</option><option>Online</option><option>Split</option></select></div>
+    <div class="field"><label class="required-field">Payment Mode</label><select id="payMode"><option>Cash</option><option>Online</option><option>Split</option></select></div>
 
     <!-- Cash/Online: visible. Split: replaced by Cash + Online only. -->
-    <div id="singleChargeField" class="field"><label>OPD Charges Paid</label><input id="amount" type="number" min="0" max="2000" value="500" inputmode="decimal"></div>
+    <div id="singleChargeField" class="field"><label id="opdChargesLabel" class="required-field">OPD Charges Paid in Cash</label><input id="amount" type="number" min="0" max="2000" value="500" inputmode="decimal"></div>
     <div id="splitField" class="field full" hidden>
       <div class="payment-grid">
-        <div><label>Cash</label><input id="cash" type="number" min="0" max="2000" value="" inputmode="decimal"></div>
-        <div><label>Online</label><input id="online" type="number" min="0" max="2000" value="" inputmode="decimal"></div>
+        <div><label class="required-field">Cash</label><input id="cash" type="number" min="0" max="2000" value="" inputmode="decimal"></div>
+        <div><label class="required-field">Online</label><input id="online" type="number" min="0" max="2000" value="" inputmode="decimal"></div>
       </div>
       <div id="splitTotal" class="payment-total">Total: ₹0</div>
     </div>
 
-    <div class="field"><label>Visit Location</label><select id="city" disabled></select></div>
-    <div class="field"><label>Date of Appointment</label><input id="date" readonly disabled placeholder="Tap to select date"><div id="cal" class="calendar" hidden></div></div>
-    <div class="field"><label>Next Follow-up City</label><select id="next" disabled></select></div>
+    <div class="field"><label class="required-field">Visit Location</label><select id="city" disabled></select></div>
+    <div class="field"><label class="required-field">Date of Appointment</label><input id="date" readonly disabled placeholder="Tap to select date"><div id="dateLoading" class="status" aria-live="polite" hidden></div><div id="cal" class="calendar" hidden></div></div>
+    <div class="field"><label class="required-field">Next Follow-up City</label><select id="next" disabled></select></div>
 
     <div class="field full">
       <button id="book" class="cta" disabled style="width:100%" type="button">Book OPD Appointment</button>
