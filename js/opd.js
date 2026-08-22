@@ -71,7 +71,8 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("date").value="";
     delete $("date").dataset.key;
     $("unit").value="years";
-    $("city").value="Latur"; $("next").value="Latur";
+    const suggestedCity=Schedule.todayCity(cities,U.parts());
+    $("city").value=suggestedCity||"Latur"; $("next").value=$("city").value;
     $("city").disabled=true; $("date").disabled=true; $("next").disabled=true; $("book").disabled=true;
     $("waStatus").textContent=""; $("waStatus").style.color="";
     $("followStatus").textContent=""; $("patients").innerHTML="";
