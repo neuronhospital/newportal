@@ -14,6 +14,13 @@ document.addEventListener("DOMContentLoaded",()=>{
 
  let lastReport=null;
 
+ function clearResults(){
+   lastReport=null;
+   $("results").innerHTML="";
+ }
+ [$("city"),$("period"),$("show")].forEach(el=>el.addEventListener("change",clearResults));
+
+
  $("get").onclick=async()=>{
    const btn=$("get");
    const old=btn.textContent;
@@ -100,9 +107,20 @@ document.addEventListener("DOMContentLoaded",()=>{
      </div>`;
      html+=bothTable(rows);
    }
-   html+=`<div class="download-row"><button id="downloadCsv" class="btn btn-secondary">⬇ Download CSV</button></div>`;
+   if(!rows.length){
+     const city=esc(r.city||$("city").value);
+     const dateLabel=esc(r.periodLabel||$("period").selectedOptions[0]?.textContent||$("period").value);
+     const modeLabel=mode==="patient"?"Patient":mode==="eeg"?"EEG":"Patient / EEG";
+     $("results").innerHTML=`<div class="status">No Record Available for ${city}, ${dateLabel}, ${modeLabel}.</div>`;
+     return;
+   }
+   html+=`<div class="download-row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:nowrap">
+     <button id="downloadCsv" class="btn btn-secondary">⬇ Download CSV</button>
+     <button id="downloadMobile" class="btn btn-secondary">⬇ Mobile Number</button>
+   </div>`;
    $("results").innerHTML=html;
    $("downloadCsv").onclick=()=>downloadCSV(r,mode);
+   $("downloadMobile").onclick=()=>downloadMobileNumbers(r,mode);
  }
 
  function patientTable(rows){
@@ -176,6 +194,20 @@ document.addEventListener("DOMContentLoaded",()=>{
    const safeCity=String(r.city||"All").replace(/[^a-z0-9]+/gi,"_");
    const safePeriod=String(r.period||"report").replace(/[^a-z0-9-]+/gi,"_");
    a.href=url;a.download=`NEURON_${safeCity}_${safePeriod}_${mode}.csv`;
-   document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+   document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
  }
+ function downloadMobileNumbers(r,mode){
+   const rows=rowsFor(mode,r.rows||[]);
+   const out=[["Mobile Number"]];
+   rows.forEach(x=>out.push([x.mobileNumber]));
+   const csv="\uFEFF"+out.map(row=>row.map(csvCell).join(",")).join("\r\n");
+   const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+   const url=URL.createObjectURL(blob);
+   const a=document.createElement("a");
+   const safeCity=String(r.city||"All").replace(/[^a-z0-9]+/gi,"_");
+   const safePeriod=String(r.period||"report").replace(/[^a-z0-9-]+/gi,"_");
+   a.href=url;a.download=`NEURON_${safeCity}_${safePeriod}_${mode}_Mobile_Numbers.csv`;
+   document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ }
+ 
 });
