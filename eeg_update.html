@@ -13,6 +13,7 @@
 <script>
 document.addEventListener("DOMContentLoaded",()=>{const $=U.$;let selected=null;let originalPayment={cash:0,online:0};
 $('city').innerHTML=NEURON_CONFIG.cities.map(x=>`<option>${U.esc(x)}</option>`).join('');
+$('city').addEventListener('change',()=>{clearState();});
 function clearState(){selected=null;$('patients').innerHTML='';$('edit').hidden=true;$('confirmation').hidden=true;$('confirmation').innerHTML='';$('status').textContent='';$('amount').value='';$('cash').value='';$('online').value='';$('total').textContent='Total Amount Paid: ₹0';$('updateMessage').hidden=true}
 function setLoading(on){$('load').disabled=on;$('load').textContent=on?'Loading...':'Load';$('load').className=on?'btn btn-primary loading-state':'btn btn-secondary';$('loadMessage').hidden=!on}
 function inferMode(cash,online){if(cash>0&&online>0)return 'Split';if(online>0)return 'Online';return 'Cash'}
