@@ -56,7 +56,11 @@ document.addEventListener("DOMContentLoaded",()=>{
     return rows.length?rows.join(""):"<p>No values changed.</p>";
   }
 
-  $("city").addEventListener("change",()=>{\n    clearLoadedState();\n  });\n\n  $("load").onclick=async()=>{
+  $("city").addEventListener("change",()=>{
+    clearLoadedState();
+  });
+
+  $("load").onclick=async()=>{
     if($("load").disabled)return;
     clearLoadedState();
     $("load").disabled=true;
