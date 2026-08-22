@@ -1,6 +1,6 @@
 document.addEventListener("DOMContentLoaded",()=>{
   const $=U.$, cities=NEURON_CONFIG.cities;
-  let type="Follow-up", verified=false, selected=null;
+  let type="Follow-up", verified=false, selected=null, paymentMode="Cash";
   let calendarYear=U.parts().y, calendarMonth=U.parts().m;
 
   // Show today's India-local date in the appointment field by default.
@@ -79,8 +79,9 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("submitStatus").textContent="";
     $("confirmation").hidden=true; $("confirmation").innerHTML="";
     $("cal").hidden=true; $("cal").innerHTML="";
-    $("payMode").value="Cash"; $("amount").value="500"; $("cash").value=""; $("online").value="";
-    updatePaymentUI();
+    paymentMode="Cash";
+    $("payMode").value=paymentMode; $("amount").value="500"; $("cash").value=""; $("online").value="";
+    updatePaymentUI(paymentMode);
     calendarYear=U.parts().y; calendarMonth=U.parts().m;
   };
 
@@ -105,8 +106,10 @@ document.addEventListener("DOMContentLoaded",()=>{
     $(id).addEventListener("blur",e=>titleTyping(e.target));
   });
 
-  const updatePaymentUI=()=>{
-    const split=$("payMode").value==="Split";
+  const updatePaymentUI=(mode=paymentMode)=>{
+    paymentMode=(mode==="Online"||mode==="Split")?mode:"Cash";
+    $("payMode").value=paymentMode;
+    const split=paymentMode==="Split";
     $("singleChargeField").hidden=split;
     $("splitField").hidden=!split;
     if(split){
@@ -122,7 +125,10 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("splitTotal").textContent="Total: "+U.money(c+o);
     $("splitTotal").style.color=(c+o>2000)?"#b42318":"";
   };
-  $("payMode").onchange=updatePaymentUI;
+  $("payMode").addEventListener("change",e=>{
+    paymentMode=(e.target.value==="Online"||e.target.value==="Split")?e.target.value:"Cash";
+    updatePaymentUI(paymentMode);
+  });
   $("cash").oninput=updateSplitTotal; $("online").oninput=updateSplitTotal;
 
   $("follow").onclick=async()=>{resetFields("Follow-up"); await setNextAvailableDate($("city").value); $("cal").hidden=true;};
@@ -306,7 +312,8 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("submitStatus").style.color="#7b1fa2";
     $("book").disabled=true;
 
-    const payMode=$("payMode").value;
+    const payMode=paymentMode;
+    $("payMode").value=payMode;
     let c=0,o=0,total=0;
     if(payMode==="Cash"){total=Number($("amount").value)||0;c=total;}
     else if(payMode==="Online"){total=Number($("amount").value)||0;o=total;}
