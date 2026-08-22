@@ -105,7 +105,13 @@ document.addEventListener("DOMContentLoaded",()=>{
   });
 
   const updatePaymentUI=()=>{
-    const split=$("payMode").value==="Split";
+    const mode=$("payMode").value;
+    const split=mode==="Split";
+    $("opdChargesLabel").textContent=mode==="Cash"
+      ? "OPD Charges Paid in Cash"
+      : mode==="Online"
+        ? "OPD Charges Paid Online"
+        : "OPD Charges Paid in Split";
     $("singleChargeField").hidden=split;
     $("splitField").hidden=!split;
     if(split){
@@ -228,16 +234,34 @@ document.addEventListener("DOMContentLoaded",()=>{
     delete $("date").dataset.key;
   }
 
+  const setDateLoading=(loading,city)=>{
+    $("dateLoading").hidden=!loading;
+    $("dateLoading").textContent=loading
+      ? "Wait we are Loading Available date for "+city+" Visit"
+      : "";
+    $("city").disabled=loading;
+    $("date").disabled=loading || !verified;
+    $("next").disabled=loading || !verified;
+    $("book").disabled=loading || !verified;
+  };
+
   $("city").onchange=async()=>{
-    $("next").value=$("city").value;
+    const city=$("city").value;
+    $("next").value=city;
     delete $("date").dataset.key;
-    const now=U.parts();calendarYear=now.y;calendarMonth=now.m;
-    if(verified){
-      await setNextAvailableDate($("city").value);
-    }else{
-      setTodayDateDisplay();
-    }
+    $("date").value="";
     $("cal").hidden=true;
+    const now=U.parts();calendarYear=now.y;calendarMonth=now.m;
+    if(!verified){
+      setTodayDateDisplay();
+      return;
+    }
+    setDateLoading(true,city);
+    try{
+      await setNextAvailableDate(city);
+    }finally{
+      setDateLoading(false,city);
+    }
   };
   $("date").onclick=()=>renderCalendar();
 
@@ -301,9 +325,12 @@ document.addEventListener("DOMContentLoaded",()=>{
   };
 
   $("book").onclick=async()=>{
-    $("submitStatus").textContent="Submitting your OPD appointment…";
-    $("submitStatus").style.color="#7b1fa2";
+    if($("book").disabled)return;
     $("book").disabled=true;
+    $("book").textContent="Booking OPD Appointment";
+    $("book").className="btn btn-primary";
+    $("submitStatus").textContent="Booking OPD appointment…";
+    $("submitStatus").style.color="#7b1fa2";
 
     const payMode=$("payMode").value;
     let c=0,o=0,total=0;
@@ -334,12 +361,20 @@ document.addEventListener("DOMContentLoaded",()=>{
       opdOnlinePaid:o
     };
 
-    if(!payload.appointmentDate){$("submitStatus").textContent="Please select an available appointment date.";$("submitStatus").style.color="#b42318";$("book").disabled=false;return;}
-    await IDB.put("tx",{id,type:"OPD_BOOKING",status:"pending",payload});
+    if(!payload.appointmentDate){
+      $("submitStatus").textContent="Please select an available appointment date.";
+      $("submitStatus").style.color="#b42318";
+      $("book").disabled=false;
+      $("book").textContent="Book OPD Appointment";
+      $("book").className="cta";
+      return;
+    }
 
     try{
+      // The local journal must never prevent an online booking from being sent.
+      try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"pending",payload});}catch(_){ }
       const r=await NeuronAPI.call("bookAppointment",payload,25000);
-      await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:r});
+      try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:r});}catch(_){ }
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
       $("submitStatus").style.color="#168a4a";
       const confirmationHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Confirmed</h2><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(r.patientName)}</b></div><div class="confirm-row"><span>Age</span><b>${r.age} ${r.ageUnit}</b></div><div class="confirm-row"><span>Address</span><b>${U.esc(r.address||payload.address)}</b></div><div class="confirm-row"><span>Date of Booking</span><b>${U.date(r.date)}</b></div><div class="confirm-row"><span>OPD Charges</span><b>${U.money(r.opdCharges)}</b></div><div class="confirm-row"><span>Cash</span><b>${U.money(r.opdCashPaid)}</b></div><div class="confirm-row"><span>Online</span><b>${U.money(r.opdOnlinePaid)}</b></div><div class="confirm-row"><span>Next Follow-up City</span><b>${U.esc(r.nextFollowupCity||payload.nextFollowupCity)}</b></div></div>`;
@@ -354,7 +389,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       try{
         const s=await NeuronAPI.call("checkBookingRequest",{bookingRequestId:id,city:payload.city},10000);
         if(s.found){
-          await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:s});
+          try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:s});}catch(_){ }
           const recoveredHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Recovered</h2><p>Appointment ID: <b>${U.esc(s.appointmentId)}</b></p><p>Original booking was already recorded. No duplicate was created.</p></div>`;
           resetFields("Follow-up");
           $("confirmation").innerHTML=recoveredHTML;
@@ -362,12 +397,16 @@ document.addEventListener("DOMContentLoaded",()=>{
           return;
         }
       }catch(_){}
-      await IDB.put("tx",{id,type:"OPD_BOOKING",status:"uncertain",payload});
+      try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"uncertain",payload});}catch(_){ }
       $("submitStatus").textContent="Booking status is uncertain. Do not submit another booking. Reopen with internet to recover the original request.";
       $("submitStatus").style.color="#b42318";
       alert("Booking status is uncertain. Do not book again.");
     }finally{
-      if($("confirmation").hidden)$("book").disabled=false;
+      if($("confirmation").hidden){
+        $("book").disabled=false;
+        $("book").textContent="Book OPD Appointment";
+        $("book").className="cta";
+      }
     }
   };
 
