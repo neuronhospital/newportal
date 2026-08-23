@@ -150,8 +150,31 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("payMode").onchange=updatePaymentUI;
   $("cash").oninput=updateSplitTotal; $("online").oninput=updateSplitTotal;
 
+  async function setScheduledDefaultVisitCity(){
+    const today=U.parts();
+    try{
+      const r=await NeuronAPI.call("getScheduledCitiesForDate",{year:today.y,month:today.m,day:today.d},12000);
+      const scheduled=Array.isArray(r.cities)?r.cities.map(x=>String(x.city||x)):[];
+      if(scheduled.length && scheduled.includes($("city").value)===false){
+        $("city").value=scheduled[0];
+      }else if(scheduled.length){
+        $("city").value=scheduled[0];
+      }
+      $("next").value=$("city").value;
+      return $("city").value;
+    }catch(_){
+      // Keep the existing city fallback if the schedule lookup is unavailable.
+      return $("city").value;
+    }
+  }
+
   $("follow").onclick=async()=>{resetFields("Follow-up"); await setNextAvailableDate($("city").value); $("cal").hidden=true;};
-  $("new").onclick=async()=>{resetFields("New"); await setNextAvailableDate($("city").value); $("cal").hidden=true;};
+  $("new").onclick=async()=>{
+    resetFields("New");
+    const city=await setScheduledDefaultVisitCity();
+    await setNextAvailableDate(city);
+    $("cal").hidden=true;
+  };
 
   $("wa").oninput=e=>e.target.value=U.phone(e.target.value);
   $("followWa").oninput=e=>e.target.value=U.phone(e.target.value);
