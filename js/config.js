@@ -1,0 +1,1 @@
+window.NEURON_CONFIG={apiUrl:"https://script.google.com/macros/s/AKfycbzkpXF2POstrStYD2glofCLD9V65uPH1ik8GY_AicD_pqA8aMxFTB9oycqTwkG1qAidDw/exec",timezone:"Asia/Kolkata",version:"HTML78-v4 / CODE78-v4",cities:["Latur","Nilanga","Udgir","Beed","Ambajogai","Parli","Dharashiv","Omerga","Barshi"],opdDefault:500,opdMax:2000,eegLatur:1100,eegOther:1600,eegMax:3000,secureCacheHours:12};
