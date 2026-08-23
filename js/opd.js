@@ -55,6 +55,29 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("city").value="Latur"; $("next").value="Latur";
   };
 
+  // The Visit Location default must follow the canonical backend visit
+  // schedule for today's India-local date. The dropdown remains editable
+  // after WhatsApp verification; this only controls the initial default.
+  const getTodayScheduledCityDefault=async()=>{
+    const today=U.parts();
+    try{
+      const r=await NeuronAPI.call("getScheduledCitiesForDate",{year:today.y,month:today.m,day:today.d},10000);
+      const scheduled=(r.cities||[]).map(x=>x.city).filter(x=>cities.includes(x));
+      return scheduled.length===1 ? scheduled[0] : (scheduled[0]||"Latur");
+    }catch(_){
+      // Preserve the existing safe default if the schedule lookup is
+      // temporarily unavailable; this does not alter booking behaviour.
+      return "Latur";
+    }
+  };
+
+  const applyTodayVisitLocationDefault=async()=>{
+    const city=await getTodayScheduledCityDefault();
+    $("city").value=city;
+    $("next").value=city;
+    return city;
+  };
+
   const resetFields=(mode)=>{
     type=mode; verified=false; selected=null;
     $("follow").classList.toggle("active",mode==="Follow-up");
@@ -71,6 +94,8 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("date").value="";
     delete $("date").dataset.key;
     $("unit").value="years";
+    // Keep the existing reset behaviour, but make today's Visit Location
+    // schedule-aware instead of hard-coding Latur.
     $("city").value="Latur"; $("next").value="Latur";
     $("city").disabled=true; $("date").disabled=true; $("next").disabled=true; $("book").disabled=true;
     $("waStatus").textContent=""; $("waStatus").style.color="";
@@ -130,8 +155,8 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("payMode").onchange=updatePaymentUI;
   $("cash").oninput=updateSplitTotal; $("online").oninput=updateSplitTotal;
 
-  $("follow").onclick=async()=>{resetFields("Follow-up"); await setNextAvailableDate($("city").value); $("cal").hidden=true;};
-  $("new").onclick=async()=>{resetFields("New"); await setNextAvailableDate($("city").value); $("cal").hidden=true;};
+  $("follow").onclick=async()=>{resetFields("Follow-up"); const city=await applyTodayVisitLocationDefault(); await setNextAvailableDate(city); $("cal").hidden=true;};
+  $("new").onclick=async()=>{resetFields("New"); const city=await applyTodayVisitLocationDefault(); await setNextAvailableDate(city); $("cal").hidden=true;};
 
   $("wa").oninput=e=>e.target.value=U.phone(e.target.value);
   $("followWa").oninput=e=>e.target.value=U.phone(e.target.value);
@@ -415,5 +440,5 @@ document.addEventListener("DOMContentLoaded",()=>{
 
   fillCities();
   resetFields("Follow-up");
-  setNextAvailableDate($("city").value);
+  applyTodayVisitLocationDefault().then(city=>setNextAvailableDate(city));
 });
