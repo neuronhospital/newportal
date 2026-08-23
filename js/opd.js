@@ -55,29 +55,6 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("city").value="Latur"; $("next").value="Latur";
   };
 
-  // The Visit Location default must follow the canonical backend visit
-  // schedule for today's India-local date. The dropdown remains editable
-  // after WhatsApp verification; this only controls the initial default.
-  const getTodayScheduledCityDefault=async()=>{
-    const today=U.parts();
-    try{
-      const r=await NeuronAPI.call("getScheduledCitiesForDate",{year:today.y,month:today.m,day:today.d},10000);
-      const scheduled=(r.cities||[]).map(x=>x.city).filter(x=>cities.includes(x));
-      return scheduled.length===1 ? scheduled[0] : (scheduled[0]||"Latur");
-    }catch(_){
-      // Preserve the existing safe default if the schedule lookup is
-      // temporarily unavailable; this does not alter booking behaviour.
-      return "Latur";
-    }
-  };
-
-  const applyTodayVisitLocationDefault=async()=>{
-    const city=await getTodayScheduledCityDefault();
-    $("city").value=city;
-    $("next").value=city;
-    return city;
-  };
-
   const resetFields=(mode)=>{
     type=mode; verified=false; selected=null;
     $("follow").classList.toggle("active",mode==="Follow-up");
@@ -94,8 +71,6 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("date").value="";
     delete $("date").dataset.key;
     $("unit").value="years";
-    // Keep the existing reset behaviour, but make today's Visit Location
-    // schedule-aware instead of hard-coding Latur.
     $("city").value="Latur"; $("next").value="Latur";
     $("city").disabled=true; $("date").disabled=true; $("next").disabled=true; $("book").disabled=true;
     $("waStatus").textContent=""; $("waStatus").style.color="";
@@ -111,6 +86,26 @@ document.addEventListener("DOMContentLoaded",()=>{
   const enableAfterWhatsApp=()=>{
     verified=true;
     $("city").disabled=false; $("date").disabled=false; $("next").disabled=false; $("book").disabled=false;
+  };
+
+  const clearFollowupResults=()=>{
+    selected=null;
+    $("patients").innerHTML="";
+    $("bookingFields").hidden=true;
+    $("confirmation").hidden=true;
+    $("confirmation").innerHTML="";
+    $("submitStatus").textContent="";
+    $("submitStatus").style.color="";
+    ["name","age","address","ref"].forEach(id=>{$(id).value="";});
+    $("unit").value="years";
+    $("payMode").value="Cash";
+    $("amount").value="500";
+    $("cash").value=""; $("online").value="";
+    updatePaymentUI();
+    $("city").disabled=true; $("date").disabled=true; $("next").disabled=true; $("book").disabled=true;
+    $("date").value="";
+    delete $("date").dataset.key;
+    $("cal").hidden=true; $("cal").innerHTML="";
   };
 
   /*
@@ -155,8 +150,8 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("payMode").onchange=updatePaymentUI;
   $("cash").oninput=updateSplitTotal; $("online").oninput=updateSplitTotal;
 
-  $("follow").onclick=async()=>{resetFields("Follow-up"); const city=await applyTodayVisitLocationDefault(); await setNextAvailableDate(city); $("cal").hidden=true;};
-  $("new").onclick=async()=>{resetFields("New"); const city=await applyTodayVisitLocationDefault(); await setNextAvailableDate(city); $("cal").hidden=true;};
+  $("follow").onclick=async()=>{resetFields("Follow-up"); await setNextAvailableDate($("city").value); $("cal").hidden=true;};
+  $("new").onclick=async()=>{resetFields("New"); await setNextAvailableDate($("city").value); $("cal").hidden=true;};
 
   $("wa").oninput=e=>e.target.value=U.phone(e.target.value);
   $("followWa").oninput=e=>e.target.value=U.phone(e.target.value);
@@ -294,19 +289,20 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("date").onclick=()=>renderCalendar();
 
   $("load").onclick=async()=>{
-    // Starting a new patient retrieval must collapse any previous booking confirmation.
-    $("confirmation").hidden=true;
-    $("confirmation").innerHTML="";
+    // Starting a new patient retrieval must clear all previous follow-up results.
+    clearFollowupResults();
     const p=U.phone($("followWa").value);
-    $("followStatus").textContent=""; $("patients").innerHTML="";
+    $("followStatus").textContent="";
     if(!U.validPhone(p)){
       $("followStatus").textContent="Enter a valid 10-digit WhatsApp number.";
       $("followStatus").style.color="#b42318";
       return;
     }
-    $("followStatus").textContent="Searching patient records…";
-    $("followStatus").style.color="#7b1fa2";
     $("load").disabled=true;
+    $("load").textContent="Loading...";
+    $("load").className="btn btn-primary";
+    $("followStatus").textContent="Wait Searching Patient Records...";
+    $("followStatus").style.color="#7b1fa2";
     try{
       const r=await NeuronAPI.call("getPatientHistoryByWhatsApp",{whatsapp:p});
       $("patients").innerHTML="";
@@ -314,6 +310,10 @@ document.addEventListener("DOMContentLoaded",()=>{
         const b=document.createElement("button"); b.type="button"; b.className="patient-option";
         b.innerHTML=`<b>${U.esc(x.name)}</b><small>${U.esc(x.age)} ${U.esc(x.ageUnit)} • ${U.esc(x.city)} • ${U.date(x.date)}</small>`;
         b.onclick=()=>{
+          // Selecting another patient invalidates any previous confirmation.
+          $("confirmation").hidden=true;
+          $("confirmation").innerHTML="";
+          $("submitStatus").textContent="";
           selected=x; document.querySelectorAll(".patient-option").forEach(z=>z.classList.remove("selected")); b.classList.add("selected");
           $("name").value=U.title(x.name);
           const followupAge=currentFollowupAge(x.age,x.ageUnit,x.date);
@@ -349,15 +349,19 @@ document.addEventListener("DOMContentLoaded",()=>{
       $("followStatus").textContent="Unable to retrieve patient details: "+(e.message||"Network/server error.");
       $("followStatus").style.color="#b42318";
     }
-    finally{$("load").disabled=false;}
+    finally{
+      $("load").disabled=false;
+      $("load").textContent="Load";
+      $("load").className="btn btn-secondary";
+    }
   };
 
   $("book").onclick=async()=>{
     if($("book").disabled)return;
     $("book").disabled=true;
-    $("book").textContent="Booking OPD Appointment";
-    $("book").className="btn btn-primary";
-    $("submitStatus").textContent="Booking OPD appointment…";
+    $("book").textContent="Confirming Appointment...";
+    $("book").className="btn btn-secondary";
+    $("submitStatus").textContent="Wait we are Confirming your OPD Appointment..";
     $("submitStatus").style.color="#7b1fa2";
 
     const payMode=$("payMode").value;
@@ -440,5 +444,5 @@ document.addEventListener("DOMContentLoaded",()=>{
 
   fillCities();
   resetFields("Follow-up");
-  applyTodayVisitLocationDefault().then(city=>setNextAvailableDate(city));
+  setNextAvailableDate($("city").value);
 });
