@@ -429,10 +429,33 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("followStatus").style.color="#7b1fa2";
     try{
       const followCity=$("followCity")?$("followCity").value:"";
-      const r=await NeuronAPI.call("getPatientHistoryByWhatsApp",{whatsapp:p,city:followCity},60000);
+      const __followupFrontendStart = performance.now();
+console.debug("FOLLOWUP_FRONTEND_LOAD_CLICK", {
+  whatsapp: p,
+  city: followCity,
+  tMs: Math.round(__followupFrontendStart)
+});
+
+console.debug("FOLLOWUP_FRONTEND_API_START", {
+  elapsedMs: Math.round(performance.now() - __followupFrontendStart)
+});
+
+const r = await NeuronAPI.call("getPatientHistoryByWhatsApp", {
+  whatsapp: p,
+  city: followCity
+}, 60000);
+
+console.debug("FOLLOWUP_FRONTEND_API_RESPONSE", {
+  elapsedMs: Math.round(performance.now() - __followupFrontendStart),
+  patients: Array.isArray(r && r.patients) ? r.patients.length : 0
+});
       let patients=Array.isArray(r.patients)?r.patients.slice():[];
       patients=cleanFollowupPatients(patients);
-      $("patients").innerHTML="";
+      console.debug("FOLLOWUP_FRONTEND_RENDER_START", {
+  elapsedMs: Math.round(performance.now() - __followupFrontendStart),
+  patients: patients.length
+});
+$("patients").innerHTML="";
 
       // Backend now searches only the selected city.
       // Display returned patients directly.
@@ -486,10 +509,18 @@ document.addEventListener("DOMContentLoaded",()=>{
         $("patients").appendChild(renderPatient(x));
       });
 
-      if(patients.length===1) $("patients").querySelector(".patient-option").click();
+      console.debug("FOLLOWUP_FRONTEND_RENDER_DONE", {
+  elapsedMs: Math.round(performance.now() - __followupFrontendStart),
+  patients: patients.length,
+  patientListChildren: $("patients").children.length
+});
+
+if(patients.length===1) $("patients").querySelector(".patient-option").click();
 
       if(!patients.length){
-        $("followStatus").textContent="No patient found for this WhatsApp number.";
+        $("followStatus").textContent = r.notFound
+          ? `No previous consultation found for ${p} in ${followCity}.`
+          : "No patient found for this WhatsApp number.";
         $("followStatus").style.color="#b42318";
       }else{
         $("followStatus").textContent=`${patients.length} patient(s) found.`;
