@@ -147,23 +147,12 @@ document.addEventListener("DOMContentLoaded",()=>{
     $('bookMessage').hidden=false;
     $('bookMessage').textContent='Wait we are Confirming your EEG Booking...';
     const id=U.uuid('eeg'),p={eegBookingRequestId:id,appointmentId:sel.appointmentId,whatsapp:U.phone($('wa').value),city:$('city').value,eegCharges:total,eegPaymentMode:m,eegCashPaid:c,eegOnlinePaid:o};
-    await IDB.put('tx',{id,type:'EEG_BOOKING',status:'pending',payload:p});
     try{
       const r=await NeuronAPI.call('bookEEG',p,25000);
-      await IDB.put('tx',{id,type:'EEG_BOOKING',status:'complete',payload:p,result:r});
       $('confirmation').hidden=false;
       $('confirmation').innerHTML=`<div class="success"><div class="success-icon">✓</div><h2>EEG Appointment Confirmed</h2><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(r.patientName||sel.name)}</b></div><div class="confirm-row"><span>EEG Charges</span><b>${U.money(r.eegCharges)}</b></div></div>`;
     }catch(e){
-      try{
-        const s=await NeuronAPI.verifyBooking('EEG',id,p.city);
-        if(s&&s.found){
-          await IDB.put('tx',{id,type:'EEG_BOOKING',status:'complete',payload:p,result:s});
-          alert('Original EEG booking recovered: '+s.appointmentId);
-          return;
-        }
-      }catch(_){}
-      await IDB.put('tx',{id,type:'EEG_BOOKING',status:'uncertain',payload:p});
-      alert('EEG booking status is uncertain. Do not book again.');
+      alert(e.message||'EEG booking failed. Please try again.');
     }finally{
       $('book').disabled=false;
       $('book').textContent='Book EEG Appointment';

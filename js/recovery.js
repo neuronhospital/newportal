@@ -5,7 +5,6 @@ document.addEventListener("DOMContentLoaded",async()=>{
   try{
    let r=null;
    if(x.type==="OPD_BOOKING")r=await NeuronAPI.call("checkBookingRequest",{bookingRequestId:x.id,city:x.payload.city},10000);
-   if(x.type==="EEG_BOOKING")r=await NeuronAPI.call("checkEEGBookingRequest",{eegBookingRequestId:x.id,city:x.payload.city},10000);
    if(r&&r.found)await IDB.put("tx",{...x,status:"complete",result:r,recoveredAt:Date.now()});
   }catch(_){}
  }
