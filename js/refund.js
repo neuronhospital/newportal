@@ -25,8 +25,16 @@ function loadRefund(){
  api({action:'getRefundPatients',whatsapp:document.getElementById('whatsapp').value,city:document.getElementById('refundCity').value}).then(x=>{
   b.textContent='Load';b.disabled=false;
   if(!x.ok) throw Error(x.error||'Error');
+  const patients=x.patients||[];
+  if(!patients.length){
+   document.getElementById('status').textContent=x.todayAppointmentFound===false
+    ? `No today's appointment found for ${document.getElementById('whatsapp').value} in ${document.getElementById('refundCity').value}.`
+    : `No refundable patient found for this WhatsApp number in ${document.getElementById('refundCity').value} for today.`;
+   document.getElementById('status').style.color='#b42318';
+   return;
+  }
   document.getElementById('status').textContent='';
-  render(x.patients||[]);
+  render(patients);
  }).catch(e=>{b.textContent='Load';b.disabled=false;document.getElementById('status').textContent=e.message;});
 }
 function render(list){

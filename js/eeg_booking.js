@@ -92,6 +92,14 @@ document.addEventListener("DOMContentLoaded",()=>{
     try{
       const r=await NeuronAPI.call('getEEGBookingPatients',{whatsapp:U.phone($('wa').value),city:$('city').value});
       $('patients').innerHTML='';
+      if(!r.patients.length){
+        $('status').textContent = r.todayAppointmentFound===false
+          ? `No today's appointment found for ${U.phone($('wa').value)} in ${$('city').value}.`
+          : `No patient awaiting EEG booking was found for this WhatsApp number in ${$('city').value} for today.`;
+        $('status').style.color='#b42318';
+      }else{
+        $('status').textContent='';
+      }
       r.patients.forEach((x,i)=>{
         const b=document.createElement('button');
         b.className='patient-option';
