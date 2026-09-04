@@ -37,10 +37,13 @@ function render(list){
  list = (list || []).filter(p=>{
   const opdPaid = Number(p.opdTotalPaid || 0);
   const eegPaid = Number(p.eegTotalPaid || 0);
-  const opdRefund = Number(p.opdRefund || 0);
-  const eegRefund = Number(p.eegRefund || 0);
-  const opdPending = opdPaid > 0 && opdRefund <= 0;
-  const eegPending = eegPaid > 0 && eegRefund <= 0;
+  // Refund eligibility must follow the backend rule exactly:
+  // U/V empty = refund not yet provided; U/V non-empty = already refunded.
+  // Do not infer refund status from the numeric refund amount.
+  const opdRefundProvided = p.opdRefundProvided === true;
+  const eegRefundProvided = p.eegRefundProvided === true;
+  const opdPending = opdPaid > 0 && !opdRefundProvided;
+  const eegPending = eegPaid > 0 && !eegRefundProvided;
   p.refundAvailable = {opd:opdPending,eeg:eegPending};
   return opdPending || eegPending;
  });

@@ -56,6 +56,14 @@ document.addEventListener("DOMContentLoaded",()=>{
 
   const getScheduledCityForToday=()=>Schedule.cityAtNow(cities);
 
+  const initFollowupCity=()=>{
+    const el=$("followCity");
+    if(!el)return;
+    el.innerHTML=cities.map(c=>`<option value="${U.esc(c)}">${U.esc(c)}</option>`).join("");
+    const scheduled=getScheduledCityForToday();
+    if(scheduled)el.value=scheduled;
+  };
+
   // Follow-up ordering uses the numeric timestamp calculated by the backend.
   // This avoids re-parsing Google Sheets Date/ISO/DD-MM-YYYY values in the
   // browser and guarantees that the same timestamp used for server-side
@@ -420,14 +428,14 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("followStatus").textContent="Wait We are Loading Patient details...";
     $("followStatus").style.color="#7b1fa2";
     try{
-      const r=await NeuronAPI.call("getPatientHistoryByWhatsApp",{whatsapp:p},60000);
-      const groups=Array.isArray(r.groups)?r.groups:[];
+      const followCity=$("followCity")?$("followCity").value:"";
+      const r=await NeuronAPI.call("getPatientHistoryByWhatsApp",{whatsapp:p,city:followCity},60000);
       let patients=Array.isArray(r.patients)?r.patients.slice():[];
       patients=cleanFollowupPatients(patients);
       $("patients").innerHTML="";
 
-      // Display one clearly separated section per city. Scheduled city/cities
-      // are returned first by the backend; records within each city are newest first.
+      // Backend now searches only the selected city.
+      // Display returned patients directly.
       const renderPatient=(x)=>{
         const b=document.createElement("button"); b.type="button"; b.className="patient-option";
         b.innerHTML=`<b>${U.esc(x.name)}</b><small>${U.esc(x.age)} ${U.esc(x.ageUnit)} • ${U.esc(x.city)} • ${U.date(x.date)}</small>`;
@@ -646,6 +654,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     }
   };
 
+  initFollowupCity();
   fillCities();
   resetFields("Follow-up");
   setNextAvailableDate($("city").value);
