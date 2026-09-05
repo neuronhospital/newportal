@@ -21,10 +21,11 @@ function loadRefund(){
  if(!validWhatsapp()) return;
  resetRefundView();
  const b=document.getElementById('loadBtn');b.textContent='Loading...';b.disabled=true;
+ document.getElementById('status').style.color='';
  document.getElementById('status').textContent='Wait we are retrieving patient information';
  api({action:'getRefundPatients',whatsapp:document.getElementById('whatsapp').value,city:document.getElementById('refundCity').value}).then(x=>{
   b.textContent='Load';b.disabled=false;
-  if(!x.ok) throw Error(x.error||'Error');
+  if(!x.ok) throw Error(x.error||'Unable to retrieve patient information.');
   const patients=x.patients||[];
   if(!patients.length){
    document.getElementById('status').textContent=x.todayAppointmentFound===false
@@ -35,7 +36,11 @@ function loadRefund(){
   }
   document.getElementById('status').textContent='';
   render(patients);
- }).catch(e=>{b.textContent='Load';b.disabled=false;document.getElementById('status').textContent=e.message;});
+ }).catch(e=>{
+  b.textContent='Load';b.disabled=false;
+  document.getElementById('status').style.color='#b42318';
+  document.getElementById('status').textContent=e.message||'Unable to retrieve patient information.';
+ });
 }
 function render(list){
  const d=document.getElementById('patients');d.innerHTML='';
@@ -79,18 +84,45 @@ function selectPatient(p,x){
 function save(){
  const btn=document.getElementById('refundBtn');
  if(!btn||!selected)return;
+ const status=document.getElementById('refundStatus');
+ const inputs=[document.getElementById('opdRefund'),document.getElementById('eegRefund')].filter(Boolean);
  btn.textContent='Processing Refund';btn.disabled=true;
- document.getElementById('refundStatus').textContent='Wait we are Processing refund';
+ inputs.forEach(i=>i.disabled=true);
+ if(status){status.style.color='';status.textContent='Wait we are Processing refund';}
  const opdVal=Number((document.getElementById('opdRefund')||{}).value)||0;
  const eegVal=Number((document.getElementById('eegRefund')||{}).value)||0;
- if(opdVal<=0 && eegVal<=0){btn.disabled=false;btn.textContent='Refund';document.getElementById('refundStatus').textContent='Enter refund amount';return;}
- if(opdVal>Number(selected.opdTotalPaid||0) || eegVal>Number(selected.eegTotalPaid||0) || opdVal<0 || eegVal<0){btn.disabled=false;btn.textContent='Refund';document.getElementById('refundStatus').textContent='Refund amount cannot exceed paid amount and must be greater than zero';return;}
- api({action:'saveRefund',appointmentId:selected.appointmentId,city:selected.city,whatsapp:selected.whatsapp,opdRefund:opdVal,eegRefund:eegVal,updateOPD:opdVal>0,updateEEG:eegVal>0}).then(x=>{
-  if(!x.ok) throw Error(x.error||'Refund failed');
-  const type=[]; if(opdVal>0) type.push('OPD Refund ₹'+opdVal); if(eegVal>0) type.push('EEG Refund ₹'+eegVal);
-  document.getElementById('confirmation').innerHTML='<div class="card" style="text-align:center;background:#c8f7c5"><div style="font-size:40px">✓</div><b>Refund Processed Successfully</b><br><br>Patient Name: '+selected.name+'<br>Age: '+(selected.age||'')+'<br>Appointment ID: '+selected.appointmentId+'<br>'+type.join('<br>')+'</div>';
-  document.getElementById('refundStatus').textContent='';
- }).catch(e=>{btn.disabled=false;btn.textContent='Refund';document.getElementById('refundStatus').textContent=e.message;});
+ if(!Number.isFinite(opdVal)||!Number.isFinite(eegVal)){
+  inputs.forEach(i=>i.disabled=false);btn.disabled=false;btn.textContent='Refund';
+  if(status){status.style.color='#b42318';status.textContent='Enter valid refund amount';}
+  return;
+ }
+ if(opdVal<=0 && eegVal<=0){
+  inputs.forEach(i=>i.disabled=false);btn.disabled=false;btn.textContent='Refund';
+  if(status){status.style.color='#b42318';status.textContent='Enter refund amount';}
+  return;
+ }
+ if(opdVal>Number(selected.opdTotalPaid||0) || eegVal>Number(selected.eegTotalPaid||0) || opdVal<0 || eegVal<0){
+  inputs.forEach(i=>i.disabled=false);btn.disabled=false;btn.textContent='Refund';
+  if(status){status.style.color='#b42318';status.textContent='Refund amount cannot exceed paid amount and must be greater than zero';}
+  return;
+ }
+ api({action:'saveRefund',appointmentId:selected.appointmentId,rowNumber:selected.rowNumber,city:selected.city,whatsapp:selected.whatsapp,opdRefund:opdVal,eegRefund:eegVal,updateOPD:opdVal>0,updateEEG:eegVal>0}).then(x=>{
+  if(!x.ok||!x.patient) throw Error(x.error||'Refund failed.');
+  const saved=x.patient;
+  selected=saved;
+  selected.refundAvailable={opd:false,eeg:false};
+  const type=[];
+  if(opdVal>0) type.push('OPD Refund ₹'+(Number(saved.opdRefund)||opdVal));
+  if(eegVal>0) type.push('EEG Refund ₹'+(Number(saved.eegRefund)||eegVal));
+  document.getElementById('confirmation').innerHTML='<div class="card" style="text-align:center;background:#c8f7c5"><div style="font-size:40px">✓</div><b>Refund Processed Successfully</b><br><br>Patient Name: '+(saved.name||'')+'<br>Age: '+(saved.age||'')+'<br>Appointment ID: '+(saved.appointmentId||'')+'<br>'+type.join('<br>')+'</div>';
+  btn.textContent='Refund Completed';
+  btn.disabled=true;
+  inputs.forEach(i=>i.disabled=true);
+  if(status){status.style.color='';status.textContent='';}
+ }).catch(e=>{
+  inputs.forEach(i=>i.disabled=false);btn.disabled=false;btn.textContent='Refund';
+  if(status){status.style.color='#b42318';status.textContent=e.message||'Refund failed. No success was recorded.';}
+ });
 }
 function resetRefundView(){
  selected=null;
