@@ -56,7 +56,7 @@ document.addEventListener("DOMContentLoaded",()=>{
        city:citySelect.value,
        period:selectedPeriod,
        showMode:"both"
-     },25000);
+     },60000);
      if(citySelect.value==="all") r.city="All City Combined";
      const relativeLabel=retrievalPeriodLabel(selectedPeriod);
      if(relativeLabel) r.periodLabel=relativeLabel;
