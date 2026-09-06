@@ -152,14 +152,32 @@ document.addEventListener("DOMContentLoaded",()=>{
      $("results").innerHTML=`<div class="status">No Record Available for ${city}, ${dateLabel}, Patient / EEG.</div>`;
      return;
    }
-   html+=bothTable(rows);
+   const recentPatientTable = selectedPeriodForPatientTable(r.period);
+   html+=recentPatientTable
+     ? bothTable(rows)
+     : `<div class="patient-detail-load" style="margin-top:12px;text-align:center">
+         <button id="loadPatientDetail" class="btn btn-secondary">Load Patient Detail Table</button>
+       </div>`;
    html+=`<div class="download-row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:nowrap">
      <button id="downloadCsv" class="btn btn-secondary">⬇ Download CSV</button>
      <button id="downloadMobile" class="btn btn-secondary">⬇ Mobile Number</button>
    </div>`;
    $("results").innerHTML=html;
+   if(!recentPatientTable){
+     $("loadPatientDetail").onclick=()=>{
+       const loadBtn=$("loadPatientDetail");
+       loadBtn.disabled=true;
+       loadBtn.textContent="Loading Patient Detail Table…";
+       const holder=loadBtn.parentElement;
+       holder.innerHTML=bothTable(rows);
+     };
+   }
    $("downloadCsv").onclick=()=>downloadCSV(r);
    $("downloadMobile").onclick=()=>downloadMobileNumbers(r);
+ }
+
+ function selectedPeriodForPatientTable(period){
+   return period==="today" || period==="yesterday" || period==="daybefore";
  }
 
  function bothTable(rows){
