@@ -149,8 +149,18 @@ document.addEventListener("DOMContentLoaded",()=>{
     const id=U.uuid('eeg'),p={eegBookingRequestId:id,appointmentId:sel.appointmentId,rowNumber:sel.rowNumber,whatsapp:U.phone($('wa').value),city:$('city').value,eegCharges:total,eegPaymentMode:m,eegCashPaid:c,eegOnlinePaid:o};
     try{
       const r=await NeuronAPI.call('bookEEG',p,25000);
+      const confirmationPatient=r.patientName||sel.name;
+      $('confirmation').innerHTML=`<div class="success"><div class="success-icon">✓</div><h2>EEG Appointment Confirmed</h2><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(confirmationPatient)}</b></div><div class="confirm-row"><span>EEG Charges</span><b>${U.money(r.eegCharges)}</b></div></div>`;
+      $('patients').innerHTML='';
+      sel=null;
+      $('payment').hidden=true;
+      $('paymentPatientName').textContent='';
+      $('amount').value='';
+      $('cash').value='';
+      $('online').value='';
+      $('total').textContent='₹0';
+      $('status').textContent='';
       $('confirmation').hidden=false;
-      $('confirmation').innerHTML=`<div class="success"><div class="success-icon">✓</div><h2>EEG Appointment Confirmed</h2><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(r.patientName||sel.name)}</b></div><div class="confirm-row"><span>EEG Charges</span><b>${U.money(r.eegCharges)}</b></div></div>`;
     }catch(e){
       alert(e.message||'EEG booking failed. Please try again.');
     }finally{

@@ -34,13 +34,19 @@ document.addEventListener("DOMContentLoaded",()=>{
    return `${prefix} (${dateText})`;
  }
 
+ const HISTORY_KEY="neuron_statistics_history_access";
+ const HISTORY_PASSWORD_HASH="114f4b4bbf1f4a3a58064199f0e9d241566f356756ee58e5d160d3937e6ac740";
+ function hasHistoricalAccess(){return localStorage.getItem(HISTORY_KEY)==="1";}
  function clearResults(){
    $("results").innerHTML="";
+   $("historyGate").hidden=true;
+   $("historyPassword").value="";
+   $("historyStatus").textContent="";
  }
  [$("city"),$("period")].forEach(el=>el.addEventListener("change",clearResults));
 
 
- $("get").onclick=async()=>{
+ async function retrieveSelectedRecords(){
    const btn=$("get");
    const citySelect=$("city");
    const periodSelect=$("period");
@@ -49,6 +55,7 @@ document.addEventListener("DOMContentLoaded",()=>{
    btn.disabled=true;
    citySelect.disabled=true;
    periodSelect.disabled=true;
+   $("historyGate").hidden=true;
    btn.textContent="Retrieving Records…";
    $("results").innerHTML=`<div class="status">Retrieving records from Google Sheets…</div>`;
    try{
@@ -70,7 +77,41 @@ document.addEventListener("DOMContentLoaded",()=>{
      periodSelect.disabled=false;
      btn.textContent=old;
    }
+ }
+
+ async function requestHistoricalAccess(){
+   const input=$("historyPassword");
+   const btn=$("historyUnlock");
+   const status=$("historyStatus");
+   btn.disabled=true;
+   status.textContent="Verifying access…";
+   try{
+     const enteredHash=await sha256(input.value);
+     if(enteredHash!==HISTORY_PASSWORD_HASH) throw Error("Incorrect historical statistics password.");
+     localStorage.setItem(HISTORY_KEY,"1");
+     input.value="";
+     status.textContent="Historical access granted.";
+     await retrieveSelectedRecords();
+   }catch(e){
+     status.textContent=e.message||"Unable to unlock historical statistics.";
+   }finally{
+     btn.disabled=false;
+   }
+ }
+
+ $("get").onclick=async()=>{
+   const selectedPeriod=$("period").value;
+   if(selectedPeriod!=="today" && !hasHistoricalAccess()){
+     $("results").innerHTML="";
+     $("historyGate").hidden=false;
+     $("historyStatus").textContent="";
+     $("historyPassword").focus();
+     return;
+   }
+   await retrieveSelectedRecords();
  };
+ $("historyUnlock").onclick=requestHistoricalAccess;
+
 
  function money(n){return U.money(Number(n)||0)}
  function esc(v){return U.esc(v)}
@@ -99,13 +140,12 @@ document.addEventListener("DOMContentLoaded",()=>{
      <div class="stat service-stat"><small>Free</small><strong>${freeOPD}</strong></div>
      <div class="stat service-stat"><small>Free</small><strong>${freeEEG}</strong></div>
    </div>
-   <div class="collection-card">
-     <div class="collection-grid collection-head"><div></div><div>OPD</div><div>EEG</div><div>OPD+EEG</div><div>Net Total</div></div>
-     <div class="collection-grid"><div class="collection-label">Cash</div><div>${money(t.opdCash)}</div><div>${money(t.eegCash)}</div><div>${money(totalCash)}</div><div>${money(netCash)}</div></div>
-     <div class="collection-grid"><div class="collection-label">Online</div><div>${money(t.opdOnline)}</div><div>${money(t.eegOnline)}</div><div>${money(totalOnline)}</div><div>${money(netOnline)}</div></div>
-     <div class="collection-grid"><div class="collection-label">Refund</div><div>${money(totalRefundOPD)}</div><div>${money(totalRefundEEG)}</div><div>${money(totalRefund)}</div><div>${money(totalRefund)}</div></div>
-     <div class="collection-grid collection-total"><div class="collection-label">Total</div><div>${money(t.opdPaid)}</div><div>${money(t.eegPaid)}</div><div>${money(totalCollection)}</div><div>${money(netTotal)}</div></div>
-   </div>`;
+   <div class="collection-card"><div class="collection-table-wrap"><table class="collection-table"><thead><tr><th></th><th>OPD</th><th>EEG</th><th>OPD+EEG</th><th>Net Total</th></tr></thead><tbody>
+     <tr><th class="collection-label">Cash</th><td>${money(t.opdCash)}</td><td>${money(t.eegCash)}</td><td>${money(totalCash)}</td><td>${money(netCash)}</td></tr>
+     <tr><th class="collection-label">Online</th><td>${money(t.opdOnline)}</td><td>${money(t.eegOnline)}</td><td>${money(totalOnline)}</td><td>${money(netOnline)}</td></tr>
+     <tr><th class="collection-label">Refund</th><td>${money(totalRefundOPD)}</td><td>${money(totalRefundEEG)}</td><td>${money(totalRefund)}</td><td>${money(totalRefund)}</td></tr>
+     <tr class="collection-total"><th class="collection-label">Total</th><td>${money(t.opdPaid)}</td><td>${money(t.eegPaid)}</td><td>${money(totalCollection)}</td><td>${money(netTotal)}</td></tr>
+   </tbody></table></div></div>`;
    if(!rows.length){
      const city=esc(r.city||$("city").value);
      const dateLabel=esc(r.periodLabel||$("period").selectedOptions[0]?.textContent||$("period").value);
