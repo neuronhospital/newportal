@@ -7,45 +7,6 @@ document.addEventListener("DOMContentLoaded",()=>{
   let bookingSessionId=0;
   let calendarYear=U.parts().y, calendarMonth=U.parts().m;
 
-  // v156: OPD booking trace logger. Console + persistent Debug_Log sheet.
-  const debugQueue=[];
-  let debugFlushTimer=null;
-  let debugFlushInFlight=null;
-  const flushDebugLogs=async(force=false)=>{
-    if(!debugQueue.length)return;
-    if(debugFlushInFlight){
-      if(force)try{await debugFlushInFlight;}catch(_){ }
-      return;
-    }
-    const batch=debugQueue.splice(0,50);
-    const run=(async()=>{
-      try{
-        const u=NEURON_CONFIG.apiUrl;
-        if(!u||u.includes("PASTE_YOUR")||!navigator.onLine)return;
-        await fetch(u,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({action:"debugLogBatch",logs:batch}),cache:"no-store",keepalive:true});
-      }catch(_){
-        // Never let diagnostic logging interfere with booking.
-      }
-    })();
-    debugFlushInFlight=run;
-    try{await run;}finally{debugFlushInFlight=null;}
-  };
-  const scheduleDebugFlush=()=>{
-    if(debugFlushTimer)return;
-    debugFlushTimer=setTimeout(()=>{
-      debugFlushTimer=null;
-      flushDebugLogs(false);
-    },200);
-  };
-  const debug_log=(step,details)=>{
-    try{
-      const safeDetails=details==null?"":details;
-      console.log("[OPD_BOOKING][DEBUG]",new Date().toISOString(),step,safeDetails);
-      debugQueue.push({step:String(step||""),details:safeDetails});
-      scheduleDebugFlush();
-    }catch(_){ }
-  };
-
 
   // Show today's India-local date in the appointment field by default.
   // The field remains disabled until WhatsApp verification, and the calendar
@@ -574,13 +535,8 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
   };
 
   $("book").onclick=async()=>{
-    debug_log("BOOK_CLICK",{disabled:$("book").disabled,bookingInProgress});
-    if($("book").disabled || bookingInProgress){
-      debug_log("BOOK_CLICK_IGNORED",{disabled:$("book").disabled,bookingInProgress});
-      return;
-    }
+    if($("book").disabled || bookingInProgress)return;
     bookingInProgress=true;
-    debug_log("BOOKING_STARTED",{type,bookingSessionId});
 
     const resetAfterValidationError=()=>{
       bookingInProgress=false;
@@ -591,11 +547,9 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
 
     const payMode=$("payMode").value;
     let c=0,o=0,total=0;
-    debug_log("PAYMENT_MODE_READ",{payMode});
     if(payMode==="Cash"){total=Number($("amount").value)||0;c=total;}
     else if(payMode==="Online"){total=Number($("amount").value)||0;o=total;}
     else{c=Number($("cash").value)||0;o=Number($("online").value)||0;total=c+o;}
-    debug_log("PAYMENT_CALCULATED",{payMode,cash:c,online:o,total});
 
     const requiredFields=[
       ["name","Please enter the patient's name."],
@@ -606,49 +560,28 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       ["date","Please select an available appointment date."],
       ["next","Please select next follow-up city."]
     ];
-    debug_log("VALIDATION_STARTED",{requiredFieldCount:requiredFields.length});
     for(const [field,message] of requiredFields){
       if(!String($(field)?.value||$(field)?.dataset?.key||"").trim()){
-        debug_log("VALIDATION_FAILED",{field});
         $("submitStatus").textContent=message;
         $("submitStatus").style.color="#b42318";
         $(field)?.focus();
         resetAfterValidationError();
-        debug_log("BOOKING_ABORTED_VALIDATION");
         return;
       }
     }
-    debug_log("REQUIRED_FIELDS_VALID");
-    if(total>2000){
-      $("submitStatus").textContent="OPD total cannot exceed ₹2000.";
-      $("submitStatus").style.color="#b42318";
-      debug_log("VALIDATION_FAILED",{reason:"total_gt_2000",total});
-      resetAfterValidationError();
-      debug_log("BOOKING_ABORTED_VALIDATION",{reason:"total_gt_2000"});
-      return;
-    }
-    if(total<0){
-      $("submitStatus").textContent="Enter a valid OPD amount.";
-      $("submitStatus").style.color="#b42318";
-      debug_log("VALIDATION_FAILED",{reason:"total_lt_0",total});
-      resetAfterValidationError();
-      debug_log("BOOKING_ABORTED_VALIDATION",{reason:"total_lt_0"});
-      return;
-    }
-    debug_log("AMOUNT_VALIDATION_COMPLETE",{total});
+    if(total>2000){$("submitStatus").textContent="OPD total cannot exceed ₹2000.";$("submitStatus").style.color="#b42318";resetAfterValidationError();return;}
+    if(total<0){$("submitStatus").textContent="Enter a valid OPD amount.";$("submitStatus").style.color="#b42318";resetAfterValidationError();return;}
 
     $("book").disabled=true;
     $("book").textContent="Confirming Appointment...";
     $("book").className="btn btn-primary";
     $("submitStatus").textContent="Wait We are Confirming your OPD Appointment...";
-    debug_log("UI_LOCKED_FOR_BOOKING",{payMode,total});
     $("submitStatus").style.color="#7b1fa2";
 
     // Lock fields only after all compulsory validation checks above pass.
     lockBookingFields(true);
 
     const id=U.uuid("opd");
-    debug_log("REQUEST_ID_CREATED",{requestId:id});
     const payload={
       bookingRequestId:id,
       childName:U.title($("name").value),
@@ -669,73 +602,46 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     };
 
     if(!payload.appointmentDate){
-      debug_log("PAYLOAD_VALIDATION_FAILED",{requestId:id,reason:"missing_appointmentDate"});
       $("submitStatus").textContent="Please select an available appointment date.";
       $("submitStatus").style.color="#b42318";
       $("book").disabled=false;
       $("book").textContent="Book OPD Appointment";
       $("book").className="cta";
-      debug_log("BOOKING_ABORTED_PAYLOAD_VALIDATION",{requestId:id});
       return;
     }
-    debug_log("PAYLOAD_VALIDATION_COMPLETE",{requestId:id});
 
     try{
       // Local recovery journaling is best-effort only. It must NEVER block
       // the actual online booking request or leave the UI stuck on Confirming.
-      debug_log("IDB_PENDING_START",{requestId:id});
       try{await Promise.race([
         IDB.put("tx",{id,type:"OPD_BOOKING",status:"pending",payload}),
         new Promise(resolve=>setTimeout(resolve,1500))
-      ]);debug_log("IDB_PENDING_COMPLETE",{requestId:id});}catch(e){ debug_log("IDB_PENDING_ERROR",{requestId:id,error:String(e&&e.message||e)}); }
+      ]);}catch(_){ }
 
       const currentBookingSession=bookingSessionId;
-      await flushDebugLogs(true);
-      debug_log("API_BOOK_START",{requestId:id,timeoutMs:25000});
       const r=await NeuronAPI.call("bookAppointment",payload,25000);
-      debug_log("API_BOOK_RESPONSE",{requestId:id,ok:!!r?.ok,alreadyRecorded:!!r?.alreadyRecorded,appointmentId:r?.appointmentId||""});
-      if(currentBookingSession!==bookingSessionId){
-        debug_log("STALE_BOOKING_SESSION",{requestId:id,currentBookingSession,bookingSessionId});
-        return;
-      }
-      debug_log("SESSION_CHECK_PASSED",{requestId:id,bookingSessionId});
-      try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:r});debug_log("IDB_COMPLETE",{requestId:id});}catch(e){ debug_log("IDB_COMPLETE_ERROR",{requestId:id,error:String(e&&e.message||e)}); }
+      if(currentBookingSession!==bookingSessionId)return;
+      try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:r});}catch(_){ }
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
       $("submitStatus").style.color="#168a4a";
-      debug_log("CONFIRMATION_BUILD_START",{requestId:id,appointmentId:r?.appointmentId||"",opdCharges:r?.opdCharges,cash:r?.opdCashPaid,online:r?.opdOnlinePaid});
       const confirmationHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Confirmed</h2><p class="city-confirm">For <b>${U.esc(payload.city||"")}</b> City</p><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(r.patientName)}</b></div><div class="confirm-row"><span>Age</span><b>${r.age} ${r.ageUnit}</b></div><div class="confirm-row"><span>Address</span><b>${U.esc(r.address||payload.address)}</b></div><div class="confirm-row"><span>Date of Booking</span><b>${U.date(r.date)}</b></div><div class="confirm-row"><span>OPD Charges</span><b>${U.money(r.opdCharges)}</b></div><div class="confirm-row"><span>Cash</span><b>${U.money(r.opdCashPaid)}</b></div><div class="confirm-row"><span>Online</span><b>${U.money(r.opdOnlinePaid)}</b></div><div class="confirm-row"><span>Next Follow-up City</span><b>${U.esc(r.nextFollowupCity||payload.nextFollowupCity)}</b></div></div>`;
-      debug_log("FORM_RESET_BEFORE_CONFIRMATION",{requestId:id});
       resetFields("Follow-up");
-      debug_log("FORM_RESET_COMPLETE",{requestId:id});
       // resetFields intentionally clears the booking form, so restore the
       // confirmation content AFTER the reset.
       $("confirmation").innerHTML=confirmationHTML;
-      debug_log("CONFIRMATION_HTML_SET",{requestId:id});
       $("confirmation").hidden=false;
-      debug_log("CONFIRMATION_SHOWN",{requestId:id,appointmentId:r?.appointmentId||""});
-      await flushDebugLogs(true);
-      requestAnimationFrame(()=>{
-        debug_log("CONFIRMATION_SCROLL",{requestId:id});
-        $("confirmation").scrollIntoView({behavior:"smooth",block:"center"});
-      });
+      requestAnimationFrame(()=>$("confirmation").scrollIntoView({behavior:"smooth",block:"center"}));
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
       $("submitStatus").style.color="#168a4a";
     }catch(e){
-      debug_log("API_BOOK_ERROR",{requestId:id,error:String(e&&e.message||e)});
-      debug_log("RECOVERY_START",{requestId:id,city:payload.city});
       try{
         const s=await NeuronAPI.verifyBooking("OPD",id,payload.city);
-        debug_log("RECOVERY_RESPONSE",{requestId:id,found:!!s?.found,appointmentId:s?.appointmentId||""});
         if(s&&s.found){
-          try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:s});debug_log("IDB_RECOVERY_COMPLETE",{requestId:id});}catch(e){ debug_log("IDB_RECOVERY_COMPLETE_ERROR",{requestId:id,error:String(e&&e.message||e)}); }
-          debug_log("RECOVERY_CONFIRMED",{requestId:id,appointmentId:s.appointmentId});
+          try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:s});}catch(_){ }
           const recoveredHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Recovered</h2><p>Appointment ID: <b>${U.esc(s.appointmentId)}</b></p><p>Original booking was already recorded. No duplicate was created.</p></div>`;
-          debug_log("RECOVERY_FORM_RESET",{requestId:id});
           resetFields("Follow-up");
           $("confirmation").innerHTML=recoveredHTML;
           $("confirmation").hidden=false;
-          debug_log("RECOVERY_CONFIRMATION_SHOWN",{requestId:id,appointmentId:s.appointmentId});
-          await flushDebugLogs(true);
           return;
         }
       }catch(_){}
@@ -744,16 +650,12 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       $("submitStatus").style.color="#b42318";
       alert("Booking status is uncertain. Do not book again.");
     }finally{
-      debug_log("BOOKING_FINALLY",{requestId:id,confirmationHidden:$("confirmation").hidden});
       if($("confirmation").hidden){
         bookingInProgress=false;
         $("book").disabled=false;
         $("book").textContent="Book OPD Appointment";
         $("book").className="cta";
-        debug_log("UI_UNLOCKED_AFTER_NO_CONFIRMATION",{requestId:id});
       }
-      debug_log("BOOKING_FLOW_END",{requestId:id,confirmationVisible:!$("confirmation").hidden});
-      await flushDebugLogs(true);
     }
   };
 
