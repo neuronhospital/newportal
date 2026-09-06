@@ -7,12 +7,42 @@ document.addEventListener("DOMContentLoaded",()=>{
   let bookingSessionId=0;
   let calendarYear=U.parts().y, calendarMonth=U.parts().m;
 
-  // v155: OPD booking trace logger. Logs execution milestones to the browser
-  // console without logging patient name, address, or WhatsApp number.
+  // v156: OPD booking trace logger. Console + persistent Debug_Log sheet.
+  const debugQueue=[];
+  let debugFlushTimer=null;
+  let debugFlushInFlight=null;
+  const flushDebugLogs=async(force=false)=>{
+    if(!debugQueue.length)return;
+    if(debugFlushInFlight){
+      if(force)try{await debugFlushInFlight;}catch(_){ }
+      return;
+    }
+    const batch=debugQueue.splice(0,50);
+    const run=(async()=>{
+      try{
+        const u=NEURON_CONFIG.apiUrl;
+        if(!u||u.includes("PASTE_YOUR")||!navigator.onLine)return;
+        await fetch(u,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({action:"debugLogBatch",logs:batch}),cache:"no-store",keepalive:true});
+      }catch(_){
+        // Never let diagnostic logging interfere with booking.
+      }
+    })();
+    debugFlushInFlight=run;
+    try{await run;}finally{debugFlushInFlight=null;}
+  };
+  const scheduleDebugFlush=()=>{
+    if(debugFlushTimer)return;
+    debugFlushTimer=setTimeout(()=>{
+      debugFlushTimer=null;
+      flushDebugLogs(false);
+    },200);
+  };
   const debug_log=(step,details)=>{
     try{
-      const suffix=details==null?"":details;
-      console.log("[OPD_BOOKING][DEBUG]",new Date().toISOString(),step,suffix);
+      const safeDetails=details==null?"":details;
+      console.log("[OPD_BOOKING][DEBUG]",new Date().toISOString(),step,safeDetails);
+      debugQueue.push({step:String(step||""),details:safeDetails});
+      scheduleDebugFlush();
     }catch(_){ }
   };
 
@@ -660,6 +690,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       ]);debug_log("IDB_PENDING_COMPLETE",{requestId:id});}catch(e){ debug_log("IDB_PENDING_ERROR",{requestId:id,error:String(e&&e.message||e)}); }
 
       const currentBookingSession=bookingSessionId;
+      await flushDebugLogs(true);
       debug_log("API_BOOK_START",{requestId:id,timeoutMs:25000});
       const r=await NeuronAPI.call("bookAppointment",payload,25000);
       debug_log("API_BOOK_RESPONSE",{requestId:id,ok:!!r?.ok,alreadyRecorded:!!r?.alreadyRecorded,appointmentId:r?.appointmentId||""});
@@ -682,6 +713,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       debug_log("CONFIRMATION_HTML_SET",{requestId:id});
       $("confirmation").hidden=false;
       debug_log("CONFIRMATION_SHOWN",{requestId:id,appointmentId:r?.appointmentId||""});
+      await flushDebugLogs(true);
       requestAnimationFrame(()=>{
         debug_log("CONFIRMATION_SCROLL",{requestId:id});
         $("confirmation").scrollIntoView({behavior:"smooth",block:"center"});
@@ -703,6 +735,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
           $("confirmation").innerHTML=recoveredHTML;
           $("confirmation").hidden=false;
           debug_log("RECOVERY_CONFIRMATION_SHOWN",{requestId:id,appointmentId:s.appointmentId});
+          await flushDebugLogs(true);
           return;
         }
       }catch(_){}
@@ -720,6 +753,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
         debug_log("UI_UNLOCKED_AFTER_NO_CONFIRMATION",{requestId:id});
       }
       debug_log("BOOKING_FLOW_END",{requestId:id,confirmationVisible:!$("confirmation").hidden});
+      await flushDebugLogs(true);
     }
   };
 
