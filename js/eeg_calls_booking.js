@@ -10,7 +10,13 @@ async function eegCallsSha256_(message){
 document.addEventListener("DOMContentLoaded",()=>{
   const $=id=>document.getElementById(id);
   const gate=$("gate"),password=$("password"),enter=$("enter"),bookingPortal=$("bookingPortal");
-  const showBookingPortal=()=>{gate.hidden=true;bookingPortal.hidden=false;};
+  const showBookingPortal=()=>{
+    gate.hidden=true;
+    bookingPortal.hidden=false;
+    // Keep the viewport at the top of the booking portal without focusing any form field.
+    window.scrollTo({top:0,left:0,behavior:"auto"});
+    if(document.activeElement && typeof document.activeElement.blur==="function") document.activeElement.blur();
+  };
   if(localStorage.getItem(EEG_CALLS_ACCESS_KEY)==="1") showBookingPortal();
   password.addEventListener("input",()=>{password.value=password.value.replace(/\D/g,"").slice(0,6);});
   enter.onclick=async()=>{
@@ -22,7 +28,6 @@ document.addEventListener("DOMContentLoaded",()=>{
       localStorage.setItem(EEG_CALLS_ACCESS_KEY,"1");
       const old=$("secureError"); if(old) old.remove();
       showBookingPortal();
-      const first=bookingPortal.querySelector("input,select,button"); if(first) first.focus();
     }catch(e){
       const old=$("secureError"); if(old) old.remove();
       const err=document.createElement("div"); err.id="secureError"; err.className="eeg-calls-secure-error"; err.textContent=e.message||"Unable to access portal."; gate.appendChild(err); password.focus();
@@ -30,7 +35,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       enter.disabled=false;enter.textContent="Access Portal";
     }
   };
-  if(!bookingPortal.hidden){const first=bookingPortal.querySelector("input,select,button"); if(first) first.focus();}
+  if(!bookingPortal.hidden) showBookingPortal();
   let bookingInProgress=false;
 
   const setStatus=(message,color="")=>{
