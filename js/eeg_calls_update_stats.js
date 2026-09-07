@@ -49,7 +49,7 @@ function eegCallsUpdateDownloadCsv_(){
     const rows=["Mobile Number",...patients.map(p=>String(p.whatsapp||"").replace(/\D/g,""))].filter((v,i)=>i===0||v);
     if(rows.length===1)throw Error("No current-month patient mobile numbers are available to download.");
 
-    const csv="\\uFEFF"+rows.map(v=>`"${v.replace(/"/g,'""')}"`).join("\\r\\n")+"\\r\\n";
+    const csv="\uFEFF"+rows.map(v=>`"${v.replace(/"/g,'""')}"`).join("\r\n")+"\r\n";
     const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
     const filename=`EEG-Calls-${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}-Mobile-Numbers.csv`;
 
