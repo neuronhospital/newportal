@@ -49,23 +49,38 @@ function eegCallsUpdateDownloadCsv_(){
     const rows=["Mobile Number",...patients.map(p=>String(p.whatsapp||"").replace(/\D/g,""))].filter((v,i)=>i===0||v);
     if(rows.length===1)throw Error("No current-month patient mobile numbers are available to download.");
 
-    const csv="\uFEFF"+rows.map(v=>`"${v.replace(/"/g,'""')}"`).join("\r\n")+"\r\n";
-    const now=new Date();
-    const yyyy=now.getFullYear(),mm=String(now.getMonth()+1).padStart(2,"0");
-    const filename=`EEG-Calls-${yyyy}-${mm}-Mobile-Numbers.csv`;
+    const csv="\\uFEFF"+rows.map(v=>`"${v.replace(/"/g,'""')}"`).join("\\r\\n")+"\\r\\n";
+    const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+    const filename=`EEG-Calls-${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}-Mobile-Numbers.csv`;
 
-    // Keep this entirely client-side: use the already-loaded current-month
-    // patient data. A data URL is used directly because it is more reliable
-    // for downloads inside Android/WebView-hosted pages than a Blob URL.
-    const a=document.createElement("a");
-    a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv);
-    a.download=filename;
-    a.target="_blank";
-    a.rel="noopener";
-    a.style.display="none";
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(()=>a.remove(),1000);
+    // Client-side only: use the already-loaded current-month data.
+    // Blob URL download avoids data: URL navigation, which can be rejected
+    // as an invalid URL by Android/WebView-hosted Apps Script pages.
+    if(typeof URL!=="undefined" && typeof URL.createObjectURL==="function"){
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=url;
+      a.download=filename;
+      a.style.display="none";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),2000);
+      return;
+    }
+
+    // Fallback for environments without Blob URL support.
+    const reader=new FileReader();
+    reader.onload=()=>{
+      const a=document.createElement("a");
+      a.href=reader.result;
+      a.download=filename;
+      a.style.display="none";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(()=>a.remove(),1000);
+    };
+    reader.readAsDataURL(blob);
   }catch(e){
     eegCallsUpdateShowHistoryError_(e.message||"Unable to download current-month EEG Calls details.");
   }
