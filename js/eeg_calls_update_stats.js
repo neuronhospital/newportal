@@ -191,6 +191,13 @@ async function eegCallsUpdateLoad_(){
 
 document.addEventListener("DOMContentLoaded",()=>{
   const gate=document.getElementById("gate"),password=document.getElementById("password"),enter=document.getElementById("enter");
+
+  // This portal has its own password/access state. Authentication in any
+  // other NEURON section must NOT grant EEG Calls access.
+  // EEG Calls Booking and EEG Calls Update & Statistics share only this key.
+  eegCallsUpdateShow_("loading",false);
+  eegCallsUpdateShow_("error",false);
+  eegCallsUpdateShow_("portal",false);
   const showPortal=()=>{eegCallsUpdateShow_("gate",false);eegCallsUpdateLoad_();};
   if(localStorage.getItem(EEG_CALLS_ACCESS_KEY)==="1"){showPortal();}
   password.addEventListener("input",()=>{password.value=password.value.replace(/\D/g,"").slice(0,6);});
