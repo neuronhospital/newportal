@@ -1,4 +1,4 @@
-const EEG_CALLS_UPDATE_ACCESS_KEY="neuron_eeg_calls_update_access";
+const EEG_CALLS_ACCESS_KEY="neuron_eeg_calls_access";
 const EEG_CALLS_UPDATE_PASSWORD_HASH="7931486c46d8a4d07e683f1dfa62296fe5ffe494746c59b02a5540a1f1423390";
 let eegCallsUpdateState={months:[],selected:null,busy:false,previousLoaded:false};
 
@@ -192,7 +192,7 @@ async function eegCallsUpdateLoad_(){
 document.addEventListener("DOMContentLoaded",()=>{
   const gate=document.getElementById("gate"),password=document.getElementById("password"),enter=document.getElementById("enter");
   const showPortal=()=>{eegCallsUpdateShow_("gate",false);eegCallsUpdateLoad_();};
-  if(localStorage.getItem(EEG_CALLS_UPDATE_ACCESS_KEY)==="1"){showPortal();}
+  if(localStorage.getItem(EEG_CALLS_ACCESS_KEY)==="1"){showPortal();}
   password.addEventListener("input",()=>{password.value=password.value.replace(/\D/g,"").slice(0,6);});
   enter.onclick=async()=>{
     enter.disabled=true;enter.textContent="Verifying…";
@@ -200,7 +200,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       if(!/^\d{6}$/.test(password.value))throw Error("Enter the 6-digit password.");
       const h=await eegCallsUpdateSha256_(password.value);
       if(h!==EEG_CALLS_UPDATE_PASSWORD_HASH)throw Error("Incorrect password.");
-      localStorage.setItem(EEG_CALLS_UPDATE_ACCESS_KEY,"1");showPortal();
+      localStorage.setItem(EEG_CALLS_ACCESS_KEY,"1");showPortal();
     }catch(e){
       const old=document.getElementById("secureError");if(old)old.remove();
       const err=document.createElement("div");err.id="secureError";err.className="eeg-calls-error";err.style.marginTop="10px";err.textContent=e.message||"Unable to access portal.";gate.appendChild(err);password.focus();
@@ -211,5 +211,5 @@ document.addEventListener("DOMContentLoaded",()=>{
   document.getElementById("loadPreviousCalls").onclick=eegCallsUpdateLoadPreviousCalls_;
   document.getElementById("downloadDetails").onclick=eegCallsUpdateDownloadCsv_;
   document.getElementById("editWhatsapp").addEventListener("input",e=>{e.target.value=e.target.value.replace(/\D/g,"").slice(0,10);});
-  password.focus();
+  if(!gate.hidden) password.focus();
 });

@@ -1,5 +1,36 @@
+const EEG_CALLS_ACCESS_KEY="neuron_eeg_calls_access";
+const EEG_CALLS_PASSWORD_HASH="7931486c46d8a4d07e683f1dfa62296fe5ffe494746c59b02a5540a1f1423390";
+
+async function eegCallsSha256_(message){
+  const data=new TextEncoder().encode(message);
+  const hash=await crypto.subtle.digest("SHA-256",data);
+  return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+
 document.addEventListener("DOMContentLoaded",()=>{
   const $=id=>document.getElementById(id);
+  const gate=$("gate"),password=$("password"),enter=$("enter"),bookingPortal=$("bookingPortal");
+  const showBookingPortal=()=>{gate.hidden=true;bookingPortal.hidden=false;};
+  if(localStorage.getItem(EEG_CALLS_ACCESS_KEY)==="1") showBookingPortal();
+  password.addEventListener("input",()=>{password.value=password.value.replace(/\D/g,"").slice(0,6);});
+  enter.onclick=async()=>{
+    enter.disabled=true;enter.textContent="Verifying…";
+    try{
+      if(!/^\d{6}$/.test(password.value)) throw Error("Enter the 6-digit password.");
+      const h=await eegCallsSha256_(password.value);
+      if(h!==EEG_CALLS_PASSWORD_HASH) throw Error("Incorrect password.");
+      localStorage.setItem(EEG_CALLS_ACCESS_KEY,"1");
+      const old=$("secureError"); if(old) old.remove();
+      showBookingPortal();
+      const first=bookingPortal.querySelector("input,select,button"); if(first) first.focus();
+    }catch(e){
+      const old=$("secureError"); if(old) old.remove();
+      const err=document.createElement("div"); err.id="secureError"; err.className="eeg-calls-secure-error"; err.textContent=e.message||"Unable to access portal."; gate.appendChild(err); password.focus();
+    }finally{
+      enter.disabled=false;enter.textContent="Access Portal";
+    }
+  };
+  if(!bookingPortal.hidden){const first=bookingPortal.querySelector("input,select,button"); if(first) first.focus();}
   let bookingInProgress=false;
 
   const setStatus=(message,color="")=>{
