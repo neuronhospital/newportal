@@ -1,6 +1,6 @@
 const EEG_CALLS_ACCESS_KEY="neuron_eeg_calls_access";
 const EEG_CALLS_UPDATE_PASSWORD_HASH="7931486c46d8a4d07e683f1dfa62296fe5ffe494746c59b02a5540a1f1423390";
-let eegCallsUpdateState={months:[],selected:null,busy:false,previousLoaded:false};
+let eegCallsUpdateState={months:[],selected:null,busy:false};
 
 async function eegCallsUpdateSha256_(message){
   const data=new TextEncoder().encode(message);
@@ -15,7 +15,7 @@ function eegCallsUpdatePatientHtml_(p,editable){
   const age=eegCallsUpdateEsc_(eegCallsUpdateAge_(p));
   const details=`<strong>${eegCallsUpdateEsc_(p.patientName)}</strong><small>(${age} • ${eegCallsUpdateEsc_(p.address)} • ${eegCallsUpdateEsc_(p.whatsapp)} • ${eegCallsUpdateMoney_(p.paymentReceived)} • ${eegCallsUpdateEsc_(p.referredBy)})</small>`;
   if(editable) return `<button type="button" class="eeg-call-patient" data-row="${Number(p.rowNumber)||0}">${details}</button>`;
-  return `<div class="eeg-call-patient" aria-label="${eegCallsUpdateEsc_(p.patientName)}">${details}</div>`;
+  return `<div class="eeg-call-patient eeg-call-patient-readonly" aria-label="${eegCallsUpdateEsc_(p.patientName)}">${details}</div>`;
 }
 function eegCallsUpdateRender_(r){
   const root=document.getElementById("monthlyStats");
@@ -25,13 +25,10 @@ function eegCallsUpdateRender_(r){
   let html="";
   months.forEach((m,i)=>{
     html+=`<section class="card month-card"><h2 class="month-heading">${eegCallsUpdateEsc_(m.label)} : <span class="month-summary">{ Total Calls = ${Number(m.totalCalls)||0}, Collection = ${eegCallsUpdateMoney_(m.collection)} }</span></h2>`;
-    const shouldShowPatients=i<2 || eegCallsUpdateState.previousLoaded;
-    if(shouldShowPatients){
-      if(m.patients&&m.patients.length){
-        html+=`<div class="patient-list">${m.patients.map(p=>eegCallsUpdatePatientHtml_(p,!!m.editable)).join("")}</div>`;
-      }else{
-        html+=`<div class="month-empty">No records available for this month.</div>`;
-      }
+    if(m.patients&&m.patients.length){
+      html+=`<div class="patient-list">${m.patients.map(p=>eegCallsUpdatePatientHtml_(p,!!m.editable)).join("")}</div>`;
+    }else{
+      html+=`<div class="month-empty">No records available for this month.</div>`;
     }
     html+=`</section>`;
   });
@@ -43,28 +40,6 @@ function eegCallsUpdateShowHistoryError_(message){
   box.textContent=message; box.hidden=false;
 }
 function eegCallsUpdateClearHistoryError_(){const box=document.getElementById("historyError");if(box){box.textContent="";box.hidden=true;}}
-async function eegCallsUpdateLoadPreviousCalls_(){
-  const btn=document.getElementById("loadPreviousCalls");
-  if(eegCallsUpdateState.previousLoaded||!btn)return;
-  btn.disabled=true; btn.textContent="Loading Previous Calls...";
-  eegCallsUpdateClearHistoryError_();
-  try{
-    const r=await NeuronAPI.call("getEEGCallsPreviousCalls",{},25000);
-    if(!r||r.ok===false||!Array.isArray(r.months))throw Error("The previous EEG Calls response was incomplete or invalid.");
-    const byKey=new Map(r.months.map(m=>[m.key,m]));
-    eegCallsUpdateState.months=eegCallsUpdateState.months.map((m,i)=>{
-      if(i<2)return m;
-      const loaded=byKey.get(m.key);
-      return loaded?{...m,...loaded,editable:false}:m;
-    });
-    eegCallsUpdateState.previousLoaded=true;
-    eegCallsUpdateRender_({months:eegCallsUpdateState.months});
-    btn.textContent="Previous Calls Loaded";
-  }catch(e){
-    eegCallsUpdateShowHistoryError_(e.message||"Unable to load previous EEG Calls. Please try again.");
-    btn.disabled=false; btn.textContent="Load Previous Calls";
-  }
-}
 function eegCallsUpdateDownloadCsv_(){
   eegCallsUpdateClearHistoryError_();
   try{
@@ -80,7 +55,10 @@ function eegCallsUpdateDownloadCsv_(){
     const now=new Date();
     const yyyy=now.getFullYear(),mm=String(now.getMonth()+1).padStart(2,"0");
     a.href=url; a.download=`EEG-Calls-${yyyy}-${mm}-Mobile-Numbers.csv`;
-    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
   }catch(e){eegCallsUpdateShowHistoryError_(e.message||"Unable to download current-month EEG Calls details.");}
 }
 function eegCallsUpdateRenderEdit_(p){
@@ -215,7 +193,6 @@ document.addEventListener("DOMContentLoaded",()=>{
   };
   document.getElementById("monthlyStats").addEventListener("click",e=>{const b=e.target.closest(".eeg-call-patient");if(!b)return;const row=Number(b.dataset.row);const patient=eegCallsUpdateState.months.flatMap(m=>Array.isArray(m.patients)?m.patients:[]).find(p=>Number(p.rowNumber)===row);if(patient)eegCallsUpdateRenderEdit_(patient);});
   document.getElementById("updateDetails").onclick=eegCallsUpdateSubmit_;
-  document.getElementById("loadPreviousCalls").onclick=eegCallsUpdateLoadPreviousCalls_;
   document.getElementById("downloadDetails").onclick=eegCallsUpdateDownloadCsv_;
   document.getElementById("editWhatsapp").addEventListener("input",e=>{e.target.value=e.target.value.replace(/\D/g,"").slice(0,10);});
   if(!gate.hidden) password.focus();
