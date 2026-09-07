@@ -613,10 +613,14 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     try{
       // Local recovery journaling is best-effort only. It must NEVER block
       // the actual online booking request or leave the UI stuck on Confirming.
-      try{await Promise.race([
-        IDB.put("tx",{id,type:"OPD_BOOKING",status:"pending",payload}),
-        new Promise(resolve=>setTimeout(resolve,1500))
-      ]);}catch(_){ }
+      try{
+		  IDB.put("tx",{
+		    id,
+		    type:"OPD_BOOKING",
+		    status:"pending",
+		    payload
+		  });
+		}catch(_){}
 
       const currentBookingSession=bookingSessionId;
       const r=await NeuronAPI.call("bookAppointment",payload,25000);
