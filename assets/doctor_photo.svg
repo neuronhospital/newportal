@@ -1,4 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="1000" height="1000" style="color-scheme:only light;forced-color-adjust:none">
+<style>svg{color-scheme:only light;forced-color-adjust:none} *{forced-color-adjust:none}</style>
 <circle cx="500" cy="500" r="488" fill="#FFFFFF"/>
 <circle cx="500" cy="500" r="480" fill="none" stroke="#0D175F" stroke-width="20"/>
 <circle cx="500" cy="500" r="433" fill="none" stroke="#B8C9D9" stroke-width="1.8"/>
