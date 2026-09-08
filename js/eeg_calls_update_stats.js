@@ -51,7 +51,7 @@ function eegCallsUpdateDownloadCsv_(){
 
     const csv="\uFEFF"+rows.map(v=>`"${v.replace(/"/g,'""')}"`).join("\r\n")+"\r\n";
     const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
-    const filename=`EEG-Calls-${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}-Mobile-Numbers.csv`;
+    const nowParts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit"}).formatToParts(new Date()); const gy=nowParts.find(x=>x.type==="year")?.value||""; const gm=nowParts.find(x=>x.type==="month")?.value||""; const filename=`EEG-Calls-${gy}-${gm}-Mobile-Numbers.csv`;
 
     // Client-side only: use the already-loaded current-month data.
     // Blob URL download avoids data: URL navigation, which can be rejected

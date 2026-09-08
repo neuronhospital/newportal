@@ -12,25 +12,25 @@ document.addEventListener("DOMContentLoaded",()=>{
    `<option value="today">Today</option>
     <option value="yesterday">Yesterday</option>
     <option value="daybefore">Day Before Yesterday</option>
-    <option value="${cur}">${new Intl.DateTimeFormat("en-IN",{month:"long",year:"numeric"}).format(new Date(q.y,q.m-1,1))}</option>
-    <option value="${(()=>{const d=new Date(q.y,q.m-2,1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`})()}">${new Intl.DateTimeFormat("en-IN",{month:"long",year:"numeric"}).format(new Date(q.y,q.m-2,1))}</option>
-    <option value="${(()=>{const d=new Date(q.y,q.m-3,1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`})()}">${new Intl.DateTimeFormat("en-IN",{month:"long",year:"numeric"}).format(new Date(q.y,q.m-3,1))}</option>
-    <option value="${(()=>{const d=new Date(q.y,q.m-4,1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`})()}">${new Intl.DateTimeFormat("en-IN",{month:"long",year:"numeric"}).format(new Date(q.y,q.m-4,1))}</option>
+    <option value="${cur}">${new Intl.DateTimeFormat("en-IN",{month:"long",year:"numeric",timeZone:"Asia/Kolkata"}).format(new Date(Date.UTC(q.y,q.m-1,1)))}</option>
+    <option value="${(()=>{const d=new Date(Date.UTC(q.y,q.m-2,1));return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}`})()}">${new Intl.DateTimeFormat("en-IN",{month:"long",year:"numeric",timeZone:"Asia/Kolkata"}).format(new Date(Date.UTC(q.y,q.m-2,1)))}</option>
+    <option value="${(()=>{const d=new Date(Date.UTC(q.y,q.m-3,1));return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}`})()}">${new Intl.DateTimeFormat("en-IN",{month:"long",year:"numeric",timeZone:"Asia/Kolkata"}).format(new Date(Date.UTC(q.y,q.m-3,1)))}</option>
+    <option value="${(()=>{const d=new Date(Date.UTC(q.y,q.m-4,1));return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}`})()}">${new Intl.DateTimeFormat("en-IN",{month:"long",year:"numeric",timeZone:"Asia/Kolkata"}).format(new Date(Date.UTC(q.y,q.m-4,1)))}</option>
     <option value="last12">Last 12 Months</option>
     <option value="currentyear">${q.y}</option>
     <option value="lastyear">${q.y-1}</option>`;
 
  function retrievalPeriodLabel(period){
-   const now=new Date();
-   const base=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+   const q=U.parts();
+   const base=new Date(Date.UTC(q.y,q.m-1,q.d));
    let offset=null, prefix="";
    if(period==="today"){offset=0;prefix="Today";}
    else if(period==="yesterday"){offset=1;prefix="Yesterday";}
    else if(period==="daybefore"){offset=2;prefix="Day before Yesterday";}
    if(offset===null)return null;
    const d=new Date(base);
-   d.setDate(d.getDate()-offset);
-   const dateText=new Intl.DateTimeFormat("en-IN",{weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(d);
+   d.setUTCDate(d.getUTCDate()-offset);
+   const dateText=new Intl.DateTimeFormat("en-IN",{weekday:"long",day:"numeric",month:"long",year:"numeric",timeZone:"Asia/Kolkata"}).format(d);
    return `${prefix} (${dateText})`;
  }
 
