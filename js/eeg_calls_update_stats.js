@@ -258,7 +258,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   if(localStorage.getItem(EEG_CALLS_ACCESS_KEY)==="1"){showPortal();}
   const focusSecurePassword=()=>{
     if(!gate||gate.hidden||!password)return;
-    setTimeout(()=>{try{password.focus({preventScroll:true});}catch(e){try{password.focus();}catch(_) {}}},300);
+    setTimeout(()=>{try{password.focus({preventScroll:true});}catch(e){try{password.focus();}catch(_) {}}},500);
   };
   let verifyPending=false;
   password.addEventListener("input",()=>{
