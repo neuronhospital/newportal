@@ -150,3 +150,57 @@
 }
 
 @media(max-width:699px){.service-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.service-card-title{min-width:82px;padding:8px 14px;font-size:18px}.service-card-body{min-height:72px;padding:10px 8px 12px}.service-metric span{font-size:13px}.service-metric strong{font-size:25px}.service-divider{height:42px}}
+
+
+/* Home portal grouped cards v169.1 */
+.portal-grid{display:grid;gap:12px}
+.portal-section{
+  position:relative;
+  overflow:visible;
+  background:#fff;
+  border:1px solid #d9dde7;
+  border-radius:14px;
+  box-shadow:0 6px 18px rgba(31,41,55,.06);
+  color:var(--ink);
+}
+.portal-section-title{
+  width:max-content;
+  max-width:calc(100% - 32px);
+  margin:-1px auto 0;
+  padding:6px 18px 7px;
+  border-radius:0 0 9px 9px;
+  font-size:14px;
+  line-height:1.2;
+  font-weight:850;
+  text-align:center;
+}
+.portal-section-opd .portal-section-title{background:#eef5ff;color:#24558f}
+.portal-section-eeg .portal-section-title{background:#f5efff;color:#6b2ca5}
+.portal-section-calls .portal-section-title{background:#fff0f7;color:#9a2563}
+.portal-section-admin .portal-section-title{background:#effaf1;color:#247044}
+.portal-actions{display:grid;grid-template-columns:1fr 1fr;min-height:68px;margin-top:2px}
+.portal-action{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:9px;
+  min-width:0;
+  padding:12px 10px;
+  color:var(--ink);
+  text-decoration:none;
+  font-size:16px;
+  font-weight:750;
+  -webkit-tap-highlight-color:transparent;
+  transition:background .15s ease,transform .1s ease;
+}
+.portal-action:first-child{border-right:1px solid var(--line)}
+.portal-action:active{background:#f8f8fb}
+.portal-action:focus-visible{outline:2px solid var(--p);outline-offset:-2px;border-radius:10px}
+.portal-action strong{font-size:inherit;font-weight:750;white-space:nowrap}
+.portal-action .portal-icon{width:34px;height:34px;flex:0 0 34px;margin:0}
+@media(min-width:700px){
+  .portal-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+  .portal-actions{min-height:72px}
+  .portal-action{font-size:17px}
+}
+@media(min-width:1050px){.portal-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
