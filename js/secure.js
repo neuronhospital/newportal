@@ -27,7 +27,7 @@ document.addEventListener("DOMContentLoaded",()=>{
 
  const focusPassword=()=>{
    if(!g || g.hidden) return;
-   try{ password.focus({preventScroll:false}); }catch(e){ password.focus(); }
+   try{ password.focus({preventScroll:true}); }catch(e){ password.focus(); }
  };
 
  const verify=async()=>{
