@@ -5,22 +5,22 @@
 .month-card{margin-bottom:18px}
 .month-heading{margin:0 0 12px;font-size:22px;font-weight:950;background:#f1f3f5;color:#111;padding:12px 14px;border-radius:10px}
 .eeg-table-wrap{max-width:100%;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
-.eeg-calls-table{table-layout:auto;border-collapse:collapse;white-space:nowrap;background:#fff}
+.eeg-calls-table{table-layout:auto;width:auto;min-width:0;border-collapse:collapse;white-space:nowrap;background:#fff}
 .eeg-calls-table th,.eeg-calls-table td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:middle}
 .eeg-calls-table th{font-weight:900;background:#f8f9fa}
 .eeg-calls-table td:first-child,.eeg-calls-table th:first-child{text-align:center}
-.eeg-call-patient-link{border:0;background:transparent;padding:0;margin:0;color:var(--p);font:inherit;font-weight:850;text-decoration:underline;cursor:pointer;white-space:nowrap}
+.eeg-call-patient-link{border:0;background:transparent;padding:0;margin:0;color:var(--p);font:inherit;font-weight:850;text-decoration:none;cursor:pointer;white-space:nowrap}
 .eeg-call-patient-name{font-weight:700}
-.month-empty{color:var(--muted);font-weight:800;padding:10px 0 2px}
-.month-total{text-align:center;font-weight:900;padding:12px 8px 2px;white-space:nowrap}
+.eeg-mobile-download{cursor:pointer;user-select:none}
+.month-empty{color:var(--muted);font-size:13px;font-weight:600;padding:10px 0 2px}
+.month-total{text-align:center;font-size:13px;font-weight:650;padding:12px 8px 2px;white-space:nowrap}
 .secure-note{text-align:center;color:var(--muted);font-size:12px;margin-top:6px}
 .eeg-edit-separator{border:0;border-top:1px solid var(--line);margin:28px 0 22px}
 .selected-patient{font-size:18px;font-weight:900;margin-bottom:18px}
 .update-busy{background:#6b7280 !important;color:#fff !important;opacity:1}
 .update-wait{text-align:center;font-weight:800;color:var(--p);margin-top:8px}
 .update-error{background:#fff3f2;border:1px solid #f3c2bd;color:#b42318;border-radius:12px;padding:12px;margin-top:10px;font-weight:700}
-.history-actions{display:flex;justify-content:center;gap:12px;margin:8px 0 0}.history-actions button{min-width:220px}
-.edit-actions{display:flex;gap:10px;margin-top:10px}.edit-actions button{flex:1}
+.edit-actions{display:flex;gap:10px;margin-top:10px}.edit-actions button{flex:1;min-height:46px;padding:12px 15px;border-radius:12px;white-space:nowrap}
 .changed-list{margin:8px 0 0;padding-left:22px;text-align:left}.success{text-align:left}.success h2{margin-top:0}
 </style></head><body data-title="EEG Calls : Update and Statistics"><div id="header"></div><main><div class="container">
 <section class="page-title"><h1>EEG Calls : Update and Statistics</h1></section>
@@ -29,7 +29,6 @@
 <section id="error" class="card eeg-calls-error" hidden></section>
 <section id="portal" hidden>
   <section id="monthlyStats"></section>
-  <div class="history-actions"><button id="downloadDetails" class="btn btn-secondary" type="button">Download Mobile Numbers</button></div>
   <div id="historyError" class="update-error" hidden></div>
   <hr class="eeg-edit-separator">
   <section id="edit" class="card" hidden>
