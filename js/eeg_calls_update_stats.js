@@ -256,8 +256,12 @@ document.addEventListener("DOMContentLoaded",()=>{
   eegCallsUpdateShow_("portal",false);
   const showPortal=()=>{eegCallsUpdateShow_("gate",false);eegCallsUpdateLoad_();};
   if(localStorage.getItem(EEG_CALLS_ACCESS_KEY)==="1"){showPortal();}
-  password.addEventListener("input",()=>{password.value=password.value.replace(/\D/g,"").slice(0,6);});
-  enter.onclick=async()=>{
+  let verifyPending=false;
+  password.addEventListener("input",()=>{
+    password.value=password.value.replace(/\D/g,"").slice(0,6);
+    if(password.value.length===6 && !verifyPending){ verifyPending=true; verify(); }
+  });
+  const verify=async()=>{
     enter.disabled=true;enter.textContent="Verifying…";
     try{
       if(!/^\d{6}$/.test(password.value))throw Error("Enter the 6-digit password.");
@@ -267,8 +271,9 @@ document.addEventListener("DOMContentLoaded",()=>{
     }catch(e){
       const old=document.getElementById("secureError");if(old)old.remove();
       const err=document.createElement("div");err.id="secureError";err.className="eeg-calls-error";err.style.marginTop="10px";err.textContent=e.message||"Unable to access portal.";gate.appendChild(err);password.focus();
-    }finally{enter.disabled=false;enter.textContent="Access Portal";}
+    }finally{enter.disabled=false;enter.textContent="Access Portal";verifyPending=false;}
   };
+  enter.onclick=verify;
   const monthlyStats=document.getElementById("monthlyStats");
   monthlyStats.addEventListener("click",e=>{
     const b=e.target.closest(".eeg-call-patient-link");

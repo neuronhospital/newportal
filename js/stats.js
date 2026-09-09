@@ -37,6 +37,22 @@ document.addEventListener("DOMContentLoaded",()=>{
  const HISTORY_KEY="neuron_statistics_history_access";
  const HISTORY_PASSWORD_HASH="114f4b4bbf1f4a3a58064199f0e9d241566f356756ee58e5d160d3937e6ac740";
  function hasHistoricalAccess(){return localStorage.getItem(HISTORY_KEY)==="1";}
+ function focusHistoricalAccess(){
+   const input=$("historyPassword");
+   if(!input)return;
+   input.focus({preventScroll:true});
+   const scroll=()=>input.scrollIntoView({behavior:"smooth",block:"center",inline:"nearest"});
+   requestAnimationFrame(scroll);
+   setTimeout(scroll,150);
+   setTimeout(scroll,400);
+ }
+ const historyPasswordInput=$("historyPassword");
+ if(window.visualViewport&&historyPasswordInput){
+   window.visualViewport.addEventListener("resize",()=>{
+     const gate=$("historyGate");
+     if(gate&&!gate.hidden&&document.activeElement===historyPasswordInput) setTimeout(()=>historyPasswordInput.scrollIntoView({behavior:"smooth",block:"center",inline:"nearest"}),50);
+   });
+ }
  function clearResults(){
    $("results").innerHTML="";
    $("historyGate").hidden=true;
@@ -79,6 +95,7 @@ document.addEventListener("DOMContentLoaded",()=>{
    }
  }
 
+ let historicalVerifyPending=false;
  async function requestHistoricalAccess(){
    const input=$("historyPassword");
    const btn=$("historyUnlock");
@@ -96,16 +113,26 @@ document.addEventListener("DOMContentLoaded",()=>{
      status.textContent=e.message||"Unable to unlock historical statistics.";
    }finally{
      btn.disabled=false;
+     historicalVerifyPending=false;
    }
  }
 
+ $("historyPassword").addEventListener("input",()=>{
+   const input=$("historyPassword");
+   input.value=input.value.replace(/\D/g,"").slice(0,8);
+   if(input.value.length===8 && !historicalVerifyPending){
+     historicalVerifyPending=true;
+     requestHistoricalAccess();
+   }
+ });
+ $("historyPassword").addEventListener("focus",focusHistoricalAccess);
  $("get").onclick=async()=>{
    const selectedPeriod=$("period").value;
    if(selectedPeriod!=="today" && !hasHistoricalAccess()){
      $("results").innerHTML="";
      $("historyGate").hidden=false;
      $("historyStatus").textContent="";
-     $("historyPassword").focus();
+     focusHistoricalAccess();
      return;
    }
    await retrieveSelectedRecords();
