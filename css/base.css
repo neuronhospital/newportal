@@ -191,7 +191,7 @@
   color:var(--ink);
   text-decoration:none;
   font-size:14.5px;
-  font-weight:750;
+  font-weight:650;
   -webkit-tap-highlight-color:transparent;
   transition:background .15s ease,transform .1s ease;
 }
