@@ -43,7 +43,7 @@ function eegCallsUpdateRenderMonth_(m,index){
   patients.forEach((p,idx)=>{
     html+=`<tr><td>${idx+1}</td><td>${eegCallsUpdatePatientHtml_(p,!!m.editable)}</td><td>${eegCallsUpdateEsc_(eegCallsUpdateFormatDate_(p.date))}</td><td>${eegCallsUpdateEsc_(p.address)}</td><td>${eegCallsUpdateEsc_(p.whatsapp)}</td><td>${eegCallsUpdateEsc_(eegCallsUpdateMoney_(p.paymentReceived))}</td><td>${eegCallsUpdateEsc_(p.referredBy)}</td></tr>`;
   });
-  html+=`</tbody></table></div><div class="month-total">Total : Calls - ${patients.length},   Collection - ${eegCallsUpdateTotalMoney_(m.collection)}</div></div></section>`;
+  html+=`</tbody></table></div></div><div class="month-total">Total : Calls - ${patients.length},   Collection - ${eegCallsUpdateTotalMoney_(m.collection)}</div></section>`;
   return {html,monthId};
 }
 function eegCallsUpdateSyncTotalWidths_(){
