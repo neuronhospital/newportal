@@ -258,16 +258,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   if(localStorage.getItem(EEG_CALLS_ACCESS_KEY)==="1"){showPortal();}
   const focusSecurePassword=()=>{
     if(!gate||gate.hidden||!password)return;
-    password.autofocus=true;
-    const focus=()=>{
-      if(!gate.hidden){
-        try{password.focus({preventScroll:false});}catch(e){try{password.focus();}catch(_){}}
-      }
-    };
-    requestAnimationFrame(focus);
-    setTimeout(focus,80);
-    setTimeout(focus,250);
-    setTimeout(focus,600);
+    try{password.focus({preventScroll:false});}catch(e){try{password.focus();}catch(_) {}}
   };
   let verifyPending=false;
   password.addEventListener("input",()=>{
@@ -311,7 +302,6 @@ document.addEventListener("DOMContentLoaded",()=>{
   });
   document.getElementById("editWhatsapp").addEventListener("input",e=>{e.target.value=e.target.value.replace(/\D/g,"").slice(0,10);});
   focusSecurePassword();
-  window.addEventListener("pageshow",focusSecurePassword);
 });
 
 window.addEventListener("resize",eegCallsUpdateScheduleTotalWidthSync_);

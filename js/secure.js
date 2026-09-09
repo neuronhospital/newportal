@@ -27,9 +27,7 @@ document.addEventListener("DOMContentLoaded",()=>{
 
  const focusPassword=()=>{
    if(!g || g.hidden) return;
-   const focus=()=>{ try{ password.focus({preventScroll:false}); }catch(e){ password.focus(); } };
-   requestAnimationFrame(focus);
-   setTimeout(focus,80);
+   try{ password.focus({preventScroll:false}); }catch(e){ password.focus(); }
  };
 
  const verify=async()=>{

@@ -20,16 +20,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   if(localStorage.getItem(EEG_CALLS_ACCESS_KEY)==="1") showBookingPortal();
   const focusSecurePassword=()=>{
     if(!gate||gate.hidden||!password)return;
-    password.autofocus=true;
-    const focus=()=>{
-      if(!gate.hidden){
-        try{password.focus({preventScroll:false});}catch(e){try{password.focus();}catch(_){}}
-      }
-    };
-    requestAnimationFrame(focus);
-    setTimeout(focus,80);
-    setTimeout(focus,250);
-    setTimeout(focus,600);
+    try{password.focus({preventScroll:false});}catch(e){try{password.focus();}catch(_) {}}
   };
   let verifyPending=false;
   password.addEventListener("input",()=>{
@@ -56,7 +47,6 @@ document.addEventListener("DOMContentLoaded",()=>{
   enter.onclick=verify;
   if(!bookingPortal.hidden) showBookingPortal();
   focusSecurePassword();
-  window.addEventListener("pageshow",focusSecurePassword);
   let bookingInProgress=false;
 
   const setStatus=(message,color="")=>{
