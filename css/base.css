@@ -243,3 +243,10 @@
 
 /* v170.5: prevent authenticated secure-access gate flash before JS initializes */
 html.neuron-secure-preauthorized #gate{display:none!important}
+
+/* v174: consistent bottom footer layout on all pages */
+html,body{min-height:100%;}
+body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;}
+#header{flex:0 0 auto;}
+main{flex:1 0 auto;width:100%;}
+#footer{flex:0 0 auto;}
