@@ -256,6 +256,11 @@ document.addEventListener("DOMContentLoaded",()=>{
   eegCallsUpdateShow_("portal",false);
   const showPortal=()=>{eegCallsUpdateShow_("gate",false);eegCallsUpdateLoad_();};
   if(localStorage.getItem(EEG_CALLS_ACCESS_KEY)==="1"){showPortal();}
+  const focusSecurePassword=()=>{
+    if(!gate||gate.hidden)return;
+    const focus=()=>{try{password.focus({preventScroll:false});}catch(e){password.focus();}};
+    requestAnimationFrame(focus);setTimeout(focus,80);
+  };
   let verifyPending=false;
   password.addEventListener("input",()=>{
     password.value=password.value.replace(/\D/g,"").slice(0,6);
@@ -297,7 +302,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     }
   });
   document.getElementById("editWhatsapp").addEventListener("input",e=>{e.target.value=e.target.value.replace(/\D/g,"").slice(0,10);});
-  if(!gate.hidden) password.focus();
+  focusSecurePassword();
 });
 
 window.addEventListener("resize",eegCallsUpdateScheduleTotalWidthSync_);

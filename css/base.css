@@ -240,3 +240,6 @@
   .nav-icon{width:24px;height:24px}
   .footer-contact{font-size:12px;margin:8px 0 0}
 }
+
+/* v170.5: prevent authenticated secure-access gate flash before JS initializes */
+html.neuron-secure-preauthorized #gate{display:none!important}
