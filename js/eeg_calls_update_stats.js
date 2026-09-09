@@ -10,6 +10,7 @@ async function eegCallsUpdateSha256_(message){
 function eegCallsUpdateShow_(id,visible){const el=document.getElementById(id);if(el)el.hidden=!visible;}
 function eegCallsUpdateEsc_(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));}
 function eegCallsUpdateMoney_(n){return "₹"+(Number(n)||0).toLocaleString("en-IN");}
+function eegCallsUpdateTotalMoney_(n){return "₹ "+String(Math.round(Number(n)||0).toLocaleString("en-IN")).replace(/,/g,"");}
 function eegCallsUpdateFormatDate_(date){
   const s=String(date||"").replace(/\D/g,"");
   if(/^\d{8}$/.test(s))return `${s.substring(0,2)}/${s.substring(2,4)}/${s.substring(4,8)}`;
@@ -38,11 +39,11 @@ function eegCallsUpdateRenderMonth_(m,index){
     html+=`<div class="month-empty">No EEG Call Record Available for this Month</div></section>`;
     return {html,monthId};
   }
-  html+=`<div class="eeg-table-wrap"><table class="eeg-calls-table"><thead><tr><th>Sr No</th><th>Patient Name</th><th>Date of EEG</th><th>Address</th><th>Mobile Number</th><th>Payment</th><th>Referred By</th></tr></thead><tbody>`;
+  html+=`<div class="eeg-table-wrap"><table class="eeg-calls-table"><thead><tr><th>Sr No</th><th>Patient Name</th><th>Date of EEG</th><th>Address</th><th class="eeg-mobile-download" data-month-key="${eegCallsUpdateEsc_(String(m.key||""))}" tabindex="0" role="button" title="Download mobile numbers as CSV">Mobile Number</th><th>Payment</th><th>Referred By</th></tr></thead><tbody>`;
   patients.forEach((p,idx)=>{
     html+=`<tr><td>${idx+1}</td><td>${eegCallsUpdatePatientHtml_(p,!!m.editable)}</td><td>${eegCallsUpdateEsc_(eegCallsUpdateFormatDate_(p.date))}</td><td>${eegCallsUpdateEsc_(p.address)}</td><td>${eegCallsUpdateEsc_(p.whatsapp)}</td><td>${eegCallsUpdateEsc_(eegCallsUpdateMoney_(p.paymentReceived))}</td><td>${eegCallsUpdateEsc_(p.referredBy)}</td></tr>`;
   });
-  html+=`</tbody></table></div><div class="month-total">Total : Calls - ${patients.length} , Collection - ${eegCallsUpdateMoney_(m.collection)}</div></section>`;
+  html+=`</tbody></table></div><div class="month-total">Total : Calls - ${patients.length},   Collection - ${eegCallsUpdateTotalMoney_(m.collection)}</div></section>`;
   return {html,monthId};
 }
 function eegCallsUpdateRender_(r){
@@ -60,19 +61,18 @@ function eegCallsUpdateShowHistoryError_(message){
   box.textContent=message; box.hidden=false;
 }
 function eegCallsUpdateClearHistoryError_(){const box=document.getElementById("historyError");if(box){box.textContent="";box.hidden=true;}}
-function eegCallsUpdateDownloadCsv_(){
+function eegCallsUpdateDownloadCsvForMonth_(monthKey){
   eegCallsUpdateClearHistoryError_();
   try{
-    const current=eegCallsUpdateState.months[0];
-    if(!current)throw Error("Current-month EEG Calls data is unavailable.");
-    const patients=Array.isArray(current.patients)?current.patients:[];
-    const rows=["Mobile Number",...patients.map(p=>String(p.whatsapp||"").replace(/\D/g,""))].filter((v,i)=>i===0||v);
-    if(rows.length===1)throw Error("No current-month patient mobile numbers are available to download.");
-
-    const csv="\uFEFF"+rows.map(v=>`"${v.replace(/"/g,'""')}"`).join("\r\n")+"\r\n";
+    const month=eegCallsUpdateState.months.find(m=>String(m.key||"")===String(monthKey||""));
+    if(!month)throw Error("EEG Calls data for this month is unavailable.");
+    const patients=eegCallsUpdateSortPatients_(month.patients);
+    const numbers=patients.map(p=>String(p?.whatsapp||"").replace(/\D/g,"")).filter(Boolean);
+    if(!numbers.length)throw Error("No mobile numbers are available for this month.");
+    const csv="\uFEFF"+numbers.join("\r\n")+"\r\n";
     const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
-    const nowParts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit"}).formatToParts(new Date()); const gy=nowParts.find(x=>x.type==="year")?.value||""; const gm=nowParts.find(x=>x.type==="month")?.value||""; const filename=`EEG-Calls-${gy}-${gm}-Mobile-Numbers.csv`;
-
+    const safeMonth=String(month.label||month.key||"Month").replace(/[^A-Za-z0-9_-]+/g,"-").replace(/^-+|-+$/g,"")||"Month";
+    const filename=`EEG-Calls-${safeMonth}-Mobile-Numbers.csv`;
     if(typeof URL!=="undefined" && typeof URL.createObjectURL==="function"){
       const url=URL.createObjectURL(blob);
       const a=document.createElement("a");
@@ -85,7 +85,6 @@ function eegCallsUpdateDownloadCsv_(){
       setTimeout(()=>URL.revokeObjectURL(url),2000);
       return;
     }
-
     const reader=new FileReader();
     reader.onload=()=>{
       const a=document.createElement("a");
@@ -98,7 +97,7 @@ function eegCallsUpdateDownloadCsv_(){
     };
     reader.readAsDataURL(blob);
   }catch(e){
-    eegCallsUpdateShowHistoryError_(e.message||"Unable to download current-month EEG Calls details.");
+    eegCallsUpdateShowHistoryError_(e.message||"Unable to download EEG Calls mobile numbers.");
   }
 }
 
@@ -251,7 +250,8 @@ document.addEventListener("DOMContentLoaded",()=>{
       const err=document.createElement("div");err.id="secureError";err.className="eeg-calls-error";err.style.marginTop="10px";err.textContent=e.message||"Unable to access portal.";gate.appendChild(err);password.focus();
     }finally{enter.disabled=false;enter.textContent="Access Portal";}
   };
-  document.getElementById("monthlyStats").addEventListener("click",e=>{
+  const monthlyStats=document.getElementById("monthlyStats");
+  monthlyStats.addEventListener("click",e=>{
     const b=e.target.closest(".eeg-call-patient-link");
     if(!b)return;
     const row=Number(b.dataset.row);
@@ -260,7 +260,18 @@ document.addEventListener("DOMContentLoaded",()=>{
   });
   document.getElementById("updateDetails").onclick=eegCallsUpdateSubmit_;
   document.getElementById("cancelUpdate").onclick=eegCallsUpdateCancel_;
-  document.getElementById("downloadDetails").onclick=eegCallsUpdateDownloadCsv_;
+  const downloadMonthFromHeader=e=>{
+    const th=e.target.closest(".eeg-mobile-download");
+    if(!th||!monthlyStats.contains(th))return;
+    eegCallsUpdateDownloadCsvForMonth_(th.dataset.monthKey||"");
+  };
+  monthlyStats.addEventListener("click",downloadMonthFromHeader);
+  monthlyStats.addEventListener("keydown",e=>{
+    if((e.key==="Enter"||e.key===" ")&&e.target.closest(".eeg-mobile-download")){
+      e.preventDefault();
+      downloadMonthFromHeader(e);
+    }
+  });
   document.getElementById("editWhatsapp").addEventListener("input",e=>{e.target.value=e.target.value.replace(/\D/g,"").slice(0,10);});
   if(!gate.hidden) password.focus();
 });
