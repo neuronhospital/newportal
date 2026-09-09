@@ -18,10 +18,6 @@ document.addEventListener("DOMContentLoaded",()=>{
     if(document.activeElement && typeof document.activeElement.blur==="function") document.activeElement.blur();
   };
   if(localStorage.getItem(EEG_CALLS_ACCESS_KEY)==="1") showBookingPortal();
-  const focusSecurePassword=()=>{
-    if(!gate||gate.hidden||!password)return;
-    setTimeout(()=>{try{password.focus({preventScroll:true});}catch(e){try{password.focus();}catch(_) {}}},500);
-  };
   let verifyPending=false;
   password.addEventListener("input",()=>{
     password.value=password.value.replace(/\D/g,"").slice(0,6);
@@ -46,7 +42,6 @@ document.addEventListener("DOMContentLoaded",()=>{
   };
   enter.onclick=verify;
   if(!bookingPortal.hidden) showBookingPortal();
-  focusSecurePassword();
   let bookingInProgress=false;
 
   const setStatus=(message,color="")=>{
