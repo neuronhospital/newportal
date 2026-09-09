@@ -152,7 +152,7 @@
 @media(max-width:699px){.service-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.service-card-title{min-width:82px;padding:8px 14px;font-size:18px}.service-card-body{min-height:72px;padding:10px 8px 12px}.service-metric span{font-size:13px}.service-metric strong{font-size:25px}.service-divider{height:42px}}
 
 
-/* Home portal grouped cards v170.1 */
+/* Home portal grouped cards v170.2 */
 .portal-grid{display:grid;gap:12px}
 .portal-section{
   position:relative;
@@ -169,18 +169,16 @@
   margin:-1px auto 0;
   padding:6px 18px 7px;
   border-radius:0 0 9px 9px;
-  font-size:15.5px;
+  font-size:15.4px;
   line-height:1.2;
   font-weight:850;
   text-align:center;
-  position:relative;
-  z-index:2;
 }
 .portal-section-opd .portal-section-title{background:#eef5ff;color:#24558f}
 .portal-section-eeg .portal-section-title{background:#f5efff;color:#6b2ca5}
 .portal-section-calls .portal-section-title{background:#fff0f7;color:#9a2563}
 .portal-section-admin .portal-section-title{background:#effaf1;color:#247044}
-.portal-actions{position:relative;z-index:1;display:grid;grid-template-columns:1fr 1fr;min-height:68px;margin-top:2px}
+.portal-actions{display:grid;grid-template-columns:1fr 1fr;min-height:65px;margin-top:2px}
 .portal-action{
   display:flex;
   align-items:center;
@@ -190,19 +188,19 @@
   padding:12px 10px;
   color:var(--ink);
   text-decoration:none;
-  font-size:14.5px;
+  font-size:14.4px;
   font-weight:650;
   -webkit-tap-highlight-color:transparent;
   transition:background .15s ease,transform .1s ease;
 }
 .portal-action:first-child{border-right:1px solid var(--line)}
-.portal-action:active{background:rgba(39,174,96,.10)}
+.portal-action:active{background:rgba(34,197,94,.10)}
 .portal-action:focus-visible{outline:2px solid var(--p);outline-offset:-2px;border-radius:10px}
-.portal-action strong{font-size:inherit;font-weight:750;white-space:nowrap}
-.portal-action .portal-icon{width:34px;height:34px;flex:0 0 34px;margin:0}
+.portal-action strong{font-size:inherit;font-weight:650;white-space:nowrap}
+.portal-action .portal-icon{width:31px;height:31px;flex:0 0 31px;margin:0}
 @media(min-width:700px){
   .portal-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
-  .portal-actions{min-height:72px}
-  .portal-action{font-size:15.5px}
+  .portal-actions{min-height:68px}
+  .portal-action{font-size:15.3px}
 }
 @media(min-width:1050px){.portal-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
