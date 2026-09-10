@@ -1,6 +1,6 @@
 document.addEventListener("DOMContentLoaded",()=>{
   const $=U.$, cities=NEURON_CONFIG.cities;
-  let type="Follow-up", verified=false, selected=null;
+  let type="New", verified=false, selected=null;
   let nextFollowupCityManuallyEdited=false;
   let cityChangeToken=0;
   let bookingInProgress=false;
@@ -710,7 +710,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
 
   initFollowupCity();
   fillCities();
-  resetFields("Follow-up");
+  resetFields("New");
   setNextAvailableDate($("city").value);
 
   // Mobile browsers may restore a page from the back-forward cache with
