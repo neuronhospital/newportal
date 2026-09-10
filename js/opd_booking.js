@@ -665,8 +665,8 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       total=parsedAmount; c=parsedAmount;
     }else if(payMode==="Online"){
       if(amountRaw==="") return paymentError("Please enter the online amount.","amount");
-      if(!Number.isFinite(parsedAmount) || parsedAmount<0 || parsedAmount>MAX_OPD_AMOUNT)
-        return paymentError(`Online amount must be between ₹0 and ₹${MAX_OPD_AMOUNT}.`,"amount");
+      if(!Number.isFinite(parsedAmount) || parsedAmount<=0 || parsedAmount>MAX_OPD_AMOUNT)
+        return paymentError(`Online amount must be more than ₹0 and no more than ₹${MAX_OPD_AMOUNT}.`,"amount");
       total=parsedAmount; o=parsedAmount;
     }else if(payMode==="Split"){
       if(cashRaw==="") return paymentError("Please enter the cash amount.","cash");
