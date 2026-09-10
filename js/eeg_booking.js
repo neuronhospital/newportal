@@ -162,11 +162,49 @@ document.addEventListener("DOMContentLoaded",()=>{
       $('status').textContent='';
       $('confirmation').hidden=false;
     }catch(e){
-      alert(e.message||'EEG booking failed. Please try again.');
+      $('confirmation').innerHTML=`<div class="card"><h2>EEG Booking Uncertain</h2><p>We couldn't confirm the EEG booking.</p><p>The booking request may have been recorded safely.</p><p><b>Please do not create another booking yet.</b></p><button id="checkEEGStatus" type="button" class="cta" style="width:100%;margin-top:10px">Check Status</button><div id="eegStatusMessage" class="status" style="margin-top:10px"></div></div>`;
+      $('confirmation').hidden=false;
+      const check=$('checkEEGStatus');
+      check.onclick=async()=>{
+        if(check.disabled)return;
+        check.disabled=true;
+        check.textContent='Checking...';
+        const msg=$('eegStatusMessage');
+        if(msg)msg.textContent='Checking EEG booking...';
+        try{
+          const r=await NeuronAPI.call('checkEEGBookingRequest',{eegBookingRequestId:id,appointmentId:p.appointmentId,rowNumber:p.rowNumber,city:p.city},10000);
+          if(r&&r.found){
+            const confirmationPatient=r.patientName||sel?.name||'';
+            $('confirmation').innerHTML=`<div class="success"><div class="success-icon">✓</div><h2>EEG Appointment Confirmed</h2><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(confirmationPatient)}</b></div><div class="confirm-row"><span>EEG Charges</span><b>${U.money(r.eegCharges)}</b></div><div class="status" style="margin-top:10px">✓ Booking recovered</div></div>`;
+            $('patients').innerHTML='';
+            sel=null;
+            $('payment').hidden=true;
+            $('paymentPatientName').textContent='';
+            $('amount').value='';
+            $('cash').value='';
+            $('online').value='';
+            $('total').textContent='₹0';
+            $('status').textContent='';
+          }else{
+            $('confirmation').innerHTML=`<div class="card"><h2>EEG Booking Unsuccessful</h2><p>No matching EEG booking was found for this patient.</p><p><b>You can book the EEG again.</b></p></div>`;
+            $('book').disabled=false;
+            $('book').textContent='Book EEG Appointment';
+            $('book').className='cta';
+          }
+        }catch(checkError){
+          check.disabled=false;
+          check.textContent='Check Status';
+          if(msg)msg.textContent=checkError.message||'Could not check EEG booking status. Please try again.';
+        }
+      };
     }finally{
-      $('book').disabled=false;
-      $('book').textContent='Book EEG Appointment';
-      $('book').className='cta';
+      // Keep booking disabled while the result is uncertain; it is re-enabled only
+      // after Check Status confirms that the EEG booking was not recorded.
+      if(!$('checkEEGStatus')){
+        $('book').disabled=false;
+        $('book').textContent='Book EEG Appointment';
+        $('book').className='cta';
+      }
       $('bookMessage').hidden=true;
       $('bookMessage').textContent='Wait we are Confirming your EEG Booking...';
     }
