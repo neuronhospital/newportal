@@ -638,10 +638,49 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     };
 
     const payMode=$("payMode").value;
+    const MAX_OPD_AMOUNT=2000;
     let c=0,o=0,total=0;
-    if(payMode==="Cash"){total=Number($("amount").value)||0;c=total;}
-    else if(payMode==="Online"){total=Number($("amount").value)||0;o=total;}
-    else{c=Number($("cash").value)||0;o=Number($("online").value)||0;total=c+o;}
+    const amountRaw=String($("amount")?.value ?? "").trim();
+    const cashRaw=String($("cash")?.value ?? "").trim();
+    const onlineRaw=String($("online")?.value ?? "").trim();
+    const parsedAmount=amountRaw==="" ? NaN : Number(amountRaw);
+    const parsedCash=cashRaw==="" ? NaN : Number(cashRaw);
+    const parsedOnline=onlineRaw==="" ? NaN : Number(onlineRaw);
+
+    // Payment validation is intentionally frontend-only. Empty numeric inputs
+    // must never be coerced to zero by Number(value)||0, because an empty
+    // payment field is not an accepted payment value.
+    const paymentError=(message,fieldId)=>{
+      $("submitStatus").textContent=message;
+      $("submitStatus").style.color="#b42318";
+      $(fieldId)?.focus();
+      resetAfterValidationError();
+      return true;
+    };
+
+    if(payMode==="Cash"){
+      if(amountRaw==="") return paymentError("Please enter the cash amount.","amount");
+      if(!Number.isFinite(parsedAmount) || parsedAmount<0 || parsedAmount>MAX_OPD_AMOUNT)
+        return paymentError(`Cash amount must be between ₹0 and ₹${MAX_OPD_AMOUNT}.`,"amount");
+      total=parsedAmount; c=parsedAmount;
+    }else if(payMode==="Online"){
+      if(amountRaw==="") return paymentError("Please enter the online amount.","amount");
+      if(!Number.isFinite(parsedAmount) || parsedAmount<0 || parsedAmount>MAX_OPD_AMOUNT)
+        return paymentError(`Online amount must be between ₹0 and ₹${MAX_OPD_AMOUNT}.`,"amount");
+      total=parsedAmount; o=parsedAmount;
+    }else if(payMode==="Split"){
+      if(cashRaw==="") return paymentError("Please enter the cash amount.","cash");
+      if(onlineRaw==="") return paymentError("Please enter the online amount.","online");
+      if(!Number.isFinite(parsedCash) || parsedCash<=0 || parsedCash>MAX_OPD_AMOUNT)
+        return paymentError(`Cash amount must be more than ₹0 and no more than ₹${MAX_OPD_AMOUNT}.`,"cash");
+      if(!Number.isFinite(parsedOnline) || parsedOnline<=0 || parsedOnline>MAX_OPD_AMOUNT)
+        return paymentError(`Online amount must be more than ₹0 and no more than ₹${MAX_OPD_AMOUNT}.`,"online");
+      c=parsedCash; o=parsedOnline; total=c+o;
+      if(total>MAX_OPD_AMOUNT)
+        return paymentError(`Combined Cash + Online amount cannot exceed ₹${MAX_OPD_AMOUNT}.`,"cash");
+    }else{
+      return paymentError("Please select a valid payment mode.","payMode");
+    }
 
     const requiredFields=[
       ["name","Please enter the patient's name."],
