@@ -232,7 +232,8 @@ document.addEventListener("DOMContentLoaded",()=>{
     e.stopPropagation();
     showFollowupLockPopup(field);
   };
-  $("bookingFields").addEventListener("pointerdown",handleLockedFollowupFieldInteraction,true);
+  // Show the lock popup only after an actual click/tap. Do not handle pointerdown,
+  // because touch-scrolling can begin with a pointerdown inside a locked field.
   $("bookingFields").addEventListener("click",handleLockedFollowupFieldInteraction,true);
 
   const enableAfterWhatsApp=()=>{
