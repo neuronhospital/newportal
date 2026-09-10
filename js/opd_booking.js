@@ -140,6 +140,11 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("unit").value="years";
     const todayCity=getScheduledCityForToday();
     $("city").value=todayCity; $("next").value=todayCity;
+    // Follow-up locking is scoped to Follow-up mode only. When switching
+    // back to New, explicitly clear every Follow-up lock before applying the
+    // normal v175 pre-verification state. This prevents readOnly/disabled
+    // styling from leaking into New OPD after a patient was retrieved.
+    if(mode==="New") setFollowupFieldsLocked(false);
     setPostVerifyFieldsLocked(true);
     if($("editFollowup")) $("editFollowup").hidden=true;
     if($("book")){ $("book").textContent="Book Appointment"; $("book").className="cta"; }
