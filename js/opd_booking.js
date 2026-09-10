@@ -165,24 +165,47 @@ document.addEventListener("DOMContentLoaded",()=>{
     if($("book")) $("book").disabled=locked;
   };
 
-  const showFollowupLockPopup=()=>{
+  const showFollowupLockPopup=(field)=>{
     const popup=$("followupLockPopup");
     if(!popup)return;
     popup.textContent="Click Edit to enable this field.";
     popup.classList.add("show");
+    const rect=field?.getBoundingClientRect?.();
+    if(!rect){
+      popup.style.left="50%";
+      popup.style.top="50%";
+      popup.style.transform="translate(-50%,-50%)";
+    }else{
+      popup.style.transform="none";
+      const gap=6, margin=12;
+      const popupRect=popup.getBoundingClientRect();
+      let left=Math.min(Math.max(margin,rect.left),Math.max(margin,window.innerWidth-popupRect.width-margin));
+      let top=rect.bottom+gap;
+      if(top+popupRect.height>window.innerHeight-margin) top=Math.max(margin,rect.top-popupRect.height-gap);
+      popup.style.left=`${left}px`;
+      popup.style.top=`${top}px`;
+    }
     clearTimeout(showFollowupLockPopup.timer);
-    showFollowupLockPopup.timer=setTimeout(()=>popup.classList.remove("show"),2200);
+    showFollowupLockPopup.timer=setTimeout(()=>{
+      popup.classList.remove("show");
+      popup.style.transform="none";
+    },2200);
   };
 
   const setFollowupFieldsLocked=(locked)=>{
-    const ids=["name","age","unit","address","ref","followWa","city","date","next"];
+    const ids=["name","age","unit","address","ref","city","date","next"];
     ids.forEach(id=>{
       const el=$(id);
       if(!el)return;
+      const field=el.closest(".field");
       el.dataset.followupLocked=locked?"true":"false";
+      if(field) field.dataset.followupLocked=locked?"true":"false";
       if(el.tagName==="SELECT" || el.id==="date") el.disabled=locked;
       else el.readOnly=locked;
       el.classList.toggle("followup-field-locked",locked);
+      // Disabled controls do not reliably emit click/pointer events on mobile.
+      // Let the field container receive the event so the lock message can appear.
+      el.style.pointerEvents=locked?"none":"";
     });
     if($("editFollowup")) $("editFollowup").hidden=!locked;
   };
@@ -196,12 +219,12 @@ document.addEventListener("DOMContentLoaded",()=>{
 
   const handleLockedFollowupFieldInteraction=(e)=>{
     if(type!=="Follow-up" || !selected)return;
-    if($("editFollowup") && !$("editFollowup").hidden)return;
-    const target=e.target;
-    if(target && target.dataset && target.dataset.followupLocked==="true"){
-      e.preventDefault();
-      showFollowupLockPopup();
-    }
+    if($("editFollowup") && $("editFollowup").hidden)return;
+    const field=e.target?.closest?.(".field[data-followup-locked='true']");
+    if(!field)return;
+    e.preventDefault();
+    e.stopPropagation();
+    showFollowupLockPopup(field);
   };
   $("bookingFields").addEventListener("pointerdown",handleLockedFollowupFieldInteraction,true);
   $("bookingFields").addEventListener("click",handleLockedFollowupFieldInteraction,true);
@@ -500,7 +523,6 @@ $("patients").innerHTML="";
           $("name").value=U.title(x.name);
           // Follow-up patient details are locked after retrieval. Payment Mode
           // and OPD Charges remain editable; all other fields require Edit.
-          ["name","age","unit","address","ref","followWa"].forEach(id=>{ if($(id)) $(id).disabled=false; });
           if($("followWa") && !$("followWa").value) $("followWa").value=U.phone(x.whatsapp||x.phone||"");
           const followupAge=currentFollowupAge(x.age,x.ageUnit,x.date);
           $("age").value=followupAge.value;
@@ -576,7 +598,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     });
     if($("book")){
       $("book").disabled=false;
-      $("book").textContent="Book OPD Appointment";
+      $("book").textContent="Book Appointment";
       $("book").className="cta";
     }
   };
@@ -588,7 +610,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     const resetAfterValidationError=()=>{
       bookingInProgress=false;
       $("book").disabled=false;
-      $("book").textContent="Book OPD Appointment";
+      $("book").textContent="Book Appointment";
       $("book").className="cta";
     };
 
@@ -652,7 +674,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       $("submitStatus").textContent="Please select an available appointment date.";
       $("submitStatus").style.color="#b42318";
       $("book").disabled=false;
-      $("book").textContent="Book OPD Appointment";
+      $("book").textContent="Book Appointment";
       $("book").className="cta";
       return;
     }
@@ -740,7 +762,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
             $("submitStatus").style.color="#b42318";
             try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"failed",payload});}catch(_){ }
             $("book").disabled=false;
-            $("book").textContent="Book OPD Appointment";
+            $("book").textContent="Book Appointment";
             $("book").className="cta";
           }
         };
@@ -749,7 +771,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       if($("confirmation").hidden){
         bookingInProgress=false;
         $("book").disabled=false;
-        $("book").textContent="Book OPD Appointment";
+        $("book").textContent="Book Appointment";
         $("book").className="cta";
       }
     }
@@ -765,7 +787,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
   window.addEventListener("pageshow",()=>{
     if(!bookingInProgress){
       $("book").disabled=!verified;
-      $("book").textContent="Book OPD Appointment";
+      $("book").textContent="Book Appointment";
       $("book").className=verified?"cta":"cta";
     }
   });
