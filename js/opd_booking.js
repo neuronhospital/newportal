@@ -141,6 +141,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     const todayCity=getScheduledCityForToday();
     $("city").value=todayCity; $("next").value=todayCity;
     setPostVerifyFieldsLocked(true);
+    if($("editFollowup")) $("editFollowup").hidden=true;
     $("waStatus").textContent=""; $("waStatus").style.color="";
     $("verifyTick").style.display="none";
     $("followStatus").textContent=""; $("patients").innerHTML="";
@@ -163,6 +164,47 @@ document.addEventListener("DOMContentLoaded",()=>{
     });
     if($("book")) $("book").disabled=locked;
   };
+
+  const showFollowupLockPopup=()=>{
+    const popup=$("followupLockPopup");
+    if(!popup)return;
+    popup.textContent="Click Edit to enable this field.";
+    popup.classList.add("show");
+    clearTimeout(showFollowupLockPopup.timer);
+    showFollowupLockPopup.timer=setTimeout(()=>popup.classList.remove("show"),2200);
+  };
+
+  const setFollowupFieldsLocked=(locked)=>{
+    const ids=["name","age","unit","address","ref","followWa","city","date","next"];
+    ids.forEach(id=>{
+      const el=$(id);
+      if(!el)return;
+      el.dataset.followupLocked=locked?"true":"false";
+      if(el.tagName==="SELECT" || el.id==="date") el.disabled=locked;
+      else el.readOnly=locked;
+      el.classList.toggle("followup-field-locked",locked);
+    });
+    if($("editFollowup")) $("editFollowup").hidden=!locked;
+  };
+
+  $("editFollowup").onclick=()=>{
+    if(type!=="Follow-up" || !selected)return;
+    setFollowupFieldsLocked(false);
+    enableAfterWhatsApp();
+    $("editFollowup").hidden=true;
+  };
+
+  const handleLockedFollowupFieldInteraction=(e)=>{
+    if(type!=="Follow-up" || !selected)return;
+    if($("editFollowup") && !$("editFollowup").hidden)return;
+    const target=e.target;
+    if(target && target.dataset && target.dataset.followupLocked==="true"){
+      e.preventDefault();
+      showFollowupLockPopup();
+    }
+  };
+  $("bookingFields").addEventListener("pointerdown",handleLockedFollowupFieldInteraction,true);
+  $("bookingFields").addEventListener("click",handleLockedFollowupFieldInteraction,true);
 
   const enableAfterWhatsApp=()=>{
     verified=true;
@@ -456,8 +498,8 @@ $("patients").innerHTML="";
           $("selectedPatientBookingDate").textContent=U.date(x.date)||"—";
           $("selectedPatientCard").hidden=false;
           $("name").value=U.title(x.name);
-          // Follow-up patient details remain editable after auto-fill.
-          // Do not disable patient information fields after selection.
+          // Follow-up patient details are locked after retrieval. Payment Mode
+          // and OPD Charges remain editable; all other fields require Edit.
           ["name","age","unit","address","ref","followWa"].forEach(id=>{ if($(id)) $(id).disabled=false; });
           if($("followWa") && !$("followWa").value) $("followWa").value=U.phone(x.whatsapp||x.phone||"");
           const followupAge=currentFollowupAge(x.age,x.ageUnit,x.date);
@@ -477,6 +519,11 @@ $("patients").innerHTML="";
           $("newFields").hidden=false;
           $("newFields").removeAttribute("hidden");
           enableAfterWhatsApp();
+          setFollowupFieldsLocked(true);
+          // Payment mode and OPD charges are the only fields editable by default
+          // in the Follow-up flow. The appointment can still be booked directly.
+          ["payMode","amount","cash","online"].forEach(id=>{ if($(id)) $(id).disabled=false; });
+          $("book").disabled=false;
           const now=U.parts();calendarYear=now.y;calendarMonth=now.m;
           setFollowupDefaultDate($("city").value);
           requestAnimationFrame(()=>{
