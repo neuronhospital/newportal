@@ -46,7 +46,7 @@ window.NeuronAPI={
     if(timeoutTimer)clearTimeout(timeoutTimer);
   }
  },
- verifyBooking:async(type,id,city,retries=3)=>{
+ verifyBooking:async(type,id,city,retries=2)=>{
   const action="checkBookingRequest";
   const key="bookingRequestId";
   for(let i=0;i<retries;i++){
