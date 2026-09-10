@@ -484,11 +484,16 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("submitStatus").textContent="";
     $("followStatus").textContent="";
     $("followStatus").style.color="";
+    // Freeze the retrieval city while the Load request is in progress so the
+    // user cannot accidentally change the search city mid-request. It becomes
+    // selectable again only after the Load operation finishes.
+    $("followCity").disabled=true;
     $("city").disabled=true; $("date").disabled=true; $("next").disabled=true; $("book").disabled=true;
     const p=U.phone($("followWa").value);
     if(!U.validPhone(p)){
       $("followStatus").textContent="Enter a valid 10-digit WhatsApp number.";
       $("followStatus").style.color="#b42318";
+      $("followCity").disabled=false;
       $("load").disabled=false;
       $("load").textContent="Load";
       $("load").className="btn btn-secondary";
@@ -584,6 +589,9 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       $("followStatus").style.color="#b42318";
     }
     finally{
+      // Retrieval is complete (success, no results, or error), so allow the
+      // user to select a different retrieval city for the next Load.
+      $("followCity").disabled=false;
       $("load").disabled=false;
       $("load").textContent="Load";
       $("load").className="btn btn-secondary";
