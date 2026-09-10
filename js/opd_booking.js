@@ -142,6 +142,9 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("city").value=todayCity; $("next").value=todayCity;
     setPostVerifyFieldsLocked(true);
     if($("editFollowup")) $("editFollowup").hidden=true;
+    if($("book")){ $("book").textContent="Book Appointment"; $("book").className="cta"; }
+    const editActions=$("editFollowup")?.closest(".followup-edit-actions");
+    if(editActions) editActions.classList.remove("editing");
     $("waStatus").textContent=""; $("waStatus").style.color="";
     $("verifyTick").style.display="none";
     $("followStatus").textContent=""; $("patients").innerHTML="";
@@ -215,6 +218,9 @@ document.addEventListener("DOMContentLoaded",()=>{
     setFollowupFieldsLocked(false);
     enableAfterWhatsApp();
     $("editFollowup").hidden=true;
+    const actions=$("editFollowup").closest(".followup-edit-actions");
+    if(actions) actions.classList.add("editing");
+    $("book").textContent="Book OPD Appointment";
   };
 
   const handleLockedFollowupFieldInteraction=(e)=>{
@@ -546,6 +552,9 @@ $("patients").innerHTML="";
           // in the Follow-up flow. The appointment can still be booked directly.
           ["payMode","amount","cash","online"].forEach(id=>{ if($(id)) $(id).disabled=false; });
           $("book").disabled=false;
+          $("book").textContent="Book Appointment";
+          const actions=$("editFollowup")?.closest(".followup-edit-actions");
+          if(actions) actions.classList.remove("editing");
           const now=U.parts();calendarYear=now.y;calendarMonth=now.m;
           setFollowupDefaultDate($("city").value);
           requestAnimationFrame(()=>{
