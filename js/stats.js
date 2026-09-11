@@ -158,6 +158,7 @@ document.addEventListener("DOMContentLoaded",()=>{
    const netCash=Number(t.netCash)||(totalCash-totalRefund);
    const netOnline=Number(t.netOnline)||totalOnline;
    const netTotal=Number(t.netTotal)||(netCash+netOnline);
+   let html=`<div class="report-head"><b>${esc(r.city)}</b> • ${esc(r.periodLabel||"")}</div>`;
    html+=`<div class="service-summary">
      <div class="service-card">
        <div class="service-card-title">OPD</div>
