@@ -256,19 +256,19 @@ body[data-title="Home"] .portal-section{
   border:1px solid rgba(31,41,55,.10);
   box-shadow:0 6px 18px rgba(31,41,55,.05);
 }
-body[data-title="Home"] .portal-section-opd{background:#f5f8ff}
-body[data-title="Home"] .portal-section-eeg{background:#f8f4ff}
-body[data-title="Home"] .portal-section-calls{background:#fff6fa}
-body[data-title="Home"] .portal-section-admin{background:#f3faf5}
+body[data-title="Home"] .portal-section-opd{background:#eaf3ff}
+body[data-title="Home"] .portal-section-eeg{background:#f2e9ff}
+body[data-title="Home"] .portal-section-calls{background:#ffe8f2}
+body[data-title="Home"] .portal-section-admin{background:#e5f5e9}
 body[data-title="Home"] .portal-section-title{
   font-size:17px;
   font-weight:850;
   padding:7px 19px 8px;
 }
-body[data-title="Home"] .portal-section-opd .portal-section-title{background:#dbeafe;color:#24558f}
-body[data-title="Home"] .portal-section-eeg .portal-section-title{background:#eadcff;color:#6b2ca5}
-body[data-title="Home"] .portal-section-calls .portal-section-title{background:#ffdceb;color:#9a2563}
-body[data-title="Home"] .portal-section-admin .portal-section-title{background:#dff3e4;color:#247044}
+body[data-title="Home"] .portal-section-opd .portal-section-title{background:#4d8fe3;color:#fff}
+body[data-title="Home"] .portal-section-eeg .portal-section-title{background:#8f48cc;color:#fff}
+body[data-title="Home"] .portal-section-calls .portal-section-title{background:#dc3f7d;color:#fff}
+body[data-title="Home"] .portal-section-admin .portal-section-title{background:#2f8f57;color:#fff}
 body[data-title="Home"] .portal-actions{
   gap:9px;
   padding:10px;
