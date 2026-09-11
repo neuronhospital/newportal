@@ -295,10 +295,3 @@ body[data-title="Home"] .portal-action:active{background:#fff}
 }
 
 
-/* Statistics service cards v183.2: keep labels and values inside the card.
-   The two metrics use constrained columns; the divider remains between them. */
-.service-card-body{display:flex;align-items:center;justify-content:center;gap:8px;min-width:0;overflow:hidden}
-.service-metric{flex:0 1 auto;min-width:0;max-width:calc(50% - 12px);overflow:hidden;text-align:center}
-.service-metric span{display:block;min-width:0;overflow:hidden;text-overflow:clip;white-space:nowrap}
-.service-metric strong{display:block;min-width:0;max-width:100%;overflow:hidden;text-overflow:clip;white-space:nowrap;font-size:21.6px;font-weight:612;font-variant-numeric:tabular-nums}
-@media(max-width:699px){.service-card-body{gap:6px}.service-metric{max-width:calc(50% - 10px)}.service-metric strong{font-size:20px;font-weight:612}}
