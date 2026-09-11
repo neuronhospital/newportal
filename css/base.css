@@ -261,6 +261,8 @@ body[data-title="Home"] .portal-section-eeg{background:#f2e9ff}
 body[data-title="Home"] .portal-section-calls{background:#ffe8f2}
 body[data-title="Home"] .portal-section-admin{background:#e5f5e9}
 body[data-title="Home"] .portal-section-title{
+  width:150px;
+  max-width:none;
   font-size:17px;
   font-weight:850;
   padding:7px 19px 8px;
