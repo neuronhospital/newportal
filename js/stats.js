@@ -104,26 +104,14 @@ document.addEventListener("DOMContentLoaded",()=>{
  }
 
  async function retrieveAllCities_(period){
-   const cities=Array.isArray(NEURON_CONFIG.cities)?NEURON_CONFIG.cities.slice():[];
-   if(!cities.length) throw new Error("No configured cities are available.");
-
-   // Do not ask the backend to interpret the special "all" pseudo-city.
-   // Retrieve each real city independently and aggregate the returned totals
-   // and detail rows in this client. This guarantees that one city cannot
-   // replace or overwrite another city's result.
-   const results=await Promise.all(cities.map(async function(city){
-     try{
-       return await NeuronAPI.call("retrieveRecords",{
-         city:city,
-         period:period,
-         showMode:"both"
-       },120000);
-     }catch(e){
-       throw new Error("Unable to retrieve "+city+": "+String(e&&e.message||e));
-     }
-   }));
-
-   return mergeRetrievalResults_(results,period);
+   // Use the backend's native All City aggregation path. This keeps the
+   // entire All City retrieval in a single Apps Script execution instead of
+   // issuing one browser/API request per city.
+   return await NeuronAPI.call("retrieveRecords",{
+     city:"all",
+     period:period,
+     showMode:"both"
+   },120000);
  }
 
  async function retrieveSelectedRecords(){
