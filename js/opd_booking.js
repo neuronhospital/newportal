@@ -662,6 +662,21 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
         return;
       }
     }
+    const bookingPhone=U.phone(type==="Follow-up"?$("followWa").value:$("wa").value);
+    if(!/^[6-9]\d{9}$/.test(bookingPhone)){
+      $("submitStatus").textContent="Enter a valid 10-digit WhatsApp number.";
+      $("submitStatus").style.color="#b42318";
+      $(type==="Follow-up"?"followWa":"wa")?.focus();
+      resetAfterValidationError();
+      return;
+    }
+    if(type==="New" && !verified){
+      $("submitStatus").textContent="Please verify the WhatsApp number.";
+      $("submitStatus").style.color="#b42318";
+      $("verifyWa")?.focus();
+      resetAfterValidationError();
+      return;
+    }
     if(total>2000){$("submitStatus").textContent="OPD total cannot exceed ₹2000.";$("submitStatus").style.color="#b42318";resetAfterValidationError();return;}
     if(total<0){$("submitStatus").textContent="Enter a valid OPD amount.";$("submitStatus").style.color="#b42318";resetAfterValidationError();return;}
 

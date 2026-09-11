@@ -80,8 +80,8 @@ function selectPatient(p,x){
  x.scrollIntoView({behavior:'smooth',block:'center'});
  setTimeout(()=>{document.getElementById('form')?.scrollIntoView({behavior:'smooth',block:'start'});},300);
  let f=document.getElementById('form');f.innerHTML='';
- if(p.refundAvailable.opd){f.innerHTML+='<section class="card"><label>OPD Refund</label><input id="opdRefund" type="number" min="1" max="'+Number(p.opdTotalPaid||0)+'" placeholder="Enter OPD Refund Amount"></section>';}
- if(p.refundAvailable.eeg){f.innerHTML+='<section class="card"><label>EEG Refund</label><input id="eegRefund" type="number" min="1" max="'+Number(p.eegTotalPaid||0)+'" placeholder="Enter EEG Refund Amount"></section>';}
+ if(p.refundAvailable.opd){f.innerHTML+='<section class="card"><label class="required-field">OPD Refund</label><input id="opdRefund" type="number" min="1" max="'+Number(p.opdTotalPaid||0)+'" placeholder="Enter OPD Refund Amount"></section>';}
+ if(p.refundAvailable.eeg){f.innerHTML+='<section class="card"><label class="required-field">EEG Refund</label><input id="eegRefund" type="number" min="1" max="'+Number(p.eegTotalPaid||0)+'" placeholder="Enter EEG Refund Amount"></section>';}
  f.innerHTML+='<button id="refundBtn" class="cta" style="display:block;margin:20px auto" onclick="save()">Refund</button><div id="refundStatus"></div><div id="confirmation"></div>';
 }
 function save(){
@@ -89,44 +89,32 @@ function save(){
  if(!btn||!selected)return;
  const status=document.getElementById('refundStatus');
  const inputs=[document.getElementById('opdRefund'),document.getElementById('eegRefund')].filter(Boolean);
- btn.textContent='Processing Refund';btn.disabled=true;
- inputs.forEach(i=>i.disabled=true);
+ const error=(field)=>{
+  if(status){status.style.color='#b42318';status.innerHTML='Enter Correct Amount<br>Refund amount should be greater than Zero and Equal or Less Than Paid Amount';}
+  if(field)field.focus();
+ };
+ const opdInput=document.getElementById('opdRefund'),eegInput=document.getElementById('eegRefund');
+ if(opdInput && opdInput.value.trim()==='')return error(opdInput);
+ if(eegInput && eegInput.value.trim()==='')return error(eegInput);
+ const opdRaw=opdInput?opdInput.value.trim():'';
+ const eegRaw=eegInput?eegInput.value.trim():'';
+ const opdVal=opdInput?Number(opdRaw):0;
+ const eegVal=eegInput?Number(eegRaw):0;
+ const opdPaid=Number(selected.opdTotalPaid||0),eegPaid=Number(selected.eegTotalPaid||0);
+ if((opdInput && (!Number.isFinite(opdVal)||opdVal<=0||opdVal>opdPaid)) || (eegInput && (!Number.isFinite(eegVal)||eegVal<=0||eegVal>eegPaid))){
+  return error((opdInput && (!Number.isFinite(opdVal)||opdVal<=0||opdVal>opdPaid))?opdInput:eegInput);
+ }
+ btn.textContent='Processing Refund';btn.disabled=true;inputs.forEach(i=>i.disabled=true);
  if(status){status.style.color='';status.textContent='Wait we are Processing refund';}
- const opdVal=Number((document.getElementById('opdRefund')||{}).value)||0;
- const eegVal=Number((document.getElementById('eegRefund')||{}).value)||0;
- if(!Number.isFinite(opdVal)||!Number.isFinite(eegVal)){
-  inputs.forEach(i=>i.disabled=false);btn.disabled=false;btn.textContent='Refund';
-  if(status){status.style.color='#b42318';status.textContent='Enter valid refund amount';}
-  return;
- }
- if(opdVal<=0 && eegVal<=0){
-  inputs.forEach(i=>i.disabled=false);btn.disabled=false;btn.textContent='Refund';
-  if(status){status.style.color='#b42318';status.textContent='Enter refund amount';}
-  return;
- }
- if(opdVal>Number(selected.opdTotalPaid||0) || eegVal>Number(selected.eegTotalPaid||0) || opdVal<0 || eegVal<0){
-  inputs.forEach(i=>i.disabled=false);btn.disabled=false;btn.textContent='Refund';
-  if(status){status.style.color='#b42318';status.textContent='Refund amount cannot exceed paid amount and must be greater than zero';}
-  return;
- }
  api({action:'saveRefund',appointmentId:selected.appointmentId,rowNumber:selected.rowNumber,city:selected.city,whatsapp:selected.whatsapp,opdRefund:opdVal,eegRefund:eegVal,updateOPD:opdVal>0,updateEEG:eegVal>0}).then(x=>{
-  if(!x.ok||!x.patient) throw Error(x.error||'Refund failed.');
-  const saved=x.patient;
-  selected=saved;
-  selected.refundAvailable={opd:false,eeg:false};
-  const type=[];
-  if(opdVal>0) type.push('OPD Refund ₹'+(Number(saved.opdRefund)||opdVal));
-  if(eegVal>0) type.push('EEG Refund ₹'+(Number(saved.eegRefund)||eegVal));
+  if(!x.ok||!x.patient)throw Error(x.error||'Refund failed.');
+  const saved=x.patient;selected=saved;selected.refundAvailable={opd:false,eeg:false};
+  const type=[];if(opdVal>0)type.push('OPD Refund ₹'+(Number(saved.opdRefund)||opdVal));if(eegVal>0)type.push('EEG Refund ₹'+(Number(saved.eegRefund)||eegVal));
   document.getElementById('confirmation').innerHTML='<div class="card" style="text-align:center;background:#c8f7c5"><div style="font-size:40px">✓</div><b>Refund Processed Successfully</b><br><br>Patient Name: '+(saved.name||'')+'<br>Age: '+(saved.age||'')+'<br>Appointment ID: '+(saved.appointmentId||'')+'<br>'+type.join('<br>')+'</div>';
-  btn.textContent='Refund Completed';
-  btn.disabled=true;
-  inputs.forEach(i=>i.disabled=true);
-  if(status){status.style.color='';status.textContent='';}
- }).catch(e=>{
-  inputs.forEach(i=>i.disabled=false);btn.disabled=false;btn.textContent='Refund';
-  if(status){status.style.color='#b42318';status.textContent=e.message||'Refund failed. No success was recorded.';}
- });
+  btn.textContent='Refund Completed';btn.disabled=true;inputs.forEach(i=>i.disabled=true);if(status){status.style.color='';status.textContent='';}
+ }).catch(e=>{inputs.forEach(i=>i.disabled=false);btn.disabled=false;btn.textContent='Refund';if(status){status.style.color='#b42318';status.textContent=e.message||'Refund failed. No success was recorded.';}});
 }
+
 function resetRefundView(){
  selected=null;
  document.getElementById('patients').innerHTML='';

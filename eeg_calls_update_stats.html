@@ -36,11 +36,11 @@
   <section id="edit" class="card" hidden>
     <div class="selected-patient">Selected Patient : <span id="selectedPatientName"></span></div>
     <div class="grid">
-      <div class="field full"><label>Patient Name</label><input id="editName"></div>
-      <div class="field full"><label>Address</label><input id="editAddress"></div>
-      <div class="field full"><label>Mobile Number</label><div class="prefix-wrap"><span class="prefix">+91</span><input id="editWhatsapp" maxlength="10" inputmode="numeric"></div></div>
-      <div class="field full"><label>Referred By Dr / Hospital</label><input id="editReferredBy"></div>
-      <div class="field full"><label>Payment</label><input id="editPayment" type="number" min="0" step="1" inputmode="decimal"></div>
+      <div class="field full"><label class="required-field">Patient Name</label><input id="editName"></div>
+      <div class="field full"><label class="required-field">Address</label><input id="editAddress"></div>
+      <div class="field full"><label class="required-field">Mobile Number</label><div class="prefix-wrap"><span class="prefix">+91</span><input id="editWhatsapp" maxlength="10" inputmode="numeric"></div></div>
+      <div class="field full"><label class="required-field">Referred By Dr / Hospital</label><input id="editReferredBy"></div>
+      <div class="field full"><label class="required-field">Payment</label><input id="editPayment" type="number" min="0" step="1" inputmode="decimal"></div>
       <div class="field full"><div class="edit-actions"><button id="updateDetails" class="cta" type="button">Update Details</button><button id="cancelUpdate" class="btn btn-secondary" type="button">Cancel</button></div><div id="updateWait" class="update-wait" hidden>Wait EEG details are Updating</div><div id="updateError" class="update-error" hidden></div></div>
     </div>
   </section>
