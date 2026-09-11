@@ -51,7 +51,7 @@ window.NeuronAPI={
   const key="bookingRequestId";
   for(let i=0;i<retries;i++){
     try{
-      const r=await NeuronAPI.call(action,{[key]:id,city},10000);
+      const r=await NeuronAPI.call(action,{[key]:id,city},5000);
       if(r&&r.found)return r;
     }catch(_){}
     if(i<retries-1)await new Promise(resolve=>setTimeout(resolve,2000));
