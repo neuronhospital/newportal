@@ -145,25 +145,24 @@ document.addEventListener("DOMContentLoaded",()=>{
  function render(r){
    const t=r.totals||{};
    const rows=r.rows||[];
-   let html=`<div class="report-head"><b>${esc(r.city)}</b> • ${esc(r.periodLabel||"")}</div>`;
-
-   const freeOPD=rows.filter(x=>Number(x.opdCharges)===0).length;
-   const eegRows=rows.filter(x=>x.eegCharges!==null);
-   const freeEEG=eegRows.filter(x=>Number(x.eegCharges)===0).length;
-   const totalRefundOPD=rows.reduce((a,x)=>a+(Number(x.opdRefund)||0),0);
-   const totalRefundEEG=rows.reduce((a,x)=>a+(Number(x.eegRefund)||0),0);
-   const totalRefund=totalRefundOPD+totalRefundEEG;
-   const totalCash=(Number(t.opdCash)||0)+(Number(t.eegCash)||0);
-   const totalOnline=(Number(t.opdOnline)||0)+(Number(t.eegOnline)||0);
-   const totalCollection=(Number(t.opdPaid)||0)+(Number(t.eegPaid)||0);
-   const netCash=totalCash-totalRefund;
-   const netOnline=totalOnline;
-   const netTotal=netCash+netOnline;
+   const hasDetail=!!r.hasDetail;
+   const patientCount=Number(t.patientCount)||0;
+   const freeOPD=Number(t.freeOPD)||0;
+   const freeEEG=Number(t.freeEEG)||0;
+   const totalRefundOPD=Number(t.opdRefund)||0;
+   const totalRefundEEG=Number(t.eegRefund)||0;
+   const totalRefund=Number(t.totalRefund)||(totalRefundOPD+totalRefundEEG);
+   const totalCash=Number(t.totalCash)||(Number(t.opdCash)||0)+(Number(t.eegCash)||0);
+   const totalOnline=Number(t.totalOnline)||(Number(t.opdOnline)||0)+(Number(t.eegOnline)||0);
+   const totalCollection=Number(t.totalCollection)||(Number(t.opdPaid)||0)+(Number(t.eegPaid)||0);
+   const netCash=Number(t.netCash)||(totalCash-totalRefund);
+   const netOnline=Number(t.netOnline)||totalOnline;
+   const netTotal=Number(t.netTotal)||(netCash+netOnline);
    html+=`<div class="service-summary">
      <div class="service-card">
        <div class="service-card-title">OPD</div>
        <div class="service-card-body">
-         <div class="service-metric"><span>Total</span><strong class="metric-total">${rows.length}</strong></div>
+         <div class="service-metric"><span>Total</span><strong class="metric-total">${patientCount}</strong></div>
          <div class="service-divider"></div>
          <div class="service-metric"><span>Free</span><strong class="metric-free">${freeOPD}</strong></div>
        </div>
@@ -171,7 +170,7 @@ document.addEventListener("DOMContentLoaded",()=>{
      <div class="service-card">
        <div class="service-card-title">EEG</div>
        <div class="service-card-body">
-         <div class="service-metric"><span>Total</span><strong class="metric-total">${t.eegCount||eegRows.length}</strong></div>
+         <div class="service-metric"><span>Total</span><strong class="metric-total">${Number(t.eegCount)||0}</strong></div>
          <div class="service-divider"></div>
          <div class="service-metric"><span>Free</span><strong class="metric-free">${freeEEG}</strong></div>
        </div>
@@ -183,41 +182,33 @@ document.addEventListener("DOMContentLoaded",()=>{
      <tr><th class="collection-label">Refund</th><td>${money(totalRefundOPD)}</td><td>${money(totalRefundEEG)}</td><td>${money(totalRefund)}</td><td>${money(totalRefund)}</td></tr>
      <tr class="collection-total"><th class="collection-label">Total</th><td>${money(t.opdPaid)}</td><td>${money(t.eegPaid)}</td><td>${money(totalCollection)}</td><td>${money(netTotal)}</td></tr>
    </tbody></table></div></div>`;
-   if(!rows.length){
+   if(!patientCount){
      const city=esc(r.city||$("city").value);
      const dateLabel=esc(r.periodLabel||$("period").selectedOptions[0]?.textContent||$("period").value);
      $("results").innerHTML=`<div class="status">No Record Available for ${city}, ${dateLabel}, Patient / EEG.</div>`;
      return;
    }
-   const recentPatientTable = selectedPeriodForPatientTable(r.period);
-   html+=recentPatientTable
-     ? bothTable(rows)
-     : `<div class="patient-detail-load" style="margin-top:12px;text-align:center">
-         <button id="loadPatientDetail" class="btn btn-secondary">Load Patient Detail Table</button>
-       </div>`;
-   html+=`<div class="download-row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:nowrap">
-     <button id="downloadCsv" class="btn btn-secondary">⬇ Download CSV</button>
-     <button id="downloadMobile" class="btn btn-secondary">⬇ Mobile Number</button>
-   </div>`;
-   $("results").innerHTML=html;
-   if(!recentPatientTable){
-     $("loadPatientDetail").onclick=()=>{
-       const loadBtn=$("loadPatientDetail");
-       loadBtn.disabled=true;
-       loadBtn.textContent="Loading Patient Detail Table…";
-       const holder=loadBtn.parentElement;
-       holder.innerHTML=bothTable(rows);
-     };
+   if(hasDetail){
+     html+=bothTable(rows,t);
+     html+=`<div class="download-row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:nowrap">
+       <button id="downloadCsv" class="btn btn-secondary">⬇ Download CSV</button>
+       <button id="downloadMobile" class="btn btn-secondary">⬇ Mobile Number</button>
+     </div>`;
    }
-   $("downloadCsv").onclick=()=>downloadCSV(r);
-   $("downloadMobile").onclick=()=>downloadMobileNumbers(r);
+   $("results").innerHTML=html;
+   if(hasDetail){
+     $("downloadCsv").onclick=()=>downloadCSV(r);
+     $("downloadMobile").onclick=()=>downloadMobileNumbers(r);
+   }
  }
 
  function selectedPeriodForPatientTable(period){
-   return period==="today" || period==="yesterday" || period==="daybefore";
+   const q=U.parts();
+   const currentMonth=`${q.y}-${String(q.m).padStart(2,"0")}`;
+   return period==="today" || period==="yesterday" || period==="daybefore" || period===currentMonth;
  }
 
- function bothTable(rows){
+ function bothTable(rows,t){
    let html=`<div class="table-wrap combined-table-wrap"><table id="reportTable" class="combined-report"><thead>
      <tr><th rowspan="2">Sr. No.</th><th rowspan="2">Patient Name</th><th colspan="4">OPD Collection</th><th colspan="4">EEG Collection</th><th rowspan="2">Mobile Number</th></tr>
      <tr><th>Cash</th><th>Online</th><th>Refund</th><th>Net Total</th><th>Cash</th><th>Online</th><th>Refund</th><th>Net Total</th></tr>
@@ -229,14 +220,12 @@ document.addEventListener("DOMContentLoaded",()=>{
      const eegNet=(Number(x.eegCashPaid)||0)+(Number(x.eegOnlinePaid)||0)-eegRefund;
      html+=`<tr><td>${i+1}</td><td>${esc(x.patientName)}</td><td>${paidOrDash(x.opdCashPaid)}</td><td>${paidOrDash(x.opdOnlinePaid)}</td><td>${paidOrDash(opdRefund)}</td><td>${money(opdNet)}</td><td>${x.eegCharges===null?"-":paidOrDash(x.eegCashPaid)}</td><td>${x.eegCharges===null?"-":paidOrDash(x.eegOnlinePaid)}</td><td>${x.eegCharges===null?"-":paidOrDash(eegRefund)}</td><td>${x.eegCharges===null?"-":money(eegNet)}</td><td>${esc(x.mobileNumber)}</td></tr>`;
    });
-   const opd=rows.reduce((a,x)=>a+(Number(x.opdTotalPaid)||0),0);
-   const opdCash=rows.reduce((a,x)=>a+(Number(x.opdCashPaid)||0),0);
-   const opdOnline=rows.reduce((a,x)=>a+(Number(x.opdOnlinePaid)||0),0);
-   const opdRefund=rows.reduce((a,x)=>a+(Number(x.opdRefund)||0),0);
-   const eeg=rows.reduce((a,x)=>a+(Number(x.eegTotalPaid)||0),0);
-   const eegCash=rows.reduce((a,x)=>a+(Number(x.eegCashPaid)||0),0);
-   const eegOnline=rows.reduce((a,x)=>a+(Number(x.eegOnlinePaid)||0),0);
-   const eegRefund=rows.reduce((a,x)=>a+(Number(x.eegRefund)||0),0);
+   const opdCash=Number(t.opdCash)||0;
+   const opdOnline=Number(t.opdOnline)||0;
+   const opdRefund=Number(t.opdRefund)||0;
+   const eegCash=Number(t.eegCash)||0;
+   const eegOnline=Number(t.eegOnline)||0;
+   const eegRefund=Number(t.eegRefund)||0;
    html+=`</tbody><tfoot><tr class="total-row"><th colspan="2">Total</th><th>${money(opdCash)}</th><th>${money(opdOnline)}</th><th>${paidOrDash(opdRefund)}</th><th>${money(opdCash+opdOnline-opdRefund)}</th><th>${money(eegCash)}</th><th>${money(eegOnline)}</th><th>${paidOrDash(eegRefund)}</th><th>${money(eegCash+eegOnline-eegRefund)}</th><th>—</th></tr></tfoot></table></div>`;
    return html;
  }
