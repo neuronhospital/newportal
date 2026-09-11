@@ -270,7 +270,7 @@ body[data-title="Home"] .portal-section-title{
 body[data-title="Home"] .portal-section-opd .portal-section-title{background:#4d8fe3;color:#fff}
 body[data-title="Home"] .portal-section-eeg .portal-section-title{background:#8f48cc;color:#fff}
 body[data-title="Home"] .portal-section-calls .portal-section-title{background:#dc3f7d;color:#fff}
-body[data-title="Home"] .portal-section-admin .portal-section-title{background:#2f8f57;color:#fff}
+body[data-title="Home"] .portal-section-admin .portal-section-title{background:#2f8f57;color:#fff;width:max-content;max-width:calc(100% - 32px)}
 body[data-title="Home"] .portal-actions{
   gap:9px;
   padding:10px;
