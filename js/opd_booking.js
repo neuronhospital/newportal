@@ -514,7 +514,7 @@ document.addEventListener("DOMContentLoaded",()=>{
 const r = await NeuronAPI.call("getPatientHistoryByWhatsApp", {
   whatsapp: p,
   city: followCity
-}, 60000);
+}, 25000);
 
       let patients=Array.isArray(r.patients)?r.patients.slice():[];
       patients=cleanFollowupPatients(patients);
