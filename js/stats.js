@@ -62,6 +62,70 @@ document.addEventListener("DOMContentLoaded",()=>{
  [$("city"),$("period")].forEach(el=>el.addEventListener("change",clearResults));
 
 
+ function mergeRetrievalResults_(results, period){
+   const totalKeys=[
+     "patientCount","freeOPD","eegCount","freeEEG",
+     "opdTotal","opdCash","opdOnline","opdPaid","opdRefund",
+     "eegTotal","eegCash","eegOnline","eegPaid","eegRefund",
+     "totalCash","totalOnline","totalCollection","totalRefund",
+     "netCash","netOnline","netTotal"
+   ];
+   const totals={};
+   totalKeys.forEach(k=>totals[k]=0);
+
+   let rows=[];
+   results.forEach(function(r){
+     const t=r&&r.totals||{};
+     totalKeys.forEach(function(k){
+       totals[k]+=Number(t[k])||0;
+     });
+     if(Array.isArray(r&&r.rows)) rows=rows.concat(r.rows);
+   });
+
+   if(rows.length){
+     rows.sort(function(a,b){
+       const ad=String(a&&a.date||"");
+       const bd=String(b&&b.date||"");
+       if(ad!==bd) return bd.localeCompare(ad);
+       return String(a&&a.appointmentId||"").localeCompare(String(b&&b.appointmentId||""));
+     });
+   }
+
+   return {
+     ok:true,
+     city:"All City Combined",
+     period:period,
+     periodLabel:(results[0]&&results[0].periodLabel)||"",
+     showMode:"both",
+     hasDetail:!!(results[0]&&results[0].hasDetail),
+     rows:rows,
+     totals:totals
+   };
+ }
+
+ async function retrieveAllCities_(period){
+   const cities=Array.isArray(NEURON_CONFIG.cities)?NEURON_CONFIG.cities.slice():[];
+   if(!cities.length) throw new Error("No configured cities are available.");
+
+   // Do not ask the backend to interpret the special "all" pseudo-city.
+   // Retrieve each real city independently and aggregate the returned totals
+   // and detail rows in this client. This guarantees that one city cannot
+   // replace or overwrite another city's result.
+   const results=await Promise.all(cities.map(async function(city){
+     try{
+       return await NeuronAPI.call("retrieveRecords",{
+         city:city,
+         period:period,
+         showMode:"both"
+       },120000);
+     }catch(e){
+       throw new Error("Unable to retrieve "+city+": "+String(e&&e.message||e));
+     }
+   }));
+
+   return mergeRetrievalResults_(results,period);
+ }
+
  async function retrieveSelectedRecords(){
    const btn=$("get");
    const citySelect=$("city");
@@ -73,14 +137,19 @@ document.addEventListener("DOMContentLoaded",()=>{
    periodSelect.disabled=true;
    $("historyGate").hidden=true;
    btn.textContent="Retrieving Records…";
-   $("results").innerHTML=`<div class="status">Retrieving records from Google Sheets…</div>`;
+   $("results").innerHTML=`<div class="status">${
+     citySelect.value==="all"
+       ? "Retrieving records from all cities…"
+       : "Retrieving records from Google Sheets…"
+   }</div>`;
    try{
-     const r=await NeuronAPI.call("retrieveRecords",{
-       city:citySelect.value,
-       period:selectedPeriod,
-       showMode:"both"
-     },120000);
-     if(citySelect.value==="all") r.city="All City Combined";
+     const r=citySelect.value==="all"
+       ? await retrieveAllCities_(selectedPeriod)
+       : await NeuronAPI.call("retrieveRecords",{
+           city:citySelect.value,
+           period:selectedPeriod,
+           showMode:"both"
+         },120000);
      const relativeLabel=retrievalPeriodLabel(selectedPeriod);
      if(relativeLabel) r.periodLabel=relativeLabel;
      render(r);
