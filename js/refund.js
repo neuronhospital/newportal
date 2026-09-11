@@ -94,19 +94,25 @@ function save(){
   if(field)field.focus();
  };
  const opdInput=document.getElementById('opdRefund'),eegInput=document.getElementById('eegRefund');
- if(opdInput && opdInput.value.trim()==='')return error(opdInput);
- if(eegInput && eegInput.value.trim()==='')return error(eegInput);
  const opdRaw=opdInput?opdInput.value.trim():'';
  const eegRaw=eegInput?eegInput.value.trim():'';
- const opdVal=opdInput?Number(opdRaw):0;
- const eegVal=eegInput?Number(eegRaw):0;
+ const opdVal=opdRaw===''?0:Number(opdRaw);
+ const eegVal=eegRaw===''?0:Number(eegRaw);
  const opdPaid=Number(selected.opdTotalPaid||0),eegPaid=Number(selected.eegTotalPaid||0);
- if((opdInput && (!Number.isFinite(opdVal)||opdVal<=0||opdVal>opdPaid)) || (eegInput && (!Number.isFinite(eegVal)||eegVal<=0||eegVal>eegPaid))){
-  return error((opdInput && (!Number.isFinite(opdVal)||opdVal<=0||opdVal>opdPaid))?opdInput:eegInput);
+ const opdEntered=opdRaw!=='';
+ const eegEntered=eegRaw!=='';
+ if(!opdEntered && !eegEntered){
+  return error(opdInput||eegInput);
+ }
+ if(opdEntered && (!Number.isFinite(opdVal)||opdVal<=0||opdVal>opdPaid)){
+  return error(opdInput);
+ }
+ if(eegEntered && (!Number.isFinite(eegVal)||eegVal<=0||eegVal>eegPaid)){
+  return error(eegInput);
  }
  btn.textContent='Processing Refund';btn.disabled=true;inputs.forEach(i=>i.disabled=true);
  if(status){status.style.color='';status.textContent='Wait we are Processing refund';}
- api({action:'saveRefund',appointmentId:selected.appointmentId,rowNumber:selected.rowNumber,city:selected.city,whatsapp:selected.whatsapp,opdRefund:opdVal,eegRefund:eegVal,updateOPD:opdVal>0,updateEEG:eegVal>0}).then(x=>{
+ api({action:'saveRefund',appointmentId:selected.appointmentId,rowNumber:selected.rowNumber,city:selected.city,whatsapp:selected.whatsapp,opdRefund:opdVal,eegRefund:eegVal,updateOPD:opdEntered,updateEEG:eegEntered}).then(x=>{
   if(!x.ok||!x.patient)throw Error(x.error||'Refund failed.');
   const saved=x.patient;
   showRefundConfirmation(saved);
@@ -156,8 +162,9 @@ async function checkRefundStatus(){
  if(status){status.style.color='';status.textContent='Wait we are checking refund status';}
  try{
   const opdInput=document.getElementById('opdRefund'),eegInput=document.getElementById('eegRefund');
-  const opdVal=opdInput?Number(opdInput.value):0, eegVal=eegInput?Number(eegInput.value):0;
-  const x=await api({action:'checkRefundStatus',appointmentId:selected.appointmentId,rowNumber:selected.rowNumber,city:selected.city,whatsapp:selected.whatsapp,opdRefund:opdVal,eegRefund:eegVal,updateOPD:!!opdInput,updateEEG:!!eegInput});
+  const opdRaw=opdInput?opdInput.value.trim():'',eegRaw=eegInput?eegInput.value.trim():'';
+  const opdVal=opdRaw===''?0:Number(opdRaw), eegVal=eegRaw===''?0:Number(eegRaw);
+  const x=await api({action:'checkRefundStatus',appointmentId:selected.appointmentId,rowNumber:selected.rowNumber,city:selected.city,whatsapp:selected.whatsapp,opdRefund:opdVal,eegRefund:eegVal,updateOPD:opdRaw!=='',updateEEG:eegRaw!==''});
   btn.remove();
   if(!x.ok)throw Error(x.error||'Unable to check refund status.');
   if(!x.found){
@@ -179,12 +186,23 @@ function showRefundConfirmation(saved){
  if(eegVal>0)type.push('EEG Refund ₹'+eegVal);
  const c=document.getElementById('confirmation');
  if(c)c.innerHTML='<div class="card" style="text-align:center;background:#c8f7c5"><div style="font-size:40px">✓</div><b>Refund Processed Successfully</b><br><br>Patient Name: '+(saved.name||'')+'<br>Age: '+(saved.age||'')+'<br>Appointment ID: '+(saved.appointmentId||'')+'<br>'+type.join('<br>')+'</div>';
- if(btn){btn.textContent='Refund Completed';btn.disabled=true;}
- inputs.forEach(i=>i.disabled=true);
+ selected=saved;
+ selected.refundAvailable={
+  opd:Number(saved&&saved.opdTotalPaid||0)>0 && saved.opdRefundProvided!==true,
+  eeg:Number(saved&&saved.eegTotalPaid||0)>0 && saved.eegRefundProvided!==true
+ };
+ const refundedInputs=[];
+ if(opdVal>0 && !selected.refundAvailable.opd)refundedInputs.push(document.getElementById('opdRefund'));
+ if(eegVal>0 && !selected.refundAvailable.eeg)refundedInputs.push(document.getElementById('eegRefund'));
+ refundedInputs.filter(Boolean).forEach(i=>i.remove());
+ const remainingInputs=[document.getElementById('opdRefund'),document.getElementById('eegRefund')].filter(Boolean);
+ remainingInputs.forEach(i=>{i.disabled=false;});
+ if(btn){
+  if(selected.refundAvailable.opd || selected.refundAvailable.eeg){btn.textContent='Refund';btn.disabled=false;}
+  else{btn.textContent='Refund Completed';btn.disabled=true;}
+ }
  const status=document.getElementById('refundStatus');
  if(status){status.style.color='';status.textContent='';}
- selected=saved;
- selected.refundAvailable={opd:false,eeg:false};
 }
 
 function resetRefundView(){
