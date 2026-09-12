@@ -149,6 +149,9 @@
 
 @media(max-width:699px){.service-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.service-card-title{min-width:82px;padding:8px 14px;font-size:18px}.service-card-body{min-height:72px;padding:10px 8px 12px}.service-metric span{font-size:13px}.service-metric strong{font-size:20px}.service-divider{height:42px}}
 
+/* v187.1: compact Statistics summary cards on mobile to keep metric values inside card bounds */
+@media(max-width:699px){body[data-title="Statistics"] .service-card-title{font-size:13.5px;font-weight:675}body[data-title="Statistics"] .service-metric span{font-size:9.75px;font-weight:375}body[data-title="Statistics"] .service-metric strong{font-size:15px;font-weight:459;letter-spacing:-.15px;white-space:nowrap}body[data-title="Statistics"] .service-card-body{grid-template-columns:minmax(0,1fr) 1px minmax(0,1fr)}}
+
 
 /* Home portal grouped cards v170.2 */
 .portal-grid{display:grid;gap:12px}
