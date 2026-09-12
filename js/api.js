@@ -9,7 +9,6 @@ window.NeuronAPI={
   const externalSignal=options&&options.signal;
   let externalAborted=false;
   let externalAbortHandler=null;
-  let abortTimer=null;
   let timeoutTimer=null;
   if(externalSignal){
     externalAbortHandler=()=>{externalAborted=true;try{controller.abort();}catch(_) {}};
@@ -48,9 +47,10 @@ window.NeuronAPI={
   }catch(e){
     if(e&&e.name==="AbortError")
       throw externalAborted ? Error("Request cancelled.") : Error("Network timeout. The request may still have been recorded.");
+    if(e&&e.name==="TypeError")
+      throw Error("Could not reach the NEURON server. Please check the internet connection and try again.");
     throw e;
   }finally{
-    if(abortTimer)clearTimeout(abortTimer);
     if(timeoutTimer)clearTimeout(timeoutTimer);
     if(externalSignal&&externalAbortHandler)externalSignal.removeEventListener("abort",externalAbortHandler);
   }
@@ -73,6 +73,17 @@ window.NeuronAPI={
   for(let i=0;i<retries;i++){
    try{
     const r=await NeuronAPI.call(action,{[key]:requestId},5000);
+    if(r&&r.found)return r;
+   }catch(_){}
+   if(i<retries-1)await new Promise(resolve=>setTimeout(resolve,2000));
+  }
+  return null;
+ }
+,
+ verifyUpdate:async(payload,retries=2)=>{
+  for(let i=0;i<retries;i++){
+   try{
+    const r=await NeuronAPI.call("checkUpdateStatus",payload,5000);
     if(r&&r.found)return r;
    }catch(_){}
    if(i<retries-1)await new Promise(resolve=>setTimeout(resolve,2000));
