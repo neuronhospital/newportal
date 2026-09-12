@@ -60,7 +60,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     const el=$("city");
     if(!el)return;
     const scheduled=getScheduledCityForToday();
-    el.innerHTML=cities.map(c=>`<option value="${U.esc(c)}" class="${c===scheduled?"":"visit-city-locked-option"}" data-locked="${c===scheduled?"false":"true"}"${c===scheduled?"":" disabled"}>${U.esc(c)}</option>`).join("");
+    el.innerHTML=cities.map(c=>`<option value="${U.esc(c)}" class="${c===scheduled?"":"visit-city-locked-option"}" data-locked="${c===scheduled?"false":"true"}">${U.esc(c)}</option>`).join("");
     el.value=scheduled;
     el.dataset.scheduledCity=scheduled||"";
   };
@@ -465,6 +465,12 @@ document.addEventListener("DOMContentLoaded",()=>{
     }
   };
   const openDateCalendar=()=>{
+    const cal=$("cal");
+    if(!cal)return;
+    if(!cal.hidden){
+      cal.hidden=true;
+      return;
+    }
     const t=U.parts();
     if(calendarYear<t.y || (calendarYear===t.y && calendarMonth<t.m)){calendarYear=t.y;calendarMonth=t.m;}
     renderCalendar();
