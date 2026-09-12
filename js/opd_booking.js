@@ -56,6 +56,31 @@ document.addEventListener("DOMContentLoaded",()=>{
 
   const getScheduledCityForToday=()=>Schedule.cityAtNow(cities);
 
+  const refreshVisitLocationOptions=()=>{
+    const el=$("city");
+    if(!el)return;
+    const scheduled=getScheduledCityForToday();
+    el.innerHTML=cities.map(c=>`<option value="${U.esc(c)}" class="${c===scheduled?"":"visit-city-locked-option"}" data-locked="${c===scheduled?"false":"true"}"${c===scheduled?"":" disabled"}>${U.esc(c)}</option>`).join("");
+    el.value=scheduled;
+    el.dataset.scheduledCity=scheduled||"";
+  };
+
+  const showOPDRestrictionPopup=(message)=>{
+    const modal=$("opdRestrictionModal"), text=$("opdRestrictionMessage"), ok=$("opdRestrictionOk");
+    if(!modal||!text)return;
+    text.textContent=message;
+    modal.hidden=false;
+    requestAnimationFrame(()=>ok?.focus());
+  };
+  const hideOPDRestrictionPopup=()=>{
+    const modal=$("opdRestrictionModal");
+    if(modal)modal.hidden=true;
+  };
+  $("opdRestrictionOk")?.addEventListener("click",hideOPDRestrictionPopup);
+  $("opdRestrictionModal")?.addEventListener("click",e=>{
+    if(e.target===$("opdRestrictionModal"))hideOPDRestrictionPopup();
+  });
+
   const initFollowupCity=()=>{
     const el=$("followCity");
     if(!el)return;
@@ -78,10 +103,10 @@ document.addEventListener("DOMContentLoaded",()=>{
   };
 
   const fillCities=()=>{
-    $("city").innerHTML=cities.map(x=>`<option value="${x}">${x}</option>`).join("");
-    $("next").innerHTML=cities.map(x=>`<option value="${x}">${x}</option>`).join("");
+    refreshVisitLocationOptions();
+    $("next").innerHTML=cities.map(x=>`<option value="${U.esc(x)}">${U.esc(x)}</option>`).join("");
     const todayCity=getScheduledCityForToday();
-    $("city").value=todayCity; $("next").value=todayCity;
+    $("next").value=todayCity;
   };
 
   const resetFields=(mode)=>{
@@ -104,7 +129,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     delete $("date").dataset.key;
     $("unit").value="years";
     const todayCity=getScheduledCityForToday();
-    $("city").value=todayCity; $("next").value=todayCity;
+    refreshVisitLocationOptions(); $("next").value=todayCity;
     // Follow-up locking is scoped to Follow-up mode only. When switching
     // back to New, explicitly clear every Follow-up lock before applying the
     // normal v175 pre-verification state. This prevents readOnly/disabled
@@ -270,11 +295,11 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("payMode").onchange=updatePaymentUI;
   $("cash").oninput=updateSplitTotal; $("online").oninput=updateSplitTotal;
 
-  $("follow").onclick=async()=>{resetFields("Follow-up"); await setNextAvailableDate($("city").value); $("cal").hidden=true;};
+  $("follow").onclick=async()=>{resetFields("Follow-up"); setTodayDateDisplay(); $("date").dataset.key=U.parts().d.toString().padStart(2,"0")+U.parts().m.toString().padStart(2,"0")+U.parts().y; $("cal").hidden=true;};
   $("new").onclick=async()=>{
     resetFields("New");
     unlockBeforeWhatsApp();
-    await setNextAvailableDate($("city").value);
+    setTodayDateDisplay(); $("date").dataset.key=U.parts().d.toString().padStart(2,"0")+U.parts().m.toString().padStart(2,"0")+U.parts().y;
     $("cal").hidden=true;
   };
 
@@ -322,7 +347,14 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("calNext").onclick=async()=>{calendarMonth++;if(calendarMonth>12){calendarMonth=1;calendarYear++;}await renderCalendar();};
     $("calMonthTitle").onclick=async()=>{calendarYear=today.y;calendarMonth=today.m;await renderCalendar();};
     $("cal").querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{
-      $("date").value=U.date(b.dataset.k); $("date").dataset.key=b.dataset.k; $("cal").hidden=true;
+      const key=b.dataset.k;
+      const dd=Number(key.slice(0,2)), mm=Number(key.slice(2,4)), yy=Number(key.slice(4,8));
+      const isToday=yy===today.y&&mm===today.m&&dd===today.d;
+      if(!isToday){
+        showOPDRestrictionPopup("OPD booking can be done for today's date only.");
+        return;
+      }
+      $("date").value=U.date(key); $("date").dataset.key=key; $("cal").hidden=true;
     });
   }
 
@@ -396,7 +428,14 @@ document.addEventListener("DOMContentLoaded",()=>{
   };
 
   $("city").onchange=async()=>{
-    const city=$("city").value;
+    const scheduled=getScheduledCityForToday();
+    if($("city").value!==scheduled){
+      refreshVisitLocationOptions();
+      showOPDRestrictionPopup("Today's visit location is fixed according to the doctor's schedule.");
+      return;
+    }
+    $("city").value=scheduled;
+    const city=scheduled;
     const token=++cityChangeToken;
 
     // New OPD: Next Follow-up City initially follows Visit Location.
@@ -408,15 +447,15 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("cal").hidden=true;
     const now=U.parts();calendarYear=now.y;calendarMonth=now.m;
 
+    setTodayDateDisplay();
+    const p=U.parts();
+    $("date").dataset.key=String(p.d).padStart(2,"0")+String(p.m).padStart(2,"0")+p.y;
     if(!verified){
-      setTodayDateDisplay();
-  cacheCityFollowup();
       return;
     }
 
-    setDateLoading(true,city);
+    setDateLoading(false,city);
     try{
-      await setNextAvailableDate(city);
     }finally{
       // Ignore completion of an older city lookup. A previous request must
       // never overwrite the state belonging to the latest selected city.
@@ -510,7 +549,7 @@ $("patients").innerHTML="";
           // Follow-up Visit Location is schedule-aware by default, regardless
           // of the city used in the previous booking. It remains editable.
           const scheduleAwareCity=getScheduledCityForToday();
-          $("city").value=scheduleAwareCity;
+          refreshVisitLocationOptions(); $("city").value=scheduleAwareCity;
           // Next Follow-up City carries forward the city from the previous
           // booking, and remains independently editable.
           $("next").value=x.nextFollowupCity||x.city||scheduleAwareCity;
@@ -529,7 +568,7 @@ $("patients").innerHTML="";
           const actions=$("editFollowup")?.closest(".followup-edit-actions");
           if(actions) actions.classList.remove("editing");
           const now=U.parts();calendarYear=now.y;calendarMonth=now.m;
-          setFollowupDefaultDate($("city").value);
+          setTodayDateDisplay(); { const p=U.parts(); $("date").dataset.key=String(p.d).padStart(2,"0")+String(p.m).padStart(2,"0")+p.y; }
           requestAnimationFrame(()=>{
             $("selectedPatientCard").scrollIntoView({behavior:"smooth",block:"center"});
           });
@@ -819,7 +858,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
   initFollowupCity();
   fillCities();
   resetFields("New");
-  setNextAvailableDate($("city").value);
+  setTodayDateDisplay(); { const p=U.parts(); $("date").dataset.key=String(p.d).padStart(2,"0")+String(p.m).padStart(2,"0")+p.y; }
 
   // Mobile browsers may restore a page from the back-forward cache with
   // stale button text. If no booking is actually running, normalize it.
