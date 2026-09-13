@@ -58,6 +58,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   const specialDayCityPrefix="neuron_opd_special_day_city_";
   const specialDayPasswordHash="114f4b4bbf1f4a3a58064199f0e9d241566f356756ee58e5d160d3937e6ac740";
   let specialDayVerifying=false;
+  let specialDayPendingCity="";
 
   const todayKey=()=>{
     const p=U.parts();
@@ -149,9 +150,13 @@ document.addEventListener("DOMContentLoaded",()=>{
         const h=Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,"0")).join("");
         if(h!==specialDayPasswordHash)throw Error("Incorrect password.");
         localStorage.setItem(specialDayAccessKey(),"1");
+        const targetCity=specialDayPendingCity&&cities.includes(specialDayPendingCity)
+          ? specialDayPendingCity
+          : (getSavedVisitCity()||getScheduledCityForToday());
+        specialDayPendingCity="";
         hideOPDRestrictionPopup();
-        refreshVisitLocationOptions();
-        showSpecialCityPopup();
+        if(targetCity&&cities.includes(targetCity)) await handleVisitCityChange(targetCity);
+        else refreshVisitLocationOptions();
       }catch(e){
         const er=$("opdSpecialError");
         if(er){er.hidden=false;er.textContent="Password is wrong. Please try again.";}
@@ -166,7 +171,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       if(input.value.length===8)verify();
     });
     $("opdSpecialVerify")?.addEventListener("click",verify);
-    $("opdSpecialCancel")?.addEventListener("click",()=>{hideOPDRestrictionPopup();refreshVisitLocationOptions();});
+    $("opdSpecialCancel")?.addEventListener("click",()=>{specialDayPendingCity="";hideOPDRestrictionPopup();refreshVisitLocationOptions();});
     modalFocus(input);
   };
   function modalFocus(el){requestAnimationFrame(()=>el?.focus());}
@@ -549,6 +554,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     const city=selectedCity||$("city").value;
     const allowed=isSpecialDayActive()||scheduledCities.includes(city);
     if(!allowed){
+      specialDayPendingCity=city;
       refreshVisitLocationOptions();
       $("city").value=scheduled;
       handleLockedCityAttempt();
