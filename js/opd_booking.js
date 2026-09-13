@@ -54,31 +54,146 @@ document.addEventListener("DOMContentLoaded",()=>{
     return{value:days,unit:"days"};
   };
 
-  const getScheduledCityForToday=()=>Schedule.cityAtNow(cities);
+  const specialDayAccessPrefix="neuron_opd_special_day_access_";
+  const specialDayCityPrefix="neuron_opd_special_day_city_";
+  const specialDayPasswordHash="114f4b4bbf1f4a3a58064199f0e9d241566f356756ee58e5d160d3937e6ac740";
+  let specialDayVerifying=false;
 
-  const refreshVisitLocationOptions=()=>{
+  const todayKey=()=>{
+    const p=U.parts();
+    return String(p.d).padStart(2,"0")+String(p.m).padStart(2,"0")+p.y;
+  };
+  const specialDayAccessKey=()=>specialDayAccessPrefix+todayKey();
+  const specialDayCityKey=()=>specialDayCityPrefix+todayKey();
+  const isSpecialDayActive=()=>localStorage.getItem(specialDayAccessKey())==="1";
+  const getSavedVisitCity=()=>{
+    const v=localStorage.getItem(specialDayCityKey());
+    return cities.includes(v)?v:"";
+  };
+  const saveVisitCityForToday=city=>{
+    if(cities.includes(city))localStorage.setItem(specialDayCityKey(),city);
+  };
+  const clearExpiredSpecialDayState=()=>{
+    const tk=todayKey();
+    for(let i=localStorage.length-1;i>=0;i--){
+      const k=localStorage.key(i)||"";
+      if((k.startsWith(specialDayAccessPrefix)||k.startsWith(specialDayCityPrefix))&&!k.endsWith(tk))localStorage.removeItem(k);
+    }
+  };
+
+  const getScheduledCityForToday=()=>Schedule.cityAtNow(cities);
+  const getScheduledCitiesForToday=()=>{
+    const p=U.parts();
+    return cities.filter(city=>{
+      try{return (Schedule.dates(city,p.y,p.m)||[]).includes(todayKey());}catch(_){return false;}
+    });
+  };
+
+  const refreshVisitLocationOptions=(preferredCity)=>{
     const el=$("city");
     if(!el)return;
     const scheduled=getScheduledCityForToday();
-    el.innerHTML=cities.map(c=>`<option value="${U.esc(c)}" class="${c===scheduled?"":"visit-city-locked-option"}" data-locked="${c===scheduled?"false":"true"}">${U.esc(c)}</option>`).join("");
-    el.value=scheduled;
+    const scheduledCities=getScheduledCitiesForToday();
+    const saved=getSavedVisitCity();
+    const target=preferredCity&&cities.includes(preferredCity)?preferredCity:(saved||scheduled);
+    const freeAll=isSpecialDayActive();
+    el.innerHTML=cities.map(c=>{
+      const allowed=freeAll||scheduledCities.includes(c);
+      return `<option value="${U.esc(c)}" class="${allowed?"":"visit-city-locked-option"}" data-locked="${allowed?"false":"true"}">${U.esc(c)}</option>`;
+    }).join("");
+    el.value=cities.includes(target)?target:scheduled;
     el.dataset.scheduledCity=scheduled||"";
+    el.dataset.scheduledCities=scheduledCities.join(",");
   };
 
-  const showOPDRestrictionPopup=(message)=>{
-    const modal=$("opdRestrictionModal"), text=$("opdRestrictionMessage"), ok=$("opdRestrictionOk");
+  const showRestrictionPopup=(message,allowSpecial=true)=>{
+    const modal=$("opdRestrictionModal"), title=$("opdRestrictionTitle"), text=$("opdRestrictionMessage"), actions=$("opdRestrictionActions"), content=$("opdSpecialAccessContent");
     if(!modal||!text)return;
-    text.textContent=message;
+    if(title)title.textContent="OPD Booking Restricted";
+    text.hidden=false; text.textContent=message;
+    if(actions)actions.hidden=false;
+    const special=$("opdSpecialAccess");
+    if(special)special.hidden=!allowSpecial;
+    if(content){content.hidden=true;content.innerHTML="";}
     modal.hidden=false;
-    requestAnimationFrame(()=>ok?.focus());
+    requestAnimationFrame(()=>$("opdRestrictionOk")?.focus());
   };
   const hideOPDRestrictionPopup=()=>{
     const modal=$("opdRestrictionModal");
     if(modal)modal.hidden=true;
+    const content=$("opdSpecialAccessContent");
+    if(content){content.hidden=true;content.innerHTML="";}
+    const actions=$("opdRestrictionActions");
+    if(actions)actions.hidden=false;
+    const special=$("opdSpecialAccess");
+    if(special)special.hidden=false;
+  };
+  const showSpecialPasswordPopup=()=>{
+    const title=$("opdRestrictionTitle"), text=$("opdRestrictionMessage"), actions=$("opdRestrictionActions"), content=$("opdSpecialAccessContent");
+    if(!title||!text||!actions||!content)return;
+    title.textContent="Special Day Access";
+    text.hidden=true;
+    actions.hidden=true;
+    content.hidden=false;
+    content.innerHTML=`<p>Enter secure password to enable Special Day access.</p><input id="opdSpecialPassword" class="opd-special-input" type="password" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="Password" aria-label="Special Day secure password"><div id="opdSpecialError" class="opd-special-error" role="alert" hidden></div><div class="opd-special-verify-row"><button id="opdSpecialCancel" class="opd-special-cancel" type="button">Cancel</button><button id="opdSpecialVerify" class="opd-special-verify" type="button">Verify</button></div>`;
+    const input=$("opdSpecialPassword");
+    const verify=async()=>{
+      if(specialDayVerifying)return;
+      const value=input?.value||"";
+      if(value.length!==8){const er=$("opdSpecialError");if(er){er.hidden=false;er.textContent="Enter the 8-digit password.";}return;}
+      specialDayVerifying=true;
+      const btn=$("opdSpecialVerify"); if(btn)btn.disabled=true;
+      try{
+        const data=new TextEncoder().encode(value);
+        const hash=await crypto.subtle.digest("SHA-256",data);
+        const h=Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,"0")).join("");
+        if(h!==specialDayPasswordHash)throw Error("Incorrect password.");
+        localStorage.setItem(specialDayAccessKey(),"1");
+        hideOPDRestrictionPopup();
+        refreshVisitLocationOptions();
+        showSpecialCityPopup();
+      }catch(e){
+        const er=$("opdSpecialError");
+        if(er){er.hidden=false;er.textContent="Password is wrong. Please try again.";}
+        input?.focus();
+      }finally{
+        specialDayVerifying=false;
+        if(btn)btn.disabled=false;
+      }
+    };
+    input?.addEventListener("input",()=>{
+      input.value=input.value.replace(/\D/g,"").slice(0,8);
+      if(input.value.length===8)verify();
+    });
+    $("opdSpecialVerify")?.addEventListener("click",verify);
+    $("opdSpecialCancel")?.addEventListener("click",()=>{hideOPDRestrictionPopup();refreshVisitLocationOptions();});
+    modalFocus(input);
+  };
+  function modalFocus(el){requestAnimationFrame(()=>el?.focus());}
+  const showSpecialCityPopup=()=>{
+    const title=$("opdRestrictionTitle"), text=$("opdRestrictionMessage"), actions=$("opdRestrictionActions"), content=$("opdSpecialAccessContent");
+    if(!title||!text||!actions||!content)return;
+    title.textContent="Select Visit Location";
+    text.hidden=true; actions.hidden=true; content.hidden=false;
+    content.innerHTML=`<p>Select the visit location for today.</p><div class="opd-city-list">${cities.map(c=>`<button type="button" class="opd-city-choice" data-city="${U.esc(c)}">${U.esc(c)}</button>`).join("")}</div>`;
+    content.querySelectorAll("[data-city]").forEach(btn=>btn.addEventListener("click",()=>{
+      const city=btn.dataset.city;
+      saveVisitCityForToday(city);
+      refreshVisitLocationOptions(city);
+      hideOPDRestrictionPopup();
+      handleVisitCityChange(city);
+    }));
+  };
+  const handleLockedCityAttempt=()=>{
+    showRestrictionPopup("Today's visit location is fixed according to the doctor's schedule.");
   };
   $("opdRestrictionOk")?.addEventListener("click",hideOPDRestrictionPopup);
+  $("opdSpecialAccess")?.addEventListener("click",showSpecialPasswordPopup);
   $("opdRestrictionModal")?.addEventListener("click",e=>{
-    if(e.target===$("opdRestrictionModal"))hideOPDRestrictionPopup();
+    if(e.target===$("opdRestrictionModal")){
+      const content=$("opdSpecialAccessContent");
+      if(!content||content.hidden)hideOPDRestrictionPopup();
+    }
   });
 
   const initFollowupCity=()=>{
@@ -324,6 +439,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     const city=$("city").value;
     const today=U.parts();
     const dates=await getCalendarDates(calendarYear,calendarMonth,city);
+    const specialToday=isSpecialDayActive() && calendarYear===today.y && calendarMonth===today.m;
     const first=new Date(Date.UTC(calendarYear,calendarMonth-1,1)).getUTCDay()||7;
     const last=new Date(Date.UTC(calendarYear,calendarMonth,0)).getUTCDate();
     const monthName=new Intl.DateTimeFormat("en-IN",{month:"long",year:"numeric",timeZone:"Asia/Kolkata"}).format(new Date(Date.UTC(calendarYear,calendarMonth-1,1)));
@@ -336,7 +452,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       const key=String(d).padStart(2,"0")+String(calendarMonth).padStart(2,"0")+calendarYear;
       const isPast=calendarYear<today.y || (calendarYear===today.y&&calendarMonth<today.m) || (calendarYear===today.y&&calendarMonth===today.m&&d<today.d);
       const isToday=calendarYear===today.y&&calendarMonth===today.m&&d===today.d;
-      const isAvailable=dates.includes(key)&&!isPast;
+      const isAvailable=(specialToday&&isToday)||dates.includes(key)&&!isPast;
       const isSelected=$("date").dataset.key===key;
       let cls=isSelected?"selected":isAvailable?"available":"unavailable";
       h+=`<button type="button" class="${cls}" ${isAvailable?`data-k="${key}"`:"disabled"}>${d}${isToday?'<small class="today-mark">Today</small>':""}</button>`;
@@ -351,7 +467,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       const dd=Number(key.slice(0,2)), mm=Number(key.slice(2,4)), yy=Number(key.slice(4,8));
       const isToday=yy===today.y&&mm===today.m&&dd===today.d;
       if(!isToday){
-        showOPDRestrictionPopup("OPD booking can be done for today's date only.");
+        showRestrictionPopup("OPD booking can be done for today's date only.",false);
         return;
       }
       $("date").value=U.date(key); $("date").dataset.key=key; $("cal").hidden=true;
@@ -427,42 +543,39 @@ document.addEventListener("DOMContentLoaded",()=>{
     nextFollowupCityManuallyEdited=true;
   };
 
-  $("city").onchange=async()=>{
+  const handleVisitCityChange=async(selectedCity)=>{
     const scheduled=getScheduledCityForToday();
-    if($("city").value!==scheduled){
+    const scheduledCities=getScheduledCitiesForToday();
+    const city=selectedCity||$("city").value;
+    const allowed=isSpecialDayActive()||scheduledCities.includes(city);
+    if(!allowed){
       refreshVisitLocationOptions();
-      showOPDRestrictionPopup("Today's visit location is fixed according to the doctor's schedule.");
+      $("city").value=scheduled;
+      handleLockedCityAttempt();
       return;
     }
-    $("city").value=scheduled;
-    const city=scheduled;
+    saveVisitCityForToday(city);
+    refreshVisitLocationOptions(city);
     const token=++cityChangeToken;
-
-    // New OPD: Next Follow-up City initially follows Visit Location.
-    // Once the user edits Next Follow-up City, keep it independent.
     if(type==="New" && !nextFollowupCityManuallyEdited) $("next").value=city;
-
     delete $("date").dataset.key;
     $("date").value="";
     $("cal").hidden=true;
     const now=U.parts();calendarYear=now.y;calendarMonth=now.m;
-
     setTodayDateDisplay();
     const p=U.parts();
     $("date").dataset.key=String(p.d).padStart(2,"0")+String(p.m).padStart(2,"0")+p.y;
-    if(!verified){
-      return;
-    }
-
+    if(!verified)return;
     setDateLoading(false,city);
     try{
+      await Promise.resolve();
     }finally{
-      // Ignore completion of an older city lookup. A previous request must
-      // never overwrite the state belonging to the latest selected city.
-      if(token===cityChangeToken){
-        setDateLoading(false,city);
-      }
+      if(token===cityChangeToken)setDateLoading(false,city);
     }
+  };
+
+  $("city").onchange=async()=>{
+    await handleVisitCityChange($("city").value);
   };
   const openDateCalendar=()=>{
     const cal=$("cal");
@@ -555,10 +668,11 @@ $("patients").innerHTML="";
           // Follow-up Visit Location is schedule-aware by default, regardless
           // of the city used in the previous booking. It remains editable.
           const scheduleAwareCity=getScheduledCityForToday();
-          refreshVisitLocationOptions(); $("city").value=scheduleAwareCity;
+          refreshVisitLocationOptions();
+          const effectiveVisitCity=$("city").value||scheduleAwareCity;
           // Next Follow-up City carries forward the city from the previous
           // booking, and remains independently editable.
-          $("next").value=x.nextFollowupCity||x.city||scheduleAwareCity;
+          $("next").value=x.nextFollowupCity||x.city||effectiveVisitCity;
           // Explicitly reveal the complete Follow-up editing/booking stage.
           $("bookingFields").hidden=false;
           $("bookingFields").removeAttribute("hidden");
@@ -861,6 +975,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     }
   };
 
+  clearExpiredSpecialDayState();
   initFollowupCity();
   fillCities();
   resetFields("New");

@@ -175,7 +175,7 @@ document.addEventListener("DOMContentLoaded",()=>{
    setRetrievalStatus("");
    $("results").innerHTML=`<div class="status">${
      citySelect.value==="all"
-       ? "Retrieving records from all cities…"
+       ? "Retrieving schedule-matched city records…"
        : "Retrieving records from Google Sheets…"
    }</div>`;
    try{
@@ -288,7 +288,20 @@ document.addEventListener("DOMContentLoaded",()=>{
    const netCash=Number(t.netCash)||(totalCash-totalRefund);
    const netOnline=Number(t.netOnline)||totalOnline;
    const netTotal=Number(t.netTotal)||(netCash+netOnline);
-   let html=`<div class="report-head"><b>${esc(r.city)}</b> • ${esc(r.periodLabel||"")}</div>`;
+   let html=`<div class="report-head"><b>${esc(r.city==="All"?"All City Combined":r.city)}</b> • ${esc(r.periodLabel||"")}</div>`;
+   if(Array.isArray(r.retrievedCities)){
+     const cities=r.retrievedCities.map(esc).join(" + ");
+     if(r.city==="All" && !r.retrievedCities.length){
+       html+=`<div class="retrieved-cities retrieved-cities-empty"><div><b>No scheduled visit for this date.</b></div><div>No city data was retrieved.</div></div>`;
+     }else if(r.city==="All"){
+       const dateText=esc(r.retrievedDateLabel||"");
+       html+=`<div class="retrieved-cities"><div class="retrieved-scope-title">Data source · <b>${cities}</b></div><div class="retrieved-scope-sub">Scheduled locations for ${dateText}: <b>${cities}</b></div>`;
+       if(!patientCount) html+=`<div class="retrieved-scope-empty">No records found for this date.</div>`;
+       html+=`</div>`;
+     }else{
+       html+=`<div class="retrieved-cities"><div class="retrieved-scope-title">Data source · <b>${cities}</b></div></div>`;
+     }
+   }
    html+=`<div class="service-summary">
      <div class="service-card">
        <div class="service-card-title">OPD</div>
@@ -314,13 +327,22 @@ document.addEventListener("DOMContentLoaded",()=>{
      <tr class="collection-total"><th class="collection-label">Total</th><td>${money(t.opdPaid)}</td><td>${money(t.eegPaid)}</td><td>${money(totalCollection)}</td><td>${money(netTotal)}</td></tr>
    </tbody></table></div></div>`;
    if(!patientCount){
-     const city=esc(r.city||$("city").value);
-     const dateLabel=esc(r.periodLabel||$("period").selectedOptions[0]?.textContent||$("period").value);
-     $("results").innerHTML=`<div class="status">No Record Available for ${city}, ${dateLabel}, Patient / EEG.</div>`;
+     if(r.city==="All" && Array.isArray(r.retrievedCities) && !r.retrievedCities.length){
+       $("results").innerHTML=html;
+       return;
+     }
+     if(Array.isArray(r.retrievedCities) && r.retrievedCities.length){
+       html+=`<div class="status">No records found for this date.</div>`;
+     }else{
+       const city=esc(r.city||$("city").value);
+       const dateLabel=esc(r.periodLabel||$("period").selectedOptions[0]?.textContent||$("period").value);
+       html+=`<div class="status">No Record Available for ${city}, ${dateLabel}, Patient / EEG.</div>`;
+     }
+     $("results").innerHTML=html;
      return;
    }
    if(hasDetail){
-     html+=bothTable(rows,t);
+     html+=bothTable(rows,t,r);
      html+=`<div class="download-row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:nowrap">
        <button id="downloadCsv" class="btn btn-secondary">⬇ Download CSV</button>
        <button id="downloadMobile" class="btn btn-secondary">⬇ Mobile Number</button>
@@ -339,9 +361,15 @@ document.addEventListener("DOMContentLoaded",()=>{
    return period==="today" || period==="yesterday" || period==="daybefore" || period===currentMonth;
  }
 
- function bothTable(rows,t){
+ function rCityColumn(r){
+   return r.city==="All" ? '<th rowspan="2">City</th>' : '';
+ }
+ function rCityColumnCell(x,r){
+   return r.city==="All" ? `<td>${esc(x.city||"")}</td>` : '';
+ }
+ function bothTable(rows,t,r){
    let html=`<div class="table-wrap combined-table-wrap"><table id="reportTable" class="combined-report"><thead>
-     <tr><th rowspan="2">Sr. No.</th><th rowspan="2">Patient Name</th><th colspan="4">OPD Collection</th><th colspan="4">EEG Collection</th><th rowspan="2">Mobile Number</th></tr>
+     <tr><th rowspan="2">Sr. No.</th><th rowspan="2">Patient Name</th>${rCityColumn(r)}<th colspan="4">OPD Collection</th><th colspan="4">EEG Collection</th><th rowspan="2">Mobile Number</th></tr>
      <tr><th>Cash</th><th>Online</th><th>Refund</th><th>Net Total</th><th>Cash</th><th>Online</th><th>Refund</th><th>Net Total</th></tr>
    </thead><tbody>`;
    rows.forEach((x,i)=>{
@@ -349,7 +377,7 @@ document.addEventListener("DOMContentLoaded",()=>{
      const eegRefund=Number(x.eegRefund)||0;
      const opdNet=(Number(x.opdCashPaid)||0)+(Number(x.opdOnlinePaid)||0)-opdRefund;
      const eegNet=(Number(x.eegCashPaid)||0)+(Number(x.eegOnlinePaid)||0)-eegRefund;
-     html+=`<tr><td>${i+1}</td><td>${esc(x.patientName)}</td><td>${paidOrDash(x.opdCashPaid)}</td><td>${paidOrDash(x.opdOnlinePaid)}</td><td>${paidOrDash(opdRefund)}</td><td>${money(opdNet)}</td><td>${x.eegCharges===null?"-":paidOrDash(x.eegCashPaid)}</td><td>${x.eegCharges===null?"-":paidOrDash(x.eegOnlinePaid)}</td><td>${x.eegCharges===null?"-":paidOrDash(eegRefund)}</td><td>${x.eegCharges===null?"-":money(eegNet)}</td><td>${esc(x.mobileNumber)}</td></tr>`;
+     html+=`<tr><td>${i+1}</td><td>${esc(x.patientName)}</td>${rCityColumnCell(x,r)}<td>${paidOrDash(x.opdCashPaid)}</td><td>${paidOrDash(x.opdOnlinePaid)}</td><td>${paidOrDash(opdRefund)}</td><td>${money(opdNet)}</td><td>${x.eegCharges===null?"-":paidOrDash(x.eegCashPaid)}</td><td>${x.eegCharges===null?"-":paidOrDash(x.eegOnlinePaid)}</td><td>${x.eegCharges===null?"-":paidOrDash(eegRefund)}</td><td>${x.eegCharges===null?"-":money(eegNet)}</td><td>${esc(x.mobileNumber)}</td></tr>`;
    });
    const opdCash=Number(t.opdCash)||0;
    const opdOnline=Number(t.opdOnline)||0;
@@ -357,7 +385,8 @@ document.addEventListener("DOMContentLoaded",()=>{
    const eegCash=Number(t.eegCash)||0;
    const eegOnline=Number(t.eegOnline)||0;
    const eegRefund=Number(t.eegRefund)||0;
-   html+=`</tbody><tfoot><tr class="total-row"><th colspan="2">Total</th><th>${money(opdCash)}</th><th>${money(opdOnline)}</th><th>${paidOrDash(opdRefund)}</th><th>${money(opdCash+opdOnline-opdRefund)}</th><th>${money(eegCash)}</th><th>${money(eegOnline)}</th><th>${paidOrDash(eegRefund)}</th><th>${money(eegCash+eegOnline-eegRefund)}</th><th>—</th></tr></tfoot></table></div>`;
+   const cityTotalCol=r.city==="All"?1:0;
+   html+=`</tbody><tfoot><tr class="total-row"><th colspan="${2+cityTotalCol}">Total</th><th>${money(opdCash)}</th><th>${money(opdOnline)}</th><th>${paidOrDash(opdRefund)}</th><th>${money(opdCash+opdOnline-opdRefund)}</th><th>${money(eegCash)}</th><th>${money(eegOnline)}</th><th>${paidOrDash(eegRefund)}</th><th>${money(eegCash+eegOnline-eegRefund)}</th><th>—</th></tr></tfoot></table></div>`;
    return html;
  }
  function paidOrDash(n){return Number(n)?money(n):"-";}
@@ -370,15 +399,15 @@ document.addEventListener("DOMContentLoaded",()=>{
    const rows=r.rows||[];
    const out=[];
    out.push([`${r.city} - ${r.periodLabel||r.period||""}`]);
-   out.push(["Sr No.","Patient Name","OPD Cash","OPD Online","OPD Total","EEG Cash","EEG Online","EEG Total","Mobile Number"]);
-   rows.forEach((x,i)=>out.push([i+1,x.patientName,x.opdCashPaid,x.opdOnlinePaid,x.opdTotalPaid,x.eegCharges===null?"":x.eegCashPaid,x.eegCharges===null?"":x.eegOnlinePaid,x.eegCharges===null?"":x.eegTotalPaid,x.mobileNumber]));
-   out.push(["","TOTAL",
+   out.push(["Sr No.","Patient Name"].concat(r.city==="All"?["City"]:[]).concat(["OPD Cash","OPD Online","OPD Total","EEG Cash","EEG Online","EEG Total","Mobile Number"]));
+   rows.forEach((x,i)=>out.push([i+1,x.patientName].concat(r.city==="All"?[x.city||""]:[]).concat([x.opdCashPaid,x.opdOnlinePaid,x.opdTotalPaid,x.eegCharges===null?"":x.eegCashPaid,x.eegCharges===null?"":x.eegOnlinePaid,x.eegCharges===null?"":x.eegTotalPaid,x.mobileNumber])));
+   out.push(["","TOTAL"].concat(r.city==="All"?[""]:[]).concat([
      rows.reduce((a,x)=>a+(Number(x.opdCashPaid)||0),0),
      rows.reduce((a,x)=>a+(Number(x.opdOnlinePaid)||0),0),
      rows.reduce((a,x)=>a+(Number(x.opdTotalPaid)||0),0),
      rows.reduce((a,x)=>a+(Number(x.eegCashPaid)||0),0),
      rows.reduce((a,x)=>a+(Number(x.eegOnlinePaid)||0),0),
-     rows.reduce((a,x)=>a+(Number(x.eegTotalPaid)||0),0),""]);
+     rows.reduce((a,x)=>a+(Number(x.eegTotalPaid)||0),0),""]));
    const csv="\uFEFF"+out.map(row=>row.map(csvCell).join(",")).join("\r\n");
    const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
    const url=URL.createObjectURL(blob);
