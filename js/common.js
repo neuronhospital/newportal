@@ -1,4 +1,38 @@
 window.$=window.U?.$||((id)=>document.getElementById(id));
+
+// Shared today Visit Location context. Special Day city selection is persisted
+// in browser localStorage so every schedule-aware section uses the same city.
+window.NeuronVisitContext={
+  accessPrefix:"neuron_opd_special_day_access_",
+  cityPrefix:"neuron_opd_special_day_city_",
+  todayKey:()=>{
+    const p=window.U?.parts?.();
+    return p?String(p.d).padStart(2,"0")+String(p.m).padStart(2,"0")+p.y:"";
+  },
+  getSelectedCity:(cities)=>{
+    const list=Array.isArray(cities)?cities:[];
+    const key=window.NeuronVisitContext.todayKey();
+    if(!key||!list.length)return "";
+    const active=localStorage.getItem(window.NeuronVisitContext.accessPrefix+key)==="1";
+    const city=localStorage.getItem(window.NeuronVisitContext.cityPrefix+key)||"";
+    return active&&list.includes(city)?city:"";
+  },
+  getTodayCity:(cities)=>{
+    const list=Array.isArray(cities)?cities:[];
+    const special=window.NeuronVisitContext.getSelectedCity(list);
+    if(special)return special;
+    try{
+      const scheduled=window.Schedule?.cityAtNow?.(list);
+      if(scheduled&&list.includes(scheduled))return scheduled;
+    }catch(_){}
+    return list.includes("Latur")?"Latur":(list[0]||"");
+  },
+  isSpecialDayActive:()=>{
+    const key=window.NeuronVisitContext.todayKey();
+    return !!key&&localStorage.getItem(window.NeuronVisitContext.accessPrefix+key)==="1";
+  }
+};
+
 if("serviceWorker"in navigator)window.addEventListener("load",()=>{const v=encodeURIComponent(window.NEURON_CONFIG.appVersion);navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!sessionStorage.getItem("neuron-sw-reloaded-"+v)){sessionStorage.setItem("neuron-sw-reloaded-"+v,"1");location.reload();}});navigator.serviceWorker.register("./service-worker.js?v="+v).catch(()=>{});});
 document.addEventListener("DOMContentLoaded",()=>{
  const p=document.body.dataset.title||"Portal",h=document.getElementById("header"),f=document.getElementById("footer");

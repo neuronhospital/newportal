@@ -54,8 +54,8 @@ document.addEventListener("DOMContentLoaded",()=>{
     return{value:days,unit:"days"};
   };
 
-  const specialDayAccessPrefix="neuron_opd_special_day_access_";
-  const specialDayCityPrefix="neuron_opd_special_day_city_";
+  const specialDayAccessPrefix=window.NeuronVisitContext?.accessPrefix||"neuron_opd_special_day_access_";
+  const specialDayCityPrefix=window.NeuronVisitContext?.cityPrefix||"neuron_opd_special_day_city_";
   const specialDayPasswordHash="114f4b4bbf1f4a3a58064199f0e9d241566f356756ee58e5d160d3937e6ac740";
   let specialDayVerifying=false;
   let specialDayPendingCity="";
@@ -67,10 +67,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   const specialDayAccessKey=()=>specialDayAccessPrefix+todayKey();
   const specialDayCityKey=()=>specialDayCityPrefix+todayKey();
   const isSpecialDayActive=()=>localStorage.getItem(specialDayAccessKey())==="1";
-  const getSavedVisitCity=()=>{
-    const v=localStorage.getItem(specialDayCityKey());
-    return cities.includes(v)?v:"";
-  };
+  const getSavedVisitCity=()=>window.NeuronVisitContext?.getSelectedCity?.(cities)||"";
   const saveVisitCityForToday=city=>{
     if(cities.includes(city))localStorage.setItem(specialDayCityKey(),city);
   };
@@ -82,7 +79,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     }
   };
 
-  const getScheduledCityForToday=()=>Schedule.cityAtNow(cities);
+  const getScheduledCityForToday=()=>window.NeuronVisitContext?.getTodayCity?.(cities)||Schedule.cityAtNow(cities);
   const getScheduledCitiesForToday=()=>{
     const p=U.parts();
     return cities.filter(city=>{
@@ -154,6 +151,7 @@ document.addEventListener("DOMContentLoaded",()=>{
           ? specialDayPendingCity
           : (getSavedVisitCity()||getScheduledCityForToday());
         specialDayPendingCity="";
+        if(targetCity&&cities.includes(targetCity)) saveVisitCityForToday(targetCity);
         hideOPDRestrictionPopup();
         if(targetCity&&cities.includes(targetCity)) await handleVisitCityChange(targetCity);
         else refreshVisitLocationOptions();
@@ -225,7 +223,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   const fillCities=()=>{
     refreshVisitLocationOptions();
     $("next").innerHTML=cities.map(x=>`<option value="${U.esc(x)}">${U.esc(x)}</option>`).join("");
-    const todayCity=getScheduledCityForToday();
+    const todayCity=window.NeuronVisitContext?.getTodayCity?.(cities)||getScheduledCityForToday();
     $("next").value=todayCity;
   };
 
@@ -248,7 +246,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("date").value="";
     delete $("date").dataset.key;
     $("unit").value="years";
-    const todayCity=getScheduledCityForToday();
+    const todayCity=window.NeuronVisitContext?.getTodayCity?.(cities)||getScheduledCityForToday();
     refreshVisitLocationOptions(); $("next").value=todayCity;
     // Follow-up locking is scoped to Follow-up mode only. When switching
     // back to New, explicitly clear every Follow-up lock before applying the
@@ -673,8 +671,8 @@ $("patients").innerHTML="";
           $("address").value=U.title(x.address||""); $("ref").value=U.title(x.referredBy||"");
           // Follow-up Visit Location is schedule-aware by default, regardless
           // of the city used in the previous booking. It remains editable.
-          const scheduleAwareCity=getScheduledCityForToday();
-          refreshVisitLocationOptions();
+          const scheduleAwareCity=window.NeuronVisitContext?.getTodayCity?.(cities)||getScheduledCityForToday();
+          refreshVisitLocationOptions(scheduleAwareCity);
           const effectiveVisitCity=$("city").value||scheduleAwareCity;
           // Next Follow-up City carries forward the city from the previous
           // booking, and remains independently editable.

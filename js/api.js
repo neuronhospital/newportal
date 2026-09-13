@@ -58,9 +58,11 @@ window.NeuronAPI={
  verifyBooking:async(id,city,retries=2)=>{
   const action="checkBookingRequest";
   const key="bookingRequestId";
+  const specialCity=window.NeuronVisitContext?.getSelectedCity?.(window.NEURON_CONFIG?.cities)||"";
+  const verifyCity=specialCity||city||window.NeuronVisitContext?.getTodayCity?.(window.NEURON_CONFIG?.cities)||"";
   for(let i=0;i<retries;i++){
    try{
-    const r=await NeuronAPI.call(action,{[key]:id,city},5000);
+    const r=await NeuronAPI.call(action,{[key]:id,city:verifyCity},5000);
     if(r&&r.found)return r;
    }catch(_){}
    if(i<retries-1)await new Promise(resolve=>setTimeout(resolve,2000));

@@ -8,7 +8,7 @@ $('chargeLockModal')?.addEventListener('click',e=>{if(e.target===$('chargeLockMo
 ['amount','cash','online'].forEach(id=>$(id)?.addEventListener('click',e=>{if(e.currentTarget.readOnly)showChargeLock()}));
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('chargeLockModal')?.hidden)hideChargeLock()});
 $('city').innerHTML=NEURON_CONFIG.cities.map(x=>`<option>${U.esc(x)}</option>`).join('');
-const scheduledCity=window.Schedule?.cityAtNow?.(NEURON_CONFIG.cities)||'Latur';
+const scheduledCity=window.NeuronVisitContext?.getTodayCity?.(NEURON_CONFIG.cities)||'Latur';
 if(NEURON_CONFIG.cities.includes(scheduledCity))$('city').value=scheduledCity;
 $('city').addEventListener('change',()=>{clearState();});
 function clearState(){selected=null;$('patients').innerHTML='';$('edit').hidden=true;$('confirmation').hidden=true;$('confirmation').innerHTML='';$('status').textContent='';$('amount').value='';$('cash').value='';$('online').value='';$('total').textContent='Total Amount Paid: ₹0';$('updateMessage').hidden=true;setRefundChargeLock(false);}

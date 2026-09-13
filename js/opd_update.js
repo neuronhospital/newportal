@@ -17,7 +17,7 @@ document.addEventListener("DOMContentLoaded",()=>{
  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('chargeLockModal')?.hidden)hideChargeLock();});
  const renderPatient=(x,b)=>{selected=x;document.querySelectorAll('.patient-option').forEach(z=>z.classList.remove('selected'));b.classList.add('selected');$('edit').hidden=false;$('confirmation').hidden=true;$('confirmation').innerHTML="";$('name').value=x.name||"";$('age').value=x.age??"";$('unit').value=x.ageUnit||"years";$('address').value=x.address||"";$('ref').value=x.referredBy||"";$('editWa').value=x.whatsapp||"";$('nextFollowupCity').innerHTML=NEURON_CONFIG.cities.map(c=>`<option value="${U.esc(c)}">${U.esc(c)}</option>`).join("");const followupCity=String(x.nextFollowupCity||"").trim();const cityExists=[...$('nextFollowupCity').options].some(o=>o.value===followupCity);$('nextFollowupCity').value=cityExists?followupCity:"";$('charge').value=Number(x.totalOPDCharges||0);$('cash').value=Number(x.opdCashPaid||0);$('online').value=Number(x.opdOnlinePaid||0);$('cash').dataset.actual=String(x.opdCashPaid??0);$('online').dataset.actual=String(x.opdOnlinePaid??0);refreshPaymentUI();setRefundChargeLock(x.opdRefundProvided===true);setTimeout(()=>$('edit').scrollIntoView({behavior:'smooth',block:'start'}),100);};
  $('city').innerHTML=NEURON_CONFIG.cities.map(x=>`<option>${U.esc(x)}</option>`).join("");
- const scheduledCity=window.Schedule?.cityAtNow?.(NEURON_CONFIG.cities)||"Latur";
+ const scheduledCity=window.NeuronVisitContext?.getTodayCity?.(NEURON_CONFIG.cities)||"Latur";
  if(NEURON_CONFIG.cities.includes(scheduledCity)) $("city").value=scheduledCity;
  $('city').addEventListener("change",()=>{clearLoadedState();});
  $('load').onclick=async()=>{
