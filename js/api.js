@@ -55,19 +55,26 @@ window.NeuronAPI={
     if(externalSignal&&externalAbortHandler)externalSignal.removeEventListener("abort",externalAbortHandler);
   }
  },
- verifyBooking:async(id,city,retries=2)=>{
+ verifyBooking:async(id,city,retries=3)=>{
   const action="checkBookingRequest";
   const key="bookingRequestId";
+  // The city captured in the submitted booking payload is authoritative for
+  // this request. Special Day / schedule context is only a fallback when the
+  // transaction city is unavailable; a later city change must not redirect
+  // recovery to another city's sheet.
+  const payloadCity=String(city||"").trim();
   const specialCity=window.NeuronVisitContext?.getSelectedCity?.(window.NEURON_CONFIG?.cities)||"";
-  const verifyCity=specialCity||city||window.NeuronVisitContext?.getTodayCity?.(window.NEURON_CONFIG?.cities)||"";
+  const verifyCity=payloadCity||specialCity||window.NeuronVisitContext?.getTodayCity?.(window.NEURON_CONFIG?.cities)||"";
+  let successfulChecks=0;
   for(let i=0;i<retries;i++){
    try{
-    const r=await NeuronAPI.call(action,{[key]:id,city:verifyCity},5000);
-    if(r&&r.found)return r;
+    const r=await NeuronAPI.call(action,{[key]:id,city:verifyCity},8000);
+    successfulChecks++;
+    if(r&&r.found)return {...r,recoveryStatus:"found"};
    }catch(_){}
-   if(i<retries-1)await new Promise(resolve=>setTimeout(resolve,2000));
+   if(i<retries-1)await new Promise(resolve=>setTimeout(resolve,i===0?2000:3000));
   }
-  return null;
+  return {ok:true,found:false,recoveryStatus:successfulChecks?"not_found":"network_error",city:verifyCity};
  },
  verifyEEGCallsBooking:async(requestId,retries=2)=>{
   const action="checkEEGCallsBookingRequest";

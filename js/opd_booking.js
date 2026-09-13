@@ -911,8 +911,8 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     }catch(e){
       // The booking request may have reached the server even when the
       // original request failed locally. Verify the SAME request ID before
-      // telling the patient to book again. verifyBooking performs at most
-      // two checks with a 2-second delay between them.
+      // telling the patient to book again. verifyBooking rechecks the same
+      // request ID in the transaction city before entering the uncertain state.
       let recovered=false;
       try{
         const s=await NeuronAPI.verifyBooking(id,payload.city);
@@ -959,13 +959,38 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
             }
           }catch(_){ }
           if(!found){
-            // Definitive failure after the single manual Check Again.
-            $("submitStatus").innerHTML=`<b>Booking unsuccessful.</b><br>Please book your OPD appointment again.`;
+            // A failed verification is never treated as proof that the booking
+            // was not recorded. Keep the request in the safe uncertain state
+            // so a transient network failure cannot encourage a duplicate booking.
+            const recoveryStatus=typeof s!=="undefined"&&s?.recoveryStatus||"network_error";
+            try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"uncertain",payload,recoveryStatus});}catch(_){ }
+            $("submitStatus").innerHTML=`<b>We still couldn't confirm the appointment.</b><br>Your booking request is still safely saved.<br>Please do not create another booking.<br><button id="checkBookingAgain" type="button" class="btn btn-secondary" style="margin-top:12px">Check Again</button>`;
             $("submitStatus").style.color="#b42318";
-            try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"failed",payload});}catch(_){ }
-            $("book").disabled=false;
-            $("book").textContent="Book Appointment";
-            $("book").className="cta";
+            const nextCheck=$("checkBookingAgain");
+            if(nextCheck){
+              nextCheck.onclick=async()=>{
+                nextCheck.disabled=true;
+                nextCheck.textContent="Checking...";
+                const again=await NeuronAPI.verifyBooking(id,payload.city);
+                if(again&&again.found){
+                  try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:again});}catch(_){ }
+                  const recoveredHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Confirmed</h2><p class="city-confirm">For <b>${U.esc(again.city||payload.city||"")}</b> City</p><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(again.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(again.patientName)}</b></div><div class="confirm-row"><span>Age</span><b>${again.age} ${U.esc(again.ageUnit||"")}</b></div><div class="confirm-row"><span>Address</span><b>${U.esc(again.address||payload.address||"")}</b></div><div class="confirm-row"><span>Date of Booking</span><b>${U.date(again.date)}</b></div><div class="confirm-row"><span>OPD Charges</span><b>${U.money(again.opdCharges)}</b></div><div class="confirm-row"><span>Cash</span><b>${U.money(again.opdCashPaid)}</b></div><div class="confirm-row"><span>Online</span><b>${U.money(again.opdOnlinePaid)}</b></div><div class="confirm-row"><span>Next Follow-up City</span><b>${U.esc(again.nextFollowupCity||payload.nextFollowupCity||"")}</b></div></div>`;
+                  resetFields("Follow-up");
+                  $("confirmation").innerHTML=recoveredHTML;
+                  $("confirmation").hidden=false;
+                  $("submitStatus").textContent="✓ Booking recovered successfully.";
+                  $("submitStatus").style.color="#168a4a";
+                  requestAnimationFrame(()=>$("confirmation").scrollIntoView({behavior:"smooth",block:"center"}));
+                  return;
+                }
+                try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"uncertain",payload,recoveryStatus:again?.recoveryStatus||"network_error"});}catch(_){ }
+                nextCheck.disabled=false;
+                nextCheck.textContent="Check Again";
+                $("submitStatus").innerHTML=`<b>We still couldn't confirm the appointment.</b><br>Your booking request is safely saved.<br>Please do not create another booking.<br><button id="checkBookingAgain" type="button" class="btn btn-secondary" style="margin-top:12px">Check Again</button>`;
+                const retryButton=$("checkBookingAgain");
+                if(retryButton)retryButton.onclick=nextCheck.onclick;
+              };
+            }
           }
         };
       }
