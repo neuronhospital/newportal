@@ -74,8 +74,33 @@ document.addEventListener("DOMContentLoaded",()=>{
      if(charge>MAX_OPD_AMOUNT)return focusError(`Combined Cash + Online amount cannot exceed ₹${MAX_OPD_AMOUNT}.`,'cash');
    }
 
+   const sameText=(a,b)=>String(a??"").trim()===String(b??"").trim();
+   const samePhone=(a,b)=>U.phone(a)===U.phone(b);
+   const sameNumber=(a,b)=>Number(a??0)===Number(b??0);
+   const proposedName=U.title($('name').value);
+   const proposedAddress=U.title($('address').value);
+   const proposedReferredBy=U.title($('ref').value);
+   const proposedFollowupCity=String($('nextFollowupCity').value??"").trim();
+   const noChanges=sameText(proposedName,selected.name)&&
+     sameNumber(age,selected.age)&&
+     sameText($('unit').value,selected.ageUnit)&&
+     sameText(proposedAddress,selected.address)&&
+     sameText(proposedReferredBy,selected.referredBy)&&
+     samePhone(newPhone,selected.whatsapp)&&
+     sameText(proposedFollowupCity,selected.nextFollowupCity)&&
+     sameNumber(charge,selected.totalOPDCharges)&&
+     sameNumber(cash,selected.opdCashPaid)&&
+     sameNumber(online,selected.opdOnlinePaid);
+   if(noChanges){
+     $('saveStatus').hidden=false;
+     $('saveStatus').className="status";
+     $('saveStatus').style.color="#b42318";
+     $('saveStatus').textContent="No changes were made. Update was not done";
+     return;
+   }
+
    setSaveBusy(true);$('saveStatus').hidden=false;$('saveStatus').className="status opd-loading";$('saveStatus').style.color="";$('saveStatus').textContent="Wait we are updating OPD details to system...";
-   const p={appointmentId:selected.appointmentId,rowNumber:selected.rowNumber,city:selected.city,whatsapp:selected.whatsapp,whatsappNew:newPhone,name:U.title($('name').value),age:age,ageUnit:$('unit').value,address:U.title($('address').value),referredBy:U.title($('ref').value),nextFollowupCity:$('nextFollowupCity').value,opdCharges:charge,opdPaymentMode:mode,opdCashPaid:cash,opdOnlinePaid:online};
+   const p={appointmentId:selected.appointmentId,rowNumber:selected.rowNumber,city:selected.city,whatsapp:selected.whatsapp,whatsappNew:newPhone,name:proposedName,age:age,ageUnit:$('unit').value,address:proposedAddress,referredBy:proposedReferredBy,nextFollowupCity:proposedFollowupCity,opdCharges:charge,opdPaymentMode:mode,opdCashPaid:cash,opdOnlinePaid:online};
    try{const r=await NeuronAPI.call("updateOPDDetails",p,25000);const before=r.before||{},after=r.after||{};const fields=[['Patient Name',before.name,after.name],['Age',`${before.age} ${before.ageUnit}`,`${after.age} ${after.ageUnit}`],['Address',before.address,after.address],['Referred By Dr./Hospital',before.referredBy,after.referredBy],['WhatsApp Number',before.whatsapp,after.whatsapp],['Next Follow-up City',before.nextFollowupCity,after.nextFollowupCity],['OPD Charges Paid',before.opdTotalPaid,after.opdTotalPaid],['Paid in Cash',before.opdCashPaid,after.opdCashPaid],['Paid Online',before.opdOnlinePaid,after.opdOnlinePaid]];const changed=fields.filter(f=>String(f[1]??"")!==String(f[2]??""));$('confirmation').hidden=false;$('confirmation').innerHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Details Updated</h2><p>Appointment ID: <b>${U.esc(r.appointmentId)}</b></p>${changed.length?`<p><b>Changed and updated:</b></p><ul class="changed-list">${changed.map(f=>`<li><b>${U.esc(f[0])}</b>: ${U.esc(String(f[1]??""))} → <b>${U.esc(String(f[2]??""))}</b></li>`).join('')}</ul>`:`<p>No values were changed.</p>`}</div>`;selected=null;$('patients').innerHTML="";$('edit').hidden=true;$('name').value="";$('age').value="";$('address').value="";$('ref').value="";$('editWa').value="";$('nextFollowupCity').innerHTML="";$('charge').value="";$('cash').value="";$('online').value="";$('cash').dataset.actual="";$('online').dataset.actual="";$('totalPaid').textContent="0";}catch(e){$('saveStatus').hidden=false;$('saveStatus').style.color='#b42318';$('saveStatus').textContent=e.message||"Unable to update OPD details.";}finally{setSaveBusy(false);}
  };
 

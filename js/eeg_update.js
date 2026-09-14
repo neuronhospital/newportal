@@ -40,6 +40,13 @@ $('save').onclick=async()=>{
     if(!Number.isFinite(online)||online<0||online>MAX)return error(`Paid Online must be between ₹0 and ₹${MAX}.`,'online');
     total=cash+online;if(total>MAX)return error(`Combined EEG charges cannot exceed ₹${MAX}.`,'cash');
   }
+  const noChanges=Number(cash)===Number(selected.eegCashPaid||0)&&Number(online)===Number(selected.eegOnlinePaid||0);
+  if(noChanges){
+    $('updateMessage').hidden=false;
+    $('updateMessage').style.color='#b42318';
+    $('updateMessage').textContent='No changes were made. Update was not done';
+    return;
+  }
   $('updateMessage').style.color='';$('updateMessage').hidden=false;$('updateMessage').textContent='Wait we are updating EEG details to system...';
   const mode=inferMode(cash,online),p={appointmentId:selected.appointmentId,rowNumber:selected.rowNumber,city:selected.city||$('city').value,whatsapp:selected.whatsapp||wa,whatsappNew:selected.whatsapp||wa,name:selected.name,age:Number(selected.age),ageUnit:selected.ageUnit,address:selected.address||'',referredBy:selected.referredBy||'',eegCharges:total,eegPaymentMode:mode,eegCashPaid:cash,eegOnlinePaid:online};
   $('save').disabled=true;$('save').textContent='Updating...';$('save').className='btn btn-primary loading-state';
