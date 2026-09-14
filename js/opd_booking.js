@@ -6,12 +6,10 @@ document.addEventListener("DOMContentLoaded",()=>{
   let cityChangeToken=0;
   let bookingInProgress=false;
   let bookingSessionId=0;
-  let calendarYear=U.parts().y, calendarMonth=U.parts().m;
 
 
-  // Show today's India-local date in the appointment field by default.
-  // The field remains disabled until WhatsApp verification, and the calendar
-  // remains collapsed until the user taps the date field.
+  // Show today's India-local date in the appointment field. The field is
+  // display-only; OPD Booking accepts today as the only appointment date.
   const setTodayDateDisplay=()=>{
     const p=U.parts();
     $("date").value=String(p.d).padStart(2,"0")+"-"+String(p.m).padStart(2,"0")+"-"+p.y;
@@ -20,6 +18,37 @@ document.addEventListener("DOMContentLoaded",()=>{
   // Recalculate the patient's approximate current age from the age recorded
   // at the original registration date. Follow-up age is rounded to the
   // nearest whole number and the most appropriate unit is selected.
+  // OPD Booking input validation: age must be 1 day through 100 years;
+  // address requires at least 3 non-space characters; referral is optional
+  // but, when supplied, also requires at least 3 non-space characters.
+  const validateOpdPatientFields=()=>{
+    const age=Number($("age").value);
+    const unit=String($("unit").value||"").toLowerCase();
+    let ageValid=Number.isFinite(age)&&age>=1&&["days","months","years"].includes(unit);
+    if(ageValid){
+      if(unit==="years") ageValid=age<=100;
+      else if(unit==="months") ageValid=age<=1200;
+      else {
+        const now=U.parts();
+        const today=new Date(Date.UTC(now.y,now.m-1,now.d));
+        const maxBirth=new Date(Date.UTC(now.y-100,now.m-1,now.d));
+        const maxDays=Math.round((today.getTime()-maxBirth.getTime())/86400000);
+        ageValid=age<=maxDays;
+      }
+    }
+    if(!ageValid)return ["age","Age must be between 1 day and 100 years."];
+
+    const nonSpaceLength=value=>String(value||"").replace(/\s/g,"").length;
+    if(nonSpaceLength($("address").value)<3)
+      return ["address","Patient Address must contain at least 3 letters."];
+
+    const referred=String($("ref").value||"");
+    if(nonSpaceLength(referred)>0&&nonSpaceLength(referred)<3)
+      return ["ref","Referred By Dr./Hospital must contain at least 3 letters or leave it empty."];
+
+    return null;
+  };
+
   const currentFollowupAge=(age,ageUnit,registrationDate)=>{
     const n=Number(age);
     const raw=String(registrationDate||"").replace(/\D/g,"");
@@ -158,8 +187,6 @@ document.addEventListener("DOMContentLoaded",()=>{
     syncCityPickerTrigger();
     setTodayDateDisplay();
     $("date").dataset.key=todayKey();
-    $("cal").hidden=true;
-    calendarYear=U.parts().y; calendarMonth=U.parts().m;
     void token;
   };
   const fillCities=()=>{
@@ -168,7 +195,6 @@ document.addEventListener("DOMContentLoaded",()=>{
     const todayCity=getDefaultDailyCity();
     $("city").value=todayCity; $("next").value=todayCity;
     updateCityOptions();
-    if(todayCity&&cities.includes(todayCity)&&!DailyCity.get())DailyCity.set(todayCity,false);
     syncCityPickerTrigger();
   };
 
@@ -215,18 +241,17 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("selectedPatientBookingDate").textContent="—";
     $("submitStatus").textContent="";
     $("confirmation").hidden=true; $("confirmation").innerHTML="";
-    $("cal").hidden=true; $("cal").innerHTML="";
     $("payMode").value="Cash"; $("amount").value="500"; $("cash").value=""; $("online").value="";
     updatePaymentUI();
-    calendarYear=U.parts().y; calendarMonth=U.parts().m;
   };
 
   const setPostVerifyFieldsLocked=(locked)=>{
-    ["payMode","amount","cash","online","city","date","next"].forEach(id=>{
+    ["payMode","amount","cash","online","city","next"].forEach(id=>{
       if($(id)) $(id).disabled=locked;
     });
     if($("cityPickerTrigger")) $("cityPickerTrigger").disabled=locked;
     syncCityPickerTrigger();
+    $("date").disabled=true;
     if($("book")) $("book").disabled=locked;
   };
 
@@ -364,12 +389,12 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("payMode").onchange=updatePaymentUI;
   $("cash").oninput=updateSplitTotal; $("online").oninput=updateSplitTotal;
 
-  $("follow").onclick=async()=>{resetFields("Follow-up"); await setNextAvailableDate($("city").value); $("cal").hidden=true;};
+  $("follow").onclick=()=>{resetFields("Follow-up"); setTodayDateDisplay(); $("date").dataset.key=todayKey();};
   $("new").onclick=async()=>{
     resetFields("New");
     unlockBeforeWhatsApp();
-    await setNextAvailableDate($("city").value);
-    $("cal").hidden=true;
+    setTodayDateDisplay();
+    $("date").dataset.key=todayKey();
   };
 
   $("wa").oninput=e=>{e.target.value=U.phone(e.target.value);checkWhatsAppMatch();};
@@ -380,71 +405,6 @@ document.addEventListener("DOMContentLoaded",()=>{
     $(id).addEventListener("paste",e=>e.preventDefault());
   });
   $("followWa").oninput=e=>e.target.value=U.phone(e.target.value);
-
-  function getCalendarDates(year,month,city){
-    return [];
-  }
-
-  async function renderCalendar(){
-    const city=$("city").value;
-    const today=U.parts();
-    const dates=[];
-    const first=new Date(Date.UTC(calendarYear,calendarMonth-1,1)).getUTCDay()||7;
-    const last=new Date(Date.UTC(calendarYear,calendarMonth,0)).getUTCDate();
-    const monthName=new Intl.DateTimeFormat("en-IN",{month:"long",year:"numeric",timeZone:"Asia/Kolkata"}).format(new Date(Date.UTC(calendarYear,calendarMonth-1,1)));
-    const isCurrentMonth=(calendarYear===today.y && calendarMonth===today.m);
-    let h=`<div class="calendar-head"><button type="button" id="calPrev" class="calendar-nav" aria-label="Previous month" ${isCurrentMonth?"disabled":""}>‹</button><strong id="calMonthTitle" class="calendar-month-title">${monthName}</strong><button type="button" id="calNext" class="calendar-nav" aria-label="Next month">›</button></div>`;
-    h+=`<div class="calendar-grid">`;
-    ["M","T","W","T","F","S","S"].forEach(x=>h+=`<div class="calendar-weekday">${x}</div>`);
-    for(let i=1;i<first;i++)h+="<span></span>";
-    for(let d=1;d<=last;d++){
-      const key=String(d).padStart(2,"0")+String(calendarMonth).padStart(2,"0")+calendarYear;
-      const isPast=calendarYear<today.y || (calendarYear===today.y&&calendarMonth<today.m) || (calendarYear===today.y&&calendarMonth===today.m&&d<today.d);
-      const isToday=calendarYear===today.y&&calendarMonth===today.m&&d===today.d;
-      const isAvailable=isToday;
-      const isSelected=$("date").dataset.key===key;
-      let cls=isSelected?"selected":isAvailable?"available":"unavailable";
-      h+=`<button type="button" class="${cls}" ${isAvailable?`data-k="${key}"`:"disabled"}>${d}${isToday?'<small class="today-mark">Today</small>':""}</button>`;
-    }
-    h+=`</div><div class="legend">🟣 Available &nbsp; ⚫ Not Available &nbsp; 🟢 Selected</div>`;
-    $("cal").innerHTML=h; $("cal").hidden=false;
-    $("calPrev").onclick=async()=>{if(calendarYear===today.y&&calendarMonth===today.m)return; calendarMonth--;if(calendarMonth<1){calendarMonth=12;calendarYear--;} if(calendarYear<today.y || (calendarYear===today.y&&calendarMonth<today.m)){calendarYear=today.y;calendarMonth=today.m;} await renderCalendar();};
-    $("calNext").onclick=async()=>{calendarMonth++;if(calendarMonth>12){calendarMonth=1;calendarYear++;}await renderCalendar();};
-    $("calMonthTitle").onclick=async()=>{calendarYear=today.y;calendarMonth=today.m;await renderCalendar();};
-    $("cal").querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{
-      $("date").value=U.date(b.dataset.k); $("date").dataset.key=b.dataset.k; $("cal").hidden=true;
-    });
-  }
-
-  async function setFollowupDefaultDate(city){
-    setTodayDateDisplay();
-    $("date").dataset.key=todayKey();
-    const p=U.parts(); calendarYear=p.y; calendarMonth=p.m;
-    $("cal").hidden=true;
-  }
-
-  async function setNextAvailableDate(city){
-    setTodayDateDisplay();
-    $("date").dataset.key=todayKey();
-    const p=U.parts(); calendarYear=p.y; calendarMonth=p.m;
-    $("cal").hidden=true;
-  }
-
-  const setDateLoading=(loading,city)=>{
-    $("dateLoading").hidden=!loading;
-    $("dateLoading").textContent=loading
-      ? "Wait we are Loading Available date for "+city+" Visit"
-      : "";
-    // Keep Visit Location editable while available dates are loading.
-    // Disabling a mobile <select> inside its change event can visually restore
-    // the previous option on some browsers.
-    $("city").disabled=false;
-    if($("cityPickerTrigger")) $("cityPickerTrigger").disabled=false;
-    syncCityPickerTrigger();
-    $("date").disabled=loading || !verified;
-    $("next").disabled=loading || !verified;
-    $("book").disabled=loading || !verified;
-  };
 
   $("next").onchange=()=>{
     nextFollowupCityManuallyEdited=true;
@@ -564,14 +524,6 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("cityPickerModal")?.addEventListener("click",e=>{if(e.target===$("cityPickerModal")||e.target.classList.contains("opd-access-backdrop"))closeCityPicker();});
   $("city").onchange=()=>syncCityPickerTrigger();
 
-  const openDateCalendar=()=>{
-    const t=U.parts();
-    if(calendarYear<t.y || (calendarYear===t.y && calendarMonth<t.m)){calendarYear=t.y;calendarMonth=t.m;}
-    renderCalendar();
-  };
-  $("date").onclick=openDateCalendar;
-  $("dateIcon").onclick=openDateCalendar;
-
   $("load").onclick=async()=>{
     // Starting a new patient retrieval must clear every previous booking stage.
     selected=null; verified=false;
@@ -668,8 +620,8 @@ $("patients").innerHTML="";
           $("book").textContent="Book Appointment";
           const actions=$("editFollowup")?.closest(".followup-edit-actions");
           if(actions) actions.classList.remove("editing");
-          const now=U.parts();calendarYear=now.y;calendarMonth=now.m;
-          setFollowupDefaultDate($("city").value);
+          setTodayDateDisplay();
+          $("date").dataset.key=todayKey();
           requestAnimationFrame(()=>{
             $("selectedPatientCard").scrollIntoView({behavior:"smooth",block:"center"});
           });
@@ -724,6 +676,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       el.disabled=false;
     });
     if($("cityPickerTrigger")) $("cityPickerTrigger").disabled=false;
+    $("date").disabled=true;
     syncCityPickerTrigger();
     if($("book")){
       $("book").disabled=false;
@@ -786,6 +739,16 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
         return paymentError(`Combined Cash + Online amount cannot exceed ₹${MAX_OPD_AMOUNT}.`,"cash");
     }else{
       return paymentError("Please select a valid payment mode.","payMode");
+    }
+
+    const fieldValidationError=validateOpdPatientFields();
+    if(fieldValidationError){
+      const [field,message]=fieldValidationError;
+      $("submitStatus").textContent=message;
+      $("submitStatus").style.color="#b42318";
+      $(field)?.focus();
+      resetAfterValidationError();
+      return;
     }
 
     const requiredFields=[
@@ -965,6 +928,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
   resetFields("New");
   setTodayDateDisplay();
   $("date").dataset.key=todayKey();
+  $("date").disabled=true;
 
   // Mobile browsers may restore a page from the back-forward cache with
   // stale button text. If no booking is actually running, normalize it.
