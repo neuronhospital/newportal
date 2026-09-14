@@ -102,6 +102,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("city").querySelectorAll("option").forEach(o=>{
       const restricted=!special&&!allowed.includes(o.value);
       o.classList.toggle("restricted-city",restricted);
+      o.classList.toggle("available-city",!restricted);
       o.dataset.restricted=restricted?"true":"false";
     });
     return {allowed,special};
@@ -433,13 +434,13 @@ document.addEventListener("DOMContentLoaded",()=>{
     const value=String(input?.value||"").replace(/\D/g,"").slice(0,8);
     if(input)input.value=value;
     if(value.length!==8){
-      if(status)status.textContent="Enter the 8-digit password.";
+      if(status)status.textContent="Enter Correct Password";
       return false;
     }
     try{
       const ok=(await sha256(value))==="114f4b4bbf1f4a3a58064199f0e9d241566f356756ee58e5d160d3937e6ac740";
       if(!ok){
-        if(status)status.textContent="Incorrect password.";
+        if(status)status.textContent="Enter Correct Password";
         return false;
       }
       const target=pendingRestrictedCity&&cities.includes(pendingRestrictedCity)?pendingRestrictedCity:getDefaultDailyCity();
@@ -500,7 +501,10 @@ document.addEventListener("DOMContentLoaded",()=>{
       showRestrictionPopup(city);
       return;
     }
-    DailyCity.set(city,special);
+    // Once Special Day Access is granted, it remains valid for the rest of today.
+    // Selecting a scheduled city afterward must not revoke that access.
+    const accessGranted=DailyCity.isSpecial();
+    DailyCity.set(city,accessGranted||special);
     if(type==="New" && !nextFollowupCityManuallyEdited) $("next").value=city;
     setTodayDateDisplay();
     $("date").dataset.key=todayKey();
