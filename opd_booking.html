@@ -37,6 +37,7 @@ selected-patient-card{margin-top:18px;padding:14px 16px;border:1px solid #d8c7df
   .city-picker-dialog{width:92vw;border-radius:24px}.city-picker-option{height:57px;padding:0 20px;font-size:20px}.city-picker-radio{width:22px;height:22px}
 }
 @media(max-width:360px){.opd-access-dialog h2{gap:7px}.opd-restriction-dialog h2{font-size:16.6px;font-weight:600}.special-access-dialog h2{font-size:14.7px;font-weight:500}.opd-access-title-icon,.opd-access-title-icon svg{width:19px;height:19px}.opd-access-dialog{padding-left:18px;padding-right:18px}.opd-access-dialog p{font-size:14px}}
+.opd-hours-note-dialog{width:min(88vw,430px);padding:24px 24px 22px;border-radius:18px}.opd-hours-note-dialog h2{font-size:20px;font-weight:650;white-space:normal}.opd-hours-note-dialog p{margin:12px 0 18px;font-size:15px;line-height:1.45;color:#667085}.opd-hours-note-actions{margin-top:2px;gap:10px}.opd-hours-note-actions button{height:44px;min-height:44px;font-size:15px;padding:0 22px}.opd-hours-note-actions .opd-primary{min-width:100px}.opd-hours-note-actions .opd-secondary{min-width:92px}@media(max-width:600px){.opd-hours-note-dialog{width:88vw;padding:21px 20px 20px}.opd-hours-note-dialog h2{font-size:19px}.opd-hours-note-dialog p{font-size:14px;margin:10px 0 16px}}
 .city-picker-trigger{box-sizing:border-box;width:100%;height:58px;padding:0 16px;border:1px solid #b8bec8;border-radius:12px;background:#fff;color:#111827;display:flex;align-items:center;justify-content:space-between;text-align:left;font:inherit;font-size:20px;cursor:pointer}.city-picker-trigger:disabled{background:#f2f4f7;color:#667085;border-color:#d0d5dd;cursor:not-allowed}.city-picker-trigger:focus{outline:none;border-color:#7b1fa2;box-shadow:0 0 0 2px rgba(123,31,162,.12)}.city-picker-chevron{font-size:23px;line-height:1;color:#4b5563;margin-left:10px}</style><script src="js/secure-preload.js"></script></head>
 <body data-title="OPD Booking"><div id="header"></div><main><div class="container">
 <section class="page-title"><h1>OPD Booking Portal</h1><p>Book a new or follow-up appointment</p></section>
@@ -135,6 +136,17 @@ selected-patient-card{margin-top:18px;padding:14px 16px;border:1px solid #d8c7df
     <div class="opd-access-actions">
       <button id="opdRestrictionOk" type="button" class="opd-primary">OK</button>
       <button id="opdRestrictionSpecial" type="button" class="opd-secondary">Enable Special Day Access</button>
+    </div>
+  </div>
+</div>
+<div id="opdHoursNoteModal" class="opd-access-modal" hidden aria-hidden="true">
+  <div class="opd-access-backdrop"></div>
+  <div class="opd-access-dialog opd-hours-note-dialog" role="dialog" aria-modal="true" aria-labelledby="opd-hours-note-title">
+    <h2 id="opd-hours-note-title">Important Note</h2>
+    <p>Usually Dr Maindad is available for consultation between 9 AM &amp; 9 PM</p>
+    <div class="opd-access-actions opd-hours-note-actions">
+      <button id="opdHoursNoteCancel" type="button" class="opd-secondary">Cancel</button>
+      <button id="opdHoursNoteProceed" type="button" class="opd-primary">Proceed</button>
     </div>
   </div>
 </div>
