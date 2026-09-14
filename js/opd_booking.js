@@ -96,6 +96,32 @@ document.addEventListener("DOMContentLoaded",()=>{
     return (patients||[]).filter(x=>!isTodayFollowupRecord(x)).slice(0,10);
   };
 
+  const updateCityPicker=()=>{
+    const list=$("cityPickerList"),select=$("city");
+    if(!list||!select)return;
+    const allowed=scheduledCitiesForToday();
+    const special=DailyCity.isSpecial();
+    const selected=select.value;
+    list.innerHTML=cities.map(c=>{
+      const available=special||allowed.includes(c);
+      const isSelected=c===selected;
+      return `<button type="button" class="city-picker-row ${available?"available":"restricted"} ${isSelected?"selected":""}" data-city="${U.esc(c)}" aria-label="${U.esc(c)}${available?" available":" restricted"}"><span>${U.esc(c)}</span><span class="city-picker-radio" aria-hidden="true"></span></button>`;
+    }).join("");
+    list.querySelectorAll(".city-picker-row").forEach(row=>row.addEventListener("click",()=>{
+      const city=row.dataset.city||"";
+      closeCityPicker();
+      if(!special&&!allowed.includes(city)){
+        showRestrictionPopup(city);
+        return;
+      }
+      select.value=city;
+      select.dispatchEvent(new Event("change",{bubbles:true}));
+    }));
+  };
+  const syncCityPickerValue=()=>{
+    const value=$("city")?.value;
+    if($("cityPickerValue")&&value)$("cityPickerValue").textContent=value;
+  };
   const updateCityOptions=()=>{
     const allowed=scheduledCitiesForToday();
     const special=DailyCity.isSpecial();
@@ -105,6 +131,8 @@ document.addEventListener("DOMContentLoaded",()=>{
       o.classList.toggle("available-city",!restricted);
       o.dataset.restricted=restricted?"true":"false";
     });
+    updateCityPicker();
+    syncCityPickerValue();
     return {allowed,special};
   };
   const fillCities=()=>{
@@ -113,6 +141,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     const todayCity=getDefaultDailyCity();
     $("city").value=todayCity; $("next").value=todayCity;
     updateCityOptions();
+    syncCityPickerValue();
     if(todayCity&&cities.includes(todayCity)&&!DailyCity.get())DailyCity.set(todayCity,false);
   };
 
@@ -168,6 +197,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     ["payMode","amount","cash","online","city","date","next"].forEach(id=>{
       if($(id)) $(id).disabled=locked;
     });
+    if($("cityPickerTrigger")) $("cityPickerTrigger").disabled=locked;
     if($("book")) $("book").disabled=locked;
   };
 
@@ -213,6 +243,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       // Let the field container receive the event so the lock message can appear.
       el.style.pointerEvents=locked?"none":"";
     });
+    if($("cityPickerTrigger")) $("cityPickerTrigger").disabled=locked;
     if($("editFollowup")) $("editFollowup").hidden=!locked;
   };
 
@@ -390,6 +421,20 @@ document.addEventListener("DOMContentLoaded",()=>{
   let pendingRestrictedCity="";
   let restrictionPreviousCity="";
 
+  const closeCityPicker=()=>{
+    const m=$("cityPickerModal");
+    if(m){m.hidden=true;m.setAttribute("aria-hidden","true");}
+    $("cityPickerTrigger")?.setAttribute("aria-expanded","false");
+    document.body.classList.remove("opd-modal-open");
+  };
+  const showCityPicker=()=>{
+    if($("cityPickerTrigger")?.disabled)return;
+    updateCityPicker();
+    const m=$("cityPickerModal");
+    if(m){m.hidden=false;m.setAttribute("aria-hidden","false");document.body.classList.add("opd-modal-open");}
+    $("cityPickerTrigger")?.setAttribute("aria-expanded","true");
+  };
+
   const closeCityRestrictionPopup=()=>{
     const m=$("opdRestrictionModal");
     if(m){m.hidden=true;m.setAttribute("aria-hidden","true");}
@@ -488,9 +533,15 @@ document.addEventListener("DOMContentLoaded",()=>{
   }));
   document.addEventListener("keydown",e=>{
     if(e.key==="Escape"){
-      if(!$("specialAccessModal")?.hidden){closeSpecialAccessPopup();pendingRestrictedCity="";restoreDefaultCity();}
+      if(!$("cityPickerModal")?.hidden){closeCityPicker();}
+      else if(!$("specialAccessModal")?.hidden){closeSpecialAccessPopup();pendingRestrictedCity="";restoreDefaultCity();}
       else if(!$("opdRestrictionModal")?.hidden){closeCityRestrictionPopup();pendingRestrictedCity="";restoreDefaultCity();}
     }
+  });
+
+  $("cityPickerTrigger")?.addEventListener("click",showCityPicker);
+  $("cityPickerModal")?.addEventListener("click",e=>{
+    if(e.target.id==="cityPickerModal"||e.target.classList.contains("opd-access-backdrop"))closeCityPicker();
   });
 
   $("city").onchange=()=>{
@@ -506,6 +557,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     const accessGranted=DailyCity.isSpecial();
     DailyCity.set(city,accessGranted||special);
     if(type==="New" && !nextFollowupCityManuallyEdited) $("next").value=city;
+    syncCityPickerValue();
     setTodayDateDisplay();
     $("date").dataset.key=todayKey();
     $("cal").hidden=true;
