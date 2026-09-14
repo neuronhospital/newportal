@@ -12,7 +12,7 @@
 .opd-access-modal[hidden]{display:none}
 .opd-access-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.42)}
 .opd-access-dialog{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);box-sizing:border-box;width:min(92vw,640px);padding:26px 28px 28px;border-radius:24px;background:#fff;box-shadow:0 14px 38px rgba(0,0,0,.24);font-family:Roboto,Arial,sans-serif}
-.opd-access-dialog h2{margin:0;display:flex;align-items:center;gap:10px;white-space:nowrap;font-size:23px;line-height:1.15;color:#1f2937;font-weight:700;letter-spacing:-.2px}.opd-access-title-icon{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:23px;height:23px;color:#6a1b9a}.opd-access-title-icon svg{width:23px;height:23px;display:block;fill:currentColor}
+.opd-access-dialog h2{margin:0;display:flex;align-items:center;gap:10px;white-space:nowrap;font-size:23px;line-height:1.15;color:#1f2937;font-weight:700;letter-spacing:-.2px}.opd-restriction-dialog h2{font-size:19.55px;font-weight:600;letter-spacing:-.1px}.special-access-dialog h2{font-size:17.25px;font-weight:500;letter-spacing:0}.opd-access-title-icon{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:23px;height:23px;color:#6a1b9a}.opd-access-title-icon svg{width:23px;height:23px;display:block;fill:currentColor}
 .opd-access-dialog p{margin:18px 0 18px;font-size:16px;line-height:1.45;color:#667085;font-weight:400}
 .opd-access-actions{display:flex;justify-content:center;align-items:center;gap:12px;flex-wrap:wrap;margin:4px auto 0}
 .opd-access-actions button{height:48px;min-height:48px;width:auto;min-width:0;padding:0 24px;border:0;border-radius:9px;font-size:16px;font-weight:700;line-height:1;cursor:pointer;font-family:inherit}
@@ -30,13 +30,13 @@
 .city-picker-dialog .city-picker-option.available.selected{color:#168a4a}
 @media(max-width:600px){
   .opd-access-dialog{width:92vw;padding:24px 22px 24px;border-radius:22px}
-  .opd-access-dialog h2{font-size:21px;gap:8px}.opd-access-title-icon,.opd-access-title-icon svg{width:21px;height:21px}
+  .opd-access-dialog h2{font-size:21px;gap:8px}.opd-restriction-dialog h2{font-size:17.85px;font-weight:600}.special-access-dialog h2{font-size:15.75px;font-weight:500}.opd-access-title-icon,.opd-access-title-icon svg{width:21px;height:21px}
   .opd-access-dialog p{font-size:15px;margin:16px 0 16px}
   .opd-access-actions{gap:10px}.opd-access-actions button{font-size:15px;padding:0 20px}
   .special-access-actions{width:80%;flex-wrap:nowrap}.special-access-actions button{flex:1 1 0;padding:0 12px}
   .city-picker-dialog{width:92vw;border-radius:24px}.city-picker-option{height:57px;padding:0 20px;font-size:20px}.city-picker-radio{width:22px;height:22px}
 }
-@media(max-width:360px){.opd-access-dialog h2{font-size:18px;gap:7px}.opd-access-title-icon,.opd-access-title-icon svg{width:19px;height:19px}.opd-access-dialog{padding-left:18px;padding-right:18px}.opd-access-dialog p{font-size:14px}}
+@media(max-width:360px){.opd-access-dialog h2{gap:7px}.opd-restriction-dialog h2{font-size:16.6px;font-weight:600}.special-access-dialog h2{font-size:14.7px;font-weight:500}.opd-access-title-icon,.opd-access-title-icon svg{width:19px;height:19px}.opd-access-dialog{padding-left:18px;padding-right:18px}.opd-access-dialog p{font-size:14px}}
 .city-picker-trigger{box-sizing:border-box;width:100%;height:58px;padding:0 16px;border:1px solid #b8bec8;border-radius:12px;background:#fff;color:#111827;display:flex;align-items:center;justify-content:space-between;text-align:left;font:inherit;font-size:20px;cursor:pointer}.city-picker-trigger:disabled{background:#f2f4f7;color:#667085;border-color:#d0d5dd;cursor:not-allowed}.city-picker-trigger:focus{outline:none;border-color:#7b1fa2;box-shadow:0 0 0 2px rgba(123,31,162,.12)}.city-picker-chevron{font-size:23px;line-height:1;color:#4b5563;margin-left:10px}</style><script src="js/secure-preload.js"></script></head>
 <body data-title="OPD Booking"><div id="header"></div><main><div class="container">
 <section class="page-title"><h1>OPD Booking Portal</h1><p>Book a new or follow-up appointment</p></section>
@@ -129,7 +129,7 @@
 <div id="cityPickerModal" class="opd-access-modal" hidden aria-hidden="true"><div class="opd-access-backdrop"></div><div class="opd-access-dialog city-picker-dialog" role="dialog" aria-modal="true" aria-label="Visit Location"><div id="cityPickerList" class="city-picker-list"></div></div></div>
 <div id="opdRestrictionModal" class="opd-access-modal" hidden aria-hidden="true">
   <div class="opd-access-backdrop"></div>
-  <div class="opd-access-dialog" role="dialog" aria-modal="true" aria-labelledby="opd-restriction-title">
+  <div class="opd-access-dialog opd-restriction-dialog" role="dialog" aria-modal="true" aria-labelledby="opd-restriction-title">
     <h2 id="opd-restriction-title"><span class="opd-access-title-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M17 8h-1V6a4 4 0 0 0-8 0v2H7a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2Zm-7-2a2 2 0 0 1 4 0v2h-4V6Zm7 13H7v-9h10v9Zm-5-2a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"/></svg></span><span>OPD Booking Restricted</span></h2>
     <p>Today's visit location is fixed according to the doctor's schedule.</p>
     <div class="opd-access-actions">
@@ -140,7 +140,7 @@
 </div>
 <div id="specialAccessModal" class="opd-access-modal" hidden aria-hidden="true">
   <div class="opd-access-backdrop"></div>
-  <div class="opd-access-dialog" role="dialog" aria-modal="true" aria-labelledby="special-access-title">
+  <div class="opd-access-dialog special-access-dialog" role="dialog" aria-modal="true" aria-labelledby="special-access-title">
     <h2 id="special-access-title"><span class="opd-access-title-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M17 8h-1V6a4 4 0 0 0-8 0v2H7a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2Zm-7-2a2 2 0 0 1 4 0v2h-4V6Zm7 13H7v-9h10v9Zm-5-2a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"/></svg></span><span>Special Day Access Mode</span></h2>
     <p>Enter Secure Access Password</p>
     <input id="specialAccessPassword" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" aria-label="8-digit secure access password">
