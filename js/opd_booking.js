@@ -96,32 +96,6 @@ document.addEventListener("DOMContentLoaded",()=>{
     return (patients||[]).filter(x=>!isTodayFollowupRecord(x)).slice(0,10);
   };
 
-  const updateCityPicker=()=>{
-    const list=$("cityPickerList"),select=$("city");
-    if(!list||!select)return;
-    const allowed=scheduledCitiesForToday();
-    const special=DailyCity.isSpecial();
-    const selected=select.value;
-    list.innerHTML=cities.map(c=>{
-      const available=special||allowed.includes(c);
-      const isSelected=c===selected;
-      return `<button type="button" class="city-picker-row ${available?"available":"restricted"} ${isSelected?"selected":""}" data-city="${U.esc(c)}" aria-label="${U.esc(c)}${available?" available":" restricted"}"><span>${U.esc(c)}</span><span class="city-picker-radio" aria-hidden="true"></span></button>`;
-    }).join("");
-    list.querySelectorAll(".city-picker-row").forEach(row=>row.addEventListener("click",()=>{
-      const city=row.dataset.city||"";
-      closeCityPicker();
-      if(!special&&!allowed.includes(city)){
-        showRestrictionPopup(city);
-        return;
-      }
-      select.value=city;
-      select.dispatchEvent(new Event("change",{bubbles:true}));
-    }));
-  };
-  const syncCityPickerValue=()=>{
-    const value=$("city")?.value;
-    if($("cityPickerValue")&&value)$("cityPickerValue").textContent=value;
-  };
   const updateCityOptions=()=>{
     const allowed=scheduledCitiesForToday();
     const special=DailyCity.isSpecial();
@@ -131,9 +105,62 @@ document.addEventListener("DOMContentLoaded",()=>{
       o.classList.toggle("available-city",!restricted);
       o.dataset.restricted=restricted?"true":"false";
     });
-    updateCityPicker();
-    syncCityPickerValue();
     return {allowed,special};
+  };
+  const syncCityPickerTrigger=()=>{
+    const trigger=$("cityPickerTrigger"),value=$("cityPickerValue"),city=$("city");
+    if(trigger&&value&&city){value.textContent=city.value||"";trigger.disabled=!!city.disabled;trigger.setAttribute("aria-expanded",$("cityPickerModal")?.hidden?"false":"true");}
+  };
+  const closeCityPicker=()=>{
+    const m=$("cityPickerModal");
+    if(m){m.hidden=true;m.setAttribute("aria-hidden","true");}
+    $("cityPickerTrigger")?.setAttribute("aria-expanded","false");
+    document.body.classList.remove("opd-modal-open");
+  };
+  const renderCityPicker=()=>{
+    const list=$("cityPickerList"),city=$("city");
+    if(!list||!city)return;
+    const {allowed,special}=updateCityOptions();
+    const current=city.value;
+    list.innerHTML=cities.map(c=>{
+      const available=special||allowed.includes(c);
+      const selected=c===current;
+      return `<button type="button" class="city-picker-option ${available?"available":"restricted"} ${selected?"selected":""}" data-city="${U.esc(c)}" aria-label="${U.esc(c)}${available?" selectable":" restricted"}"><span>${U.esc(c)}</span><span class="city-picker-radio" aria-hidden="true"></span></button>`;
+    }).join("");
+    list.querySelectorAll("[data-city]").forEach(b=>b.onclick=()=>{
+      const selectedCity=b.dataset.city||"";
+      const allowedNow=scheduledCitiesForToday();
+      const specialNow=DailyCity.isSpecial();
+      closeCityPicker();
+      if(!specialNow&&!allowedNow.includes(selectedCity)){showRestrictionPopup(selectedCity);return;}
+      applyCitySelection(selectedCity);
+    });
+  };
+  const openCityPicker=()=>{
+    const trigger=$("cityPickerTrigger");
+    if(!trigger||trigger.disabled)return;
+    renderCityPicker();
+    const m=$("cityPickerModal");
+    if(m){m.hidden=false;m.setAttribute("aria-hidden","false");}
+    trigger.setAttribute("aria-expanded","true");
+    document.body.classList.add("opd-modal-open");
+  };
+  const applyCitySelection=(city)=>{
+    if(!cities.includes(city))return;
+    const token=++cityChangeToken;
+    const allowed=scheduledCitiesForToday();
+    const special=DailyCity.isSpecial();
+    if(!special&&!allowed.includes(city)){showRestrictionPopup(city);return;}
+    $("city").value=city;
+    const accessGranted=DailyCity.isSpecial();
+    DailyCity.set(city,accessGranted||special);
+    if(type==="New"&&!nextFollowupCityManuallyEdited) $("next").value=city;
+    syncCityPickerTrigger();
+    setTodayDateDisplay();
+    $("date").dataset.key=todayKey();
+    $("cal").hidden=true;
+    calendarYear=U.parts().y; calendarMonth=U.parts().m;
+    void token;
   };
   const fillCities=()=>{
     $("city").innerHTML=cities.map(x=>`<option value="${U.esc(x)}">${U.esc(x)}</option>`).join("");
@@ -141,8 +168,8 @@ document.addEventListener("DOMContentLoaded",()=>{
     const todayCity=getDefaultDailyCity();
     $("city").value=todayCity; $("next").value=todayCity;
     updateCityOptions();
-    syncCityPickerValue();
     if(todayCity&&cities.includes(todayCity)&&!DailyCity.get())DailyCity.set(todayCity,false);
+    syncCityPickerTrigger();
   };
 
   const resetFields=(mode)=>{
@@ -167,6 +194,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     const todayCity=getDefaultDailyCity();
     $("city").value=todayCity; $("next").value=todayCity;
     updateCityOptions();
+    syncCityPickerTrigger();
     // Follow-up locking is scoped to Follow-up mode only. When switching
     // back to New, explicitly clear every Follow-up lock before applying the
     // normal v175 pre-verification state. This prevents readOnly/disabled
@@ -198,6 +226,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       if($(id)) $(id).disabled=locked;
     });
     if($("cityPickerTrigger")) $("cityPickerTrigger").disabled=locked;
+    syncCityPickerTrigger();
     if($("book")) $("book").disabled=locked;
   };
 
@@ -244,6 +273,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       el.style.pointerEvents=locked?"none":"";
     });
     if($("cityPickerTrigger")) $("cityPickerTrigger").disabled=locked;
+    syncCityPickerTrigger();
     if($("editFollowup")) $("editFollowup").hidden=!locked;
   };
 
@@ -409,6 +439,8 @@ document.addEventListener("DOMContentLoaded",()=>{
     // Disabling a mobile <select> inside its change event can visually restore
     // the previous option on some browsers.
     $("city").disabled=false;
+    if($("cityPickerTrigger")) $("cityPickerTrigger").disabled=false;
+    syncCityPickerTrigger();
     $("date").disabled=loading || !verified;
     $("next").disabled=loading || !verified;
     $("book").disabled=loading || !verified;
@@ -420,20 +452,6 @@ document.addEventListener("DOMContentLoaded",()=>{
 
   let pendingRestrictedCity="";
   let restrictionPreviousCity="";
-
-  const closeCityPicker=()=>{
-    const m=$("cityPickerModal");
-    if(m){m.hidden=true;m.setAttribute("aria-hidden","true");}
-    $("cityPickerTrigger")?.setAttribute("aria-expanded","false");
-    document.body.classList.remove("opd-modal-open");
-  };
-  const showCityPicker=()=>{
-    if($("cityPickerTrigger")?.disabled)return;
-    updateCityPicker();
-    const m=$("cityPickerModal");
-    if(m){m.hidden=false;m.setAttribute("aria-hidden","false");document.body.classList.add("opd-modal-open");}
-    $("cityPickerTrigger")?.setAttribute("aria-expanded","true");
-  };
 
   const closeCityRestrictionPopup=()=>{
     const m=$("opdRestrictionModal");
@@ -452,6 +470,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("city").value=c;
     if(type==="New"&&!nextFollowupCityManuallyEdited)$("next").value=c;
     updateCityOptions();
+    syncCityPickerTrigger();
     setTodayDateDisplay();
     $("date").dataset.key=todayKey();
   };
@@ -460,6 +479,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     restrictionPreviousCity=getDefaultDailyCity();
     $("city").value=restrictionPreviousCity;
     updateCityOptions();
+    syncCityPickerTrigger();
     const m=$("opdRestrictionModal");
     if(m){m.hidden=false;m.setAttribute("aria-hidden","false");document.body.classList.add("opd-modal-open");}
   };
@@ -492,6 +512,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       DailyCity.set(target,true);
       $("city").value=target;
       updateCityOptions();
+      syncCityPickerTrigger();
       closeSpecialAccessPopup();
       pendingRestrictedCity="";
       setTodayDateDisplay(); $("date").dataset.key=todayKey();
@@ -539,30 +560,9 @@ document.addEventListener("DOMContentLoaded",()=>{
     }
   });
 
-  $("cityPickerTrigger")?.addEventListener("click",showCityPicker);
-  $("cityPickerModal")?.addEventListener("click",e=>{
-    if(e.target.id==="cityPickerModal"||e.target.classList.contains("opd-access-backdrop"))closeCityPicker();
-  });
-
-  $("city").onchange=()=>{
-    const city=$("city").value;
-    const token=++cityChangeToken;
-    const {allowed,special}=updateCityOptions();
-    if(!special&&!allowed.includes(city)){
-      showRestrictionPopup(city);
-      return;
-    }
-    // Once Special Day Access is granted, it remains valid for the rest of today.
-    // Selecting a scheduled city afterward must not revoke that access.
-    const accessGranted=DailyCity.isSpecial();
-    DailyCity.set(city,accessGranted||special);
-    if(type==="New" && !nextFollowupCityManuallyEdited) $("next").value=city;
-    syncCityPickerValue();
-    setTodayDateDisplay();
-    $("date").dataset.key=todayKey();
-    $("cal").hidden=true;
-    calendarYear=U.parts().y; calendarMonth=U.parts().m;
-  };
+  $("cityPickerTrigger")?.addEventListener("click",openCityPicker);
+  $("cityPickerModal")?.addEventListener("click",e=>{if(e.target===$("cityPickerModal")||e.target.classList.contains("opd-access-backdrop"))closeCityPicker();});
+  $("city").onchange=()=>syncCityPickerTrigger();
 
   const openDateCalendar=()=>{
     const t=U.parts();
@@ -649,6 +649,7 @@ $("patients").innerHTML="";
           // Follow-up Visit Location defaults to today's DailyCity, but remains editable.
           const dailyCity=getDefaultDailyCity();
           $("city").value=dailyCity;
+          syncCityPickerTrigger();
           updateCityOptions();
           // Next Follow-up City carries forward the city from the previous
           // booking, and remains independently editable.
@@ -710,6 +711,8 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       document.querySelectorAll("#bookingFields input, #bookingFields select, #bookingFields textarea").forEach(el=>{
         el.disabled=true;
       });
+      if($("cityPickerTrigger")) $("cityPickerTrigger").disabled=true;
+      syncCityPickerTrigger();
     }
   };
 
@@ -720,6 +723,8 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     document.querySelectorAll("#bookingFields input, #bookingFields select, #bookingFields textarea").forEach(el=>{
       el.disabled=false;
     });
+    if($("cityPickerTrigger")) $("cityPickerTrigger").disabled=false;
+    syncCityPickerTrigger();
     if($("book")){
       $("book").disabled=false;
       $("book").textContent="Book Appointment";
