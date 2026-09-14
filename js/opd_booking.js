@@ -685,6 +685,29 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     }
   };
 
+  const isOutsideUsualConsultationHours=()=>{
+    const parts=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Kolkata",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());
+    const get=n=>+(parts.find(x=>x.type===n)?.value||0);
+    const minutes=get("hour")*60+get("minute");
+    return minutes<9*60 || minutes>21*60;
+  };
+
+  const showConsultationHoursNote=()=>new Promise(resolve=>{
+    const modal=$("opdHoursNoteModal");
+    if(!modal){resolve(true);return;}
+    const finish=proceed=>{
+      modal.hidden=true;
+      modal.setAttribute("aria-hidden","true");
+      document.body.classList.remove("opd-modal-open");
+      resolve(proceed);
+    };
+    modal.hidden=false;
+    modal.setAttribute("aria-hidden","false");
+    document.body.classList.add("opd-modal-open");
+    $("opdHoursNoteCancel")?.addEventListener("click",()=>finish(false),{once:true});
+    $("opdHoursNoteProceed")?.addEventListener("click",()=>finish(true),{once:true});
+  });
+
   $("book").onclick=async()=>{
     if($("book").disabled || bookingInProgress)return;
     bookingInProgress=true;
@@ -786,6 +809,11 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     }
     if(total>2000){$("submitStatus").textContent="OPD total cannot exceed ₹2000.";$("submitStatus").style.color="#b42318";resetAfterValidationError();return;}
     if(total<0){$("submitStatus").textContent="Enter a valid OPD amount.";$("submitStatus").style.color="#b42318";resetAfterValidationError();return;}
+
+    if(isOutsideUsualConsultationHours()){
+      const proceed=await showConsultationHoursNote();
+      if(!proceed){resetAfterValidationError();return;}
+    }
 
     $("book").disabled=true;
     $("book").textContent="Confirming Appointment...";
