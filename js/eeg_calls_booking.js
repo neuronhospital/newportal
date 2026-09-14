@@ -101,17 +101,33 @@ document.addEventListener("DOMContentLoaded",()=>{
     setStatus(message||"✓ Booking recovered successfully.","#168a4a");
   };
 
-  const showBookingFailure=(requestId)=>{
-    setStatus("Booking unsuccessful. Please book your EEG appointment again.","#b42318");
+  const showBookingFailure=()=>{
+    setStatus("Booking unsuccessful. You can Book Again.","#b42318");
     const old=document.querySelector(".booking-error"); if(old)old.remove();
-    const err=document.createElement("div");
-    err.className="booking-error";
-    err.textContent="We could not find this booking after checking its original request. You can safely book again.";
-    $("submitStatus").after(err);
+    const modal=$("bookingFailureModal");
+    if(modal){
+      modal.hidden=false;
+      requestAnimationFrame(()=>$("bookingFailureAgain")?.focus());
+    }
+  };
+
+  const bookAgain=()=>{
+    $("bookingFailureModal").hidden=true;
+    document.querySelector(".booking-error")?.remove();
+    document.querySelectorAll("#submitStatus br, #submitStatus button").forEach(el=>el.remove());
+    setStatus("");
+    $("confirmation").hidden=true;
+    $("confirmation").innerHTML="";
+    resetForm();
+    bookingInProgress=false;
+    setFieldsDisabled(false);
     $("book").disabled=false;
-    $("book").textContent="Book Again";
+    $("book").textContent="Book EEG Appointment";
     $("book").className="cta";
   };
+
+  $("bookingFailureAgain")?.addEventListener("click",bookAgain);
+
 
   const checkEEGCallsStatus=async(requestId,automatic=false)=>{
     try{
@@ -211,7 +227,7 @@ document.addEventListener("DOMContentLoaded",()=>{
           resetForm();
           return;
         }
-        showBookingFailure(requestId);
+        showBookingFailure();
       };
     }finally{
       if($("confirmation").hidden){

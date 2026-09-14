@@ -178,7 +178,24 @@ function eegCallsUpdateShowConfirmation_(r){
   eegCallsUpdateShow_("confirmation",true);
   setTimeout(()=>box.scrollIntoView({behavior:"smooth",block:"center"}),80);
 }
+function eegCallsUpdateNoChanges_(){
+  const p=eegCallsUpdateState.selected;
+  if(!p)return false;
+  const text=id=>String(document.getElementById(id)?.value??"").trim();
+  const phone=v=>String(v??"").replace(/\D/g,"");
+  const sameText=(a,b)=>String(a??"").trim()===String(b??"").trim();
+  const samePayment=Number(document.getElementById("editPayment")?.value)===Number(p.paymentReceived);
+  return sameText(text("editName"),p.patientName) &&
+    sameText(text("editAddress"),p.address) &&
+    phone(text("editWhatsapp"))===phone(p.whatsapp) &&
+    sameText(text("editReferredBy"),p.referredBy) &&
+    samePayment;
+}
 async function eegCallsUpdateSubmit_(){
+  if(eegCallsUpdateNoChanges_()){
+    window.alert("No changes were made. Update was not done.");
+    return;
+  }
   const p=eegCallsUpdateState.selected;if(!p||eegCallsUpdateState.busy)return;
   const name=document.getElementById("editName").value.trim();
   const address=document.getElementById("editAddress").value.trim();
