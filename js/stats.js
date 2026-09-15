@@ -322,7 +322,7 @@ document.addEventListener("DOMContentLoaded",()=>{
    const sourceCities=Array.isArray(r.statisticsSourceCities)
      ? r.statisticsSourceCities
      : (Array.isArray(r.statisticsScheduledCities)?r.statisticsScheduledCities:[]);
-   const showDetail=hasDetail && !(String(r.city||"").toLowerCase()==="all" && r.period===`${U.parts().y}-${String(U.parts().m).padStart(2,"0")}`);
+   const showDetail=hasDetail;
    const patientCount=Number(t.patientCount)||0;
    const freeOPD=Number(t.freeOPD)||0;
    const freeEEG=Number(t.freeEEG)||0;
