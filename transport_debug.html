@@ -17,12 +17,13 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid 
 </style>
 </head>
 <body>
-<h1>NEURON Phase 2 — HTTP Transport Probe</h1>
-<p>This page performs requests that do <b>no booking and no Spreadsheet I/O</b>. It measures the Apps Script web-app/Content-Service path separately from booking logic.</p>
+<h1>NEURON Phase 2B — HTTP Transport Probe</h1>
+<p>This page performs requests that do <b>no booking and no Spreadsheet I/O</b>. Phase 2B compares a minimal probe with a booking-shaped request/response to isolate payload, dispatch, and response-shape effects.</p>
 <div>
 <button id="postBtn">Run POST × 5</button>
 <button id="getBtn">Run GET × 5</button>
 <button id="bothBtn">Run Both × 5</button>
+<button id="shapeBtn">Run Booking-Shape × 5</button>
 <button id="clearBtn">Clear</button>
 </div>
 <div id="status">Ready.</div>
@@ -33,6 +34,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid 
 <script>
 const $=id=>document.getElementById(id);
 let runNo=0;
+const bookingShapePayload={action:"transportBookingShapeProbe",requestId:"phase2b-probe",name:"Probe Patient",patientName:"Probe Patient",age:30,ageUnit:"Years",phone:"9999999999",patientType:"New",address:"Probe Address",city:"Probe",date:"15/09/2026",referredBy:"",nextFollowupCity:"",opdCharges:500,opdPaymentMode:"Cash",opdCashPaid:500,opdOnlinePaid:0,opdTotalPaid:500};
 function now(){return {mono:performance.now(),epoch:Date.now()};}
 function ms(x){return Number.isFinite(x)?Math.round(x):"—";}
 function row(r){
@@ -48,14 +50,14 @@ function summarize(){
   const fields=["Client→Invocation*","Server processing","Server finish→Headers*","Total"];
   $("summary").innerHTML=fields.map((f,i)=>`<div class="card"><div class="label">Avg ${f}</div><div class="value">${avg(nums([1,2,3,5][i]))} ms</div></div>`).join("");
 }
-async function probe(method,n){
+async function probe(method,n,shape=false){
   const q=`?transportProbe=1&probe=${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const url=NEURON_CONFIG.apiUrl+q;
   const start=now();
   const initEpoch=start.epoch;
   let response;
   if(method==="POST"){
-    response=await fetch(url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({action:"transportProbe",probe:n}),cache:"no-store"});
+    response=await fetch(url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(shape?{...bookingShapePayload,probe:n}:{action:"transportProbe",probe:n}),cache:"no-store"});
   }else{
     response=await fetch(url,{method:"GET",cache:"no-store"});
   }
@@ -66,7 +68,7 @@ async function probe(method,n){
   const serverInvocation=Number(j.invocation_received_epoch_ms);
   const serverFinish=Number(j.response_ready_epoch_ms);
   return {
-    run:`${method} #${n}`,
+    run:`${shape?"SHAPE":method} #${n}`,
     clientToInvocation:serverInvocation-initEpoch,
     serverProcessing:Number(j.server_processing_ms),
     finishToHeaders:headers.epoch-serverFinish,
@@ -83,8 +85,9 @@ async function run(method){
   finally{setBusy(false);}
 }
 async function runBoth(){setBusy(true);$("status").textContent="Running POST × 5 then GET × 5…";try{for(const method of ["POST","GET"]){for(let i=1;i<=5;i++){row(await probe(method,i));summarize();}}$("status").innerHTML='<span class="good">POST × 5 + GET × 5 complete.</span> No booking was performed.';}catch(e){$("status").textContent=`Probe failed: ${e&&e.message||e}`;}finally{setBusy(false);}}
-function setBusy(v){["postBtn","getBtn","bothBtn"].forEach(id=>$(id).disabled=v);}
-$("postBtn").onclick=()=>run("POST");$("getBtn").onclick=()=>run("GET");$("bothBtn").onclick=runBoth;$("clearBtn").onclick=()=>{$("results").innerHTML="";$('summary').innerHTML="";$('status').textContent="Ready.";};
+async function runBookingShape(){setBusy(true);$("status").textContent="Running booking-shaped POST × 5…";try{for(let i=1;i<=5;i++){row(await probe("POST",i,true));summarize();}}catch(e){$("status").textContent=`Probe failed: ${e&&e.message||e}`;}finally{$("status").innerHTML='<span class="good">Booking-shaped POST × 5 complete.</span> No booking was performed.';setBusy(false);}}
+function setBusy(v){["postBtn","getBtn","bothBtn","shapeBtn"].forEach(id=>$(id).disabled=v);}
+$("postBtn").onclick=()=>run("POST");$("getBtn").onclick=()=>run("GET");$("bothBtn").onclick=runBoth;$("shapeBtn").onclick=runBookingShape;$("clearBtn").onclick=()=>{$("results").innerHTML="";$('summary').innerHTML="";$('status').textContent="Ready.";};
 </script>
 </body>
 </html>
