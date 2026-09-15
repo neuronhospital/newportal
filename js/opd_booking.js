@@ -797,6 +797,12 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       }
     }
     const bookingPhone=U.phone(type==="Follow-up"?$("followWa").value:$("wa").value);
+    const recoveryPatientName=U.title($("name").value);
+    if(await window.NeuronRecovery?.isPatientRecovering?.({name:recoveryPatientName,whatsapp:bookingPhone,city:$("city").value,appointmentDate:$("date").dataset.key})){
+      $("submitStatus").textContent=`${recoveryPatientName} has a pending appointment. The system is recovering the appointment status. Please wait for the recovery status to update before booking this patient again.`;
+      $("submitStatus").style.color="#7b1fa2";
+      return;
+    }
     if(!/^[6-9]\d{9}$/.test(bookingPhone)){
       $("submitStatus").textContent="Enter a valid 10-digit WhatsApp number.";
       $("submitStatus").style.color="#b42318";
@@ -868,16 +874,16 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       // Local recovery journaling is best-effort only. It must NEVER block
       // the actual online booking request or leave the UI stuck on Confirming.
       try{
-		  IDB.put("tx",{
-		    id,
-		    type:"OPD_BOOKING",
-		    status:"pending",
-		    payload
-		  });
-		}catch(_){}
+        await IDB.put("tx",{
+          id,
+          type:"OPD_BOOKING",
+          status:"pending",
+          payload
+        });
+      }catch(_){}
 
       const currentBookingSession=bookingSessionId;
-      const r=await NeuronAPI.call("bookAppointment",payload,25000);
+      const r=await NeuronAPI.call("bookAppointment",payload,12000);
       if(currentBookingSession!==bookingSessionId)return;
       try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:r});}catch(_){ }
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
@@ -892,73 +898,57 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
       $("submitStatus").style.color="#168a4a";
     }catch(e){
-      // The booking request may have reached the server even when the
-      // original request failed locally. Verify the SAME request ID before
-      // telling the patient to book again. verifyBooking performs at most
-      // two checks with a 2-second delay between them.
-      let recovered=false;
-      try{
-        const s=await NeuronAPI.verifyBooking(id,payload.city,2,payload);
-        if(s&&s.found){
-          recovered=true;
-          try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:s});}catch(_){ }
-          const recoveredHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Confirmed</h2><p class="city-confirm">For <b>${U.esc(s.city||payload.city||"")}</b> City</p><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(s.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(s.patientName)}</b></div><div class="confirm-row"><span>Age</span><b>${s.age} ${U.esc(s.ageUnit||"")}</b></div><div class="confirm-row"><span>Address</span><b>${U.esc(s.address||payload.address||"")}</b></div><div class="confirm-row"><span>Date of Booking</span><b>${U.date(s.date)}</b></div><div class="confirm-row"><span>OPD Charges</span><b>${U.money(s.opdCharges)}</b></div><div class="confirm-row"><span>Cash</span><b>${U.money(s.opdCashPaid)}</b></div><div class="confirm-row"><span>Online</span><b>${U.money(s.opdOnlinePaid)}</b></div><div class="confirm-row"><span>Next Follow-up City</span><b>${U.esc(s.nextFollowupCity||payload.nextFollowupCity||"")}</b></div></div>`;
-          resetFields("New");
-          $("confirmation").innerHTML=recoveredHTML;
-          $("confirmation").hidden=false;
-          $("submitStatus").textContent="✓ Booking recovered successfully.";
-          $("submitStatus").style.color="#168a4a";
-          requestAnimationFrame(()=>$("confirmation").scrollIntoView({behavior:"smooth",block:"center"}));
-          return;
-        }
-      }catch(_){ }
-      if(recovered)return;
-
+      // The request outcome is unknown until the exact request ID is verified.
+      // Keep it in IndexedDB and let the shared recovery service reconcile it
+      // in the background; never blindly recreate the booking.
       try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"uncertain",payload});}catch(_){ }
+      try{window.NeuronRecovery?.reconcilePendingBookings?.();}catch(_){ }
 
-      // Give the patient exactly ONE manual recovery opportunity. The
-      // handler never recreates this button after a failed check.
-      $("submitStatus").innerHTML=`Checking booking status…<br><br><b>We couldn't confirm the appointment yet.</b><br>Your booking request has been safely saved.<br>Please do not create another booking.<br><button id="checkBookingAgain" type="button" class="btn btn-secondary" style="margin-top:12px">Check Again</button>`;
-      $("submitStatus").style.color="#b42318";
-      const checkAgain=$("checkBookingAgain");
-      if(checkAgain){
-        const runCheck=async()=>{
-          checkAgain.disabled=true;
-          checkAgain.textContent="Checking...";
-          try{
-            const s=await NeuronAPI.verifyBooking(id,payload.city,2,payload);
-            if(s&&s.found){
-              try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:s});}catch(_){ }
-              const recoveredHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Confirmed</h2><p class="city-confirm">For <b>${U.esc(s.city||payload.city||"")}</b> City</p><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(s.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(s.patientName)}</b></div><div class="confirm-row"><span>Age</span><b>${s.age} ${U.esc(s.ageUnit||"")}</b></div><div class="confirm-row"><span>Address</span><b>${U.esc(s.address||payload.address||"")}</b></div><div class="confirm-row"><span>Date of Booking</span><b>${U.date(s.date)}</b></div><div class="confirm-row"><span>OPD Charges</span><b>${U.money(s.opdCharges)}</b></div><div class="confirm-row"><span>Cash</span><b>${U.money(s.opdCashPaid)}</b></div><div class="confirm-row"><span>Online</span><b>${U.money(s.opdOnlinePaid)}</b></div><div class="confirm-row"><span>Next Follow-up City</span><b>${U.esc(s.nextFollowupCity||payload.nextFollowupCity||"")}</b></div></div>`;
-              resetFields("New");
-              $("confirmation").innerHTML=recoveredHTML;
-              $("confirmation").hidden=false;
-              $("submitStatus").textContent="✓ Booking recovered successfully.";
-              $("submitStatus").style.color="#168a4a";
-              requestAnimationFrame(()=>$("confirmation").scrollIntoView({behavior:"smooth",block:"center"}));
-              return;
-            }
-          }catch(_){ }
-
-          try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"uncertain",payload});}catch(_){ }
-          checkAgain.disabled=false;
-          checkAgain.textContent="Check Again";
-          $("submitStatus").innerHTML=`Checking booking status…<br><br><b>Appointment status is still uncertain.</b><br>The booking may already have been recorded.<br><b>Please do not create another booking.</b>`;
-          $("submitStatus").style.color="#b42318";
-        };
-        checkAgain.onclick=runCheck;
-      }
+      $("submitStatus").textContent="🔄 Checking appointment status…";
+      $("submitStatus").style.color="#7b1fa2";
+      bookingInProgress=false;
+      $("book").disabled=false;
+      $("book").textContent="Book Appointment";
+      $("book").className="cta";
+      lockBookingFields(false);
     }finally{
-      // Keep the Book button locked while an uncertain transaction has a
-      // recovery control. Only a confirmed result returns the normal flow.
-      if($("confirmation").hidden && !$("checkBookingAgain")){
-        bookingInProgress=false;
+      if($("confirmation").hidden && !bookingInProgress){
         $("book").disabled=false;
         $("book").textContent="Book Appointment";
         $("book").className="cta";
       }
     }
   };
+
+  window.addEventListener("neuron:recovery-result",e=>{
+    const d=e.detail||{};
+    if(d.type!=="OPD_BOOKING")return;
+    const currentName=U.title($("name")?.value||"");
+    const currentPhone=U.phone($(type==="Follow-up"?"followWa":"wa")?.value||"");
+    const samePatient=String(d.patientName||"").trim().replace(/\s+/g," ").toLowerCase()===String(currentName||"").trim().replace(/\s+/g," ").toLowerCase() && (!currentPhone || U.phone(d.payload?.whatsapp||"")===currentPhone);
+    if(!samePatient)return;
+    if(d.status==="recovered"){
+      const result=d.result||{};
+      const confirmationHTML=`<div class="success"><div class="success-icon">✓</div><h2>Appointment recovered successfully</h2><div class="confirm-row"><span>Patient Name</span><b>${U.esc(d.patientName||currentName)}</b></div><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(result.appointmentId||"")}</b></div></div>`;
+      resetFields("New");
+      $("confirmation").innerHTML=confirmationHTML;
+      $("confirmation").hidden=false;
+      $("submitStatus").textContent="✓ Appointment recovered successfully.";
+      $("submitStatus").style.color="#168a4a";
+      bookingInProgress=false;
+      lockBookingFields(false);
+    }else if(d.status==="failed"){
+      $("submitStatus").textContent=`✕ Appointment failed for ${currentName}. You can book the appointment again.`;
+      $("submitStatus").style.color="#b42318";
+      $("confirmation").innerHTML=`<div class="card"><h2>Appointment failed</h2><p>Appointment failed for <b>${U.esc(currentName)}</b>.</p><p>You can book the appointment again.</p></div>`;
+      $("confirmation").hidden=false;
+      bookingInProgress=false;
+      lockBookingFields(false);
+      $("book").disabled=false;
+      $("book").textContent="Book Appointment";
+      $("book").className="cta";
+    }
+  });
 
   initFollowupCity();
   fillCities();

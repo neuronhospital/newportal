@@ -43,6 +43,22 @@ document.addEventListener("DOMContentLoaded",()=>{
     $('book').className='cta';
   }
 
+  window.addEventListener('neuron:recovery-result',e=>{
+    const d=e.detail||{};
+    if(d.type!=='EEG_BOOKING')return;
+    const patient=String(d.patientName||'').trim();
+    if(!sel || String(sel.name||'').trim()!==patient)return;
+    if(d.status==='recovered'){
+      $('confirmation').innerHTML=`<div class="success"><div class="success-icon">✓</div><h2>Appointment recovered successfully</h2><div class="confirm-row"><span>Patient Name</span><b>${U.esc(patient)}</b></div><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(d.result?.appointmentId||'')}</b></div></div>`;
+      $('confirmation').hidden=false;
+      $('patients').innerHTML='';sel=null;$('payment').hidden=true;resetBookButton();
+    }else if(d.status==='failed'){
+      $('confirmation').innerHTML=`<div class="card"><h2>Appointment failed for ${U.esc(patient)}</h2><p>You can book the appointment again.</p></div>`;
+      $('confirmation').hidden=false;
+      resetBookButton();
+    }
+  });
+
   function clearLoadedState(){
     sel=null;
     $('confirmation').hidden=true;
@@ -148,6 +164,9 @@ document.addEventListener("DOMContentLoaded",()=>{
     if(!String($('city').value||'').trim())return error('Please select the city.','city');
     const wa=U.phone($('wa').value);
     if(!/^[6-9]\d{9}$/.test(wa))return error('Enter a valid 10-digit WhatsApp number.','wa');
+    if(await window.NeuronRecovery?.isPatientRecovering?.({name:sel.name,whatsapp:wa,city:$('city').value,appointmentDate:(()=>{const p=U.parts();return p.y+String(p.m).padStart(2,'0')+String(p.d).padStart(2,'0')})()})){
+      return error(`${sel.name} has a pending appointment. The system is recovering the appointment status. Please wait for the recovery status to update before booking this patient again.`);
+    }
     const m=String($('mode').value||'').trim();
     if(!['Cash','Online','Split'].includes(m))return error('Please select a valid payment mode.','mode');
     const MAX=Number(NEURON_CONFIG.eegMax)||3000;
@@ -180,18 +199,20 @@ document.addEventListener("DOMContentLoaded",()=>{
     $('bookMessage').textContent='Wait we are Confirming your EEG Booking...';
     const id=U.requestId8(),p={eegBookingRequestId:id,bookingRequestId:sel.bookingRequestId||"",appointmentId:sel.appointmentId,rowNumber:sel.rowNumber,patientName:sel.name,whatsapp:wa,city:$('city').value,eegCharges:total,eegPaymentMode:m,eegCashPaid:cPaid,eegOnlinePaid:oPaid};
     try{
-      const r=await NeuronAPI.call('bookEEG',p,25000);
+      try{await IDB.put('tx',{id,type:'EEG_BOOKING',status:'pending',payload:p});}catch(_){}
+      const r=await NeuronAPI.call('bookEEG',p,12000);
+      try{await IDB.put('tx',{id,type:'EEG_BOOKING',status:'complete',payload:p,result:r});}catch(_){}
       const confirmationPatient=r.patientName||sel.name;
       $('confirmation').innerHTML=`<div class="success"><div class="success-icon">✓</div><h2>EEG Appointment Confirmed</h2><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(confirmationPatient)}</b></div><div class="confirm-row"><span>EEG Charges</span><b>${U.money(r.eegCharges)}</b></div></div>`;
       $('patients').innerHTML='';sel=null;$('payment').hidden=true;$('paymentPatientName').textContent='';$('amount').value='';$('cash').value='';$('online').value='';$('total').textContent='₹0';$('status').textContent='';$('confirmation').hidden=false;resetBookButton();
     }catch(e){
-      $('confirmation').innerHTML=`<div class="card"><h2>EEG Booking Uncertain</h2><p>We couldn't confirm the EEG booking.</p><p>The booking request may have been recorded safely.</p><p><b>Please do not create another booking yet.</b></p><button id="checkEEGStatus" type="button" class="cta" style="width:100%;margin-top:10px">Check Status</button><div id="eegStatusMessage" class="status" style="margin-top:10px"></div></div>`;
+      try{await IDB.put('tx',{id,type:'EEG_BOOKING',status:'uncertain',payload:p});}catch(_){}
+      try{window.NeuronRecovery?.reconcilePendingBookings?.();}catch(_){}
+      $('confirmation').innerHTML=`<div class="card"><h2>EEG Booking Status</h2><p><b>${U.esc(sel?.name||p.patientName||'Patient')}</b> has a pending EEG appointment.</p><p>The system is recovering the appointment status. You may continue using the portal, but please wait for the recovery status to update before booking the same patient again.</p></div>`;
       $('confirmation').hidden=false;
-      const check=$('checkEEGStatus');
-      check.onclick=async()=>{
-        if(check.disabled)return;check.disabled=true;check.textContent='Checking...';const msg=$('eegStatusMessage');if(msg)msg.textContent='Checking EEG booking...';
-        try{const r=await NeuronAPI.call('checkEEGBookingRequest',{eegBookingRequestId:id,appointmentId:p.appointmentId,rowNumber:p.rowNumber,city:p.city},10000);if(r&&r.found){const confirmationPatient=r.patientName||sel?.name||'';$('confirmation').innerHTML=`<div class="success"><div class="success-icon">✓</div><h2>EEG Appointment Confirmed</h2><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(confirmationPatient)}</b></div><div class="confirm-row"><span>EEG Charges</span><b>${U.money(r.eegCharges)}</b></div><div class="status" style="margin-top:10px">✓ Booking recovered</div></div>`;$('patients').innerHTML='';sel=null;$('payment').hidden=true;$('paymentPatientName').textContent='';$('amount').value='';$('cash').value='';$('online').value='';$('total').textContent='₹0';resetBookButton();return;}$('eegStatusMessage').textContent='No matching EEG booking was found. You can book the EEG again.';}catch(e){if(msg)msg.textContent=e.message||'Could not check EEG booking status. Please try again.';}finally{check.disabled=false;check.textContent='Check Status';}
-      };
+      $('book').disabled=false;
+      $('book').textContent='Book EEG Appointment';
+      $('book').className='cta';
     }
   };
 
