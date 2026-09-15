@@ -51,10 +51,10 @@ document.addEventListener("DOMContentLoaded",()=>{
 
   const currentFollowupAge=(age,ageUnit,registrationDate)=>{
     const n=Number(age);
-    const raw=String(registrationDate||"").replace(/\D/g,"");
+    const raw=String(registrationDate||"");
     if(!Number.isFinite(n)||n<0||raw.length!==8)return{value:n,unit:ageUnit||"years"};
 
-    const rd=Number(raw.slice(0,2)), rm=Number(raw.slice(2,4)), ry=Number(raw.slice(4,8));
+    const ry=Number(raw.slice(0,4)), rm=Number(raw.slice(4,6)), rd=Number(raw.slice(6,8));
     const reg=new Date(Date.UTC(ry,rm-1,rd));
     if(!Number.isFinite(reg.getTime()))return{value:n,unit:ageUnit||"years"};
 
@@ -86,10 +86,14 @@ document.addEventListener("DOMContentLoaded",()=>{
 
   const todayKey=()=>{
     const p=U.parts();
+    return p.y+String(p.m).padStart(2,"0")+String(p.d).padStart(2,"0");
+  };
+  const scheduleTodayKey=()=>{
+    const p=U.parts();
     return String(p.d).padStart(2,"0")+String(p.m).padStart(2,"0")+p.y;
   };
   const scheduledCitiesForToday=()=>{
-    const p=U.parts(),key=todayKey();
+    const p=U.parts(),key=scheduleTodayKey();
     try{return cities.filter(c=>(Schedule.dates(c,p.y,p.m)||[]).includes(key));}catch(_){return [];}
   };
   const scheduledDefaultCityForToday=()=>{
@@ -115,7 +119,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   const isTodayFollowupRecord=(x)=>{
     const raw=String(x.date||x.bookingDate||x.visitDate||"").replace(/\D/g,"");
     const p=U.parts();
-    const today=String(p.d).padStart(2,"0")+String(p.m).padStart(2,"0")+p.y;
+    const today=p.y+String(p.m).padStart(2,"0")+String(p.d).padStart(2,"0");
     return raw===today;
   };
 
@@ -816,14 +820,14 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     }
 
     $("book").disabled=true;
-    $("book").textContent="Confirming Appointment";
+    $("book").textContent="Confirming Appointment...";
     $("book").className="btn btn-primary";
-    // Once Follow-up booking actually starts, remove Edit immediately and
-    // let the confirmation-state button occupy the full action row.
-    if(type==="Follow-up") {
+    if(type==="Follow-up"){
+      // Once the validated Follow-up booking is submitted, remove Edit
+      // immediately and let the confirmation button occupy the full row.
       if($("editFollowup")) $("editFollowup").hidden=true;
-      const followupActions=$("editFollowup")?.closest(".followup-edit-actions");
-      if(followupActions) followupActions.classList.add("editing");
+      const actions=$("editFollowup")?.closest(".followup-edit-actions");
+      if(actions) actions.classList.add("editing");
     }
     $("submitStatus").textContent="Wait We are Confirming your OPD Appointment...";
     $("submitStatus").style.color="#7b1fa2";
@@ -880,7 +884,6 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       $("submitStatus").style.color="#168a4a";
       const confirmationHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Confirmed</h2><p class="city-confirm">For <b>${U.esc(payload.city||"")}</b> City</p><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(r.patientName)}</b></div><div class="confirm-row"><span>Age</span><b>${r.age} ${r.ageUnit}</b></div><div class="confirm-row"><span>Address</span><b>${U.esc(r.address||payload.address)}</b></div><div class="confirm-row"><span>Date of Booking</span><b>${U.date(r.date)}</b></div><div class="confirm-row"><span>OPD Charges</span><b>${U.money(r.opdCharges)}</b></div><div class="confirm-row"><span>Cash</span><b>${U.money(r.opdCashPaid)}</b></div><div class="confirm-row"><span>Online</span><b>${U.money(r.opdOnlinePaid)}</b></div><div class="confirm-row"><span>Next Follow-up City</span><b>${U.esc(r.nextFollowupCity||payload.nextFollowupCity)}</b></div></div>`;
       resetFields("New");
-      // Successful booking returns the portal to the New tab by default.
       // resetFields intentionally clears the booking form, so restore the
       // confirmation content AFTER the reset.
       $("confirmation").innerHTML=confirmationHTML;
