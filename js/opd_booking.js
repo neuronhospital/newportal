@@ -888,7 +888,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       const currentBookingSession=bookingSessionId;
       debugMark("booking_api_request_started","network");
       const r=await NeuronAPI.call("bookAppointment",payload,25000);
-      debugMark("booking_api_response_received","network",JSON.stringify(r.debugTiming||{}));
+      debugMark("booking_api_response_received","network","Booking API response received; server timing is logged as separate rows");
       if(currentBookingSession!==bookingSessionId)return;
       debugMark("local_completion_write_started","client");
       try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:r});}catch(_){ }
