@@ -308,3 +308,12 @@ body[data-title="Home"] .portal-action:active{background:#fff}
 .stats-nav-dialog p{margin:0;color:var(--muted);font-size:13px}
 .stats-nav-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:15px}
 @media(max-width:520px){.stats-nav-actions{grid-template-columns:1fr}}
+
+/* v195.1: non-blocking pending-booking recovery status */
+.neuron-recovery-bar{position:sticky;top:0;z-index:1000;display:flex;align-items:flex-start;gap:10px;width:100%;box-sizing:border-box;padding:10px 14px;font-size:14px;line-height:1.4;border-bottom:1px solid var(--border,#ddd);background:#fff;}
+.neuron-recovery-bar[hidden]{display:none;}
+.neuron-recovery-bar.is-working{background:#fff7ed;}
+.neuron-recovery-bar.is-success{background:#ecfdf3;}
+.neuron-recovery-bar.is-failed{background:#fef2f2;}
+.neuron-recovery-icon{font-weight:800;min-width:18px;text-align:center;}
+@media(max-width:699px){.neuron-recovery-bar{font-size:13px;padding:9px 11px;}}
