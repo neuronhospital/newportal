@@ -114,9 +114,9 @@ function save(){
  }
  btn.textContent='Processing Refund';btn.disabled=true;inputs.forEach(i=>i.disabled=true);
  if(status){status.style.color='';status.textContent='Wait we are Processing refund';}
- api({action:'saveRefund',appointmentId:selected.appointmentId,rowNumber:selected.rowNumber,city:selected.city,whatsapp:selected.whatsapp,opdRefund:opdRaw,eegRefund:eegRaw,updateOPD:opdEntered,updateEEG:eegEntered}).then(x=>{
-  if(!x.ok||!x.patient)throw Error(x.error||'Refund failed.');
-  const saved=x.patient;
+ api({action:'saveRefund',appointmentId:selected.appointmentId,rowNumber:selected.rowNumber,city:selected.city,opdRefund:opdRaw,eegRefund:eegRaw,updateOPD:opdEntered,updateEEG:eegEntered}).then(x=>{
+  if(!x.ok)throw Error(x.error||'Refund failed.');
+  const saved=Object.assign({},selected,{opdRefund:opdEntered?opdVal:'',eegRefund:eegEntered?eegVal:''});
   showRefundConfirmation(saved);
  }).catch(e=>{
   inputs.forEach(i=>i.disabled=false);
@@ -165,14 +165,15 @@ async function checkRefundStatus(){
  try{
   const opdInput=document.getElementById('opdRefund'),eegInput=document.getElementById('eegRefund');
   const opdRaw=opdInput?opdInput.value.trim():'',eegRaw=eegInput?eegInput.value.trim():'';
-  const x=await api({action:'checkRefundStatus',appointmentId:selected.appointmentId,rowNumber:selected.rowNumber,city:selected.city,whatsapp:selected.whatsapp,opdRefund:opdRaw,eegRefund:eegRaw,updateOPD:opdRaw!=='',updateEEG:eegRaw!==''});
+  const x=await api({action:'checkRefundStatus',rowNumber:selected.rowNumber,city:selected.city,opdRefund:opdRaw,eegRefund:eegRaw,updateOPD:opdRaw!=='',updateEEG:eegRaw!==''});
   btn.remove();
   if(!x.ok)throw Error(x.error||'Unable to check refund status.');
   if(!x.found){
    if(status){status.style.color='#b42318';status.textContent='Refund Not Processed';}
    return;
   }
-  showRefundConfirmation(x.patient);
+  const saved=Object.assign({},selected,{opdRefund:x.opdRefund||'',eegRefund:x.eegRefund||''});
+  showRefundConfirmation(saved);
  }catch(e){
   if(status){status.style.color='#b42318';status.textContent=e.message||'Unable to verify refund status.';}
  }
