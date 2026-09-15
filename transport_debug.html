@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NEURON Phase 2 Transport Debug</title>
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:980px;margin:24px auto;padding:0 16px;line-height:1.45;color:#17202a}
+button{padding:10px 14px;margin:4px;border:1px solid #bbb;border-radius:8px;background:#fff;cursor:pointer;font-weight:600}
+button:disabled{opacity:.5;cursor:wait}
+#status{margin:14px 0;padding:10px;border:1px solid #ddd;border-radius:8px;background:#fafafa}
+.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0}
+.card{border:1px solid #ddd;border-radius:8px;padding:10px;background:#fff}.label{font-size:12px;color:#666}.value{font-size:20px;font-weight:700}
+table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid #ddd;padding:6px;text-align:right}th:first-child,td:first-child{text-align:left}th{background:#f4f4f4}
+.note{font-size:13px;color:#555}.good{font-weight:700}
+@media(max-width:700px){.summary{grid-template-columns:repeat(2,minmax(0,1fr))}table{font-size:11px}}
+</style>
+</head>
+<body>
+<h1>NEURON Phase 2 — HTTP Transport Probe</h1>
+<p>This page performs requests that do <b>no booking and no Spreadsheet I/O</b>. It measures the Apps Script web-app/Content-Service path separately from booking logic.</p>
+<div>
+<button id="postBtn">Run POST × 5</button>
+<button id="getBtn">Run GET × 5</button>
+<button id="bothBtn">Run Both × 5</button>
+<button id="clearBtn">Clear</button>
+</div>
+<div id="status">Ready.</div>
+<div id="summary"></div>
+<table><thead><tr><th>Run</th><th>Client→Invocation*</th><th>Server processing</th><th>Server finish→Headers*</th><th>Headers→Body</th><th>Total</th></tr></thead><tbody id="results"></tbody></table>
+<p class="note">* Boundary values use browser and Apps Script wall-clock epochs and are therefore estimates subject to clock skew. The most reliable values are client total, headers/body timing, and the server-reported processing time.</p>
+<script src="js/config.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+let runNo=0;
+function now(){return {mono:performance.now(),epoch:Date.now()};}
+function ms(x){return Number.isFinite(x)?Math.round(x):"—";}
+function row(r){
+  const tr=document.createElement("tr");
+  [r.run,ms(r.clientToInvocation),ms(r.serverProcessing),ms(r.finishToHeaders),ms(r.headersToBody),ms(r.total)].forEach((v,i)=>{const td=document.createElement("td");td.textContent=v;tr.appendChild(td);});
+  $("results").appendChild(tr);
+}
+function summarize(){
+  const rows=[...$("results").querySelectorAll("tr")];
+  if(!rows.length){$("summary").innerHTML="";return;}
+  const nums=col=>rows.map(r=>Number(r.children[col].textContent)).filter(Number.isFinite);
+  const avg=a=>a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length):0;
+  const fields=["Client→Invocation*","Server processing","Server finish→Headers*","Total"];
+  $("summary").innerHTML=fields.map((f,i)=>`<div class="card"><div class="label">Avg ${f}</div><div class="value">${avg(nums([1,2,3,5][i]))} ms</div></div>`).join("");
+}
+async function probe(method,n){
+  const q=`?transportProbe=1&probe=${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const url=NEURON_CONFIG.apiUrl+q;
+  const start=now();
+  const initEpoch=start.epoch;
+  let response;
+  if(method==="POST"){
+    response=await fetch(url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({action:"transportProbe",probe:n}),cache:"no-store"});
+  }else{
+    response=await fetch(url,{method:"GET",cache:"no-store"});
+  }
+  const headers=now();
+  const text=await response.text();
+  const body=now();
+  const j=JSON.parse(text||"{}");
+  const serverInvocation=Number(j.invocation_received_epoch_ms);
+  const serverFinish=Number(j.response_ready_epoch_ms);
+  return {
+    run:`${method} #${n}`,
+    clientToInvocation:serverInvocation-initEpoch,
+    serverProcessing:Number(j.server_processing_ms),
+    finishToHeaders:headers.epoch-serverFinish,
+    headersToBody:body.mono-headers.mono,
+    total:body.mono-start.mono
+  };
+}
+async function run(method){
+  setBusy(true); $("status").textContent=`Running ${method} × 5…`;
+  try{
+    for(let i=1;i<=5;i++){const r=await probe(method,i);row(r);summarize();}
+    $("status").innerHTML=`<span class="good">${method} × 5 complete.</span> No booking was performed.`;
+  }catch(e){$("status").textContent=`Probe failed: ${e&&e.message||e}`;}
+  finally{setBusy(false);}
+}
+async function runBoth(){setBusy(true);$("status").textContent="Running POST × 5 then GET × 5…";try{for(const method of ["POST","GET"]){for(let i=1;i<=5;i++){row(await probe(method,i));summarize();}}$("status").innerHTML='<span class="good">POST × 5 + GET × 5 complete.</span> No booking was performed.';}catch(e){$("status").textContent=`Probe failed: ${e&&e.message||e}`;}finally{setBusy(false);}}
+function setBusy(v){["postBtn","getBtn","bothBtn"].forEach(id=>$(id).disabled=v);}
+$("postBtn").onclick=()=>run("POST");$("getBtn").onclick=()=>run("GET");$("bothBtn").onclick=runBoth;$("clearBtn").onclick=()=>{$("results").innerHTML="";$('summary').innerHTML="";$('status').textContent="Ready.";};
+</script>
+</body>
+</html>
