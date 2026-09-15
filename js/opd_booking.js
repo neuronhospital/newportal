@@ -712,6 +712,19 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     if($("book").disabled || bookingInProgress)return;
     bookingInProgress=true;
 
+    // High-resolution client trace. It is sent only after the confirmation
+    // box is visible, so diagnostics never block the booking path.
+    const debugSessionId="opd-"+Date.now()+"-"+Math.random().toString(36).slice(2,8);
+    const debugStartedAt=performance.now();
+    let debugLastAt=debugStartedAt;
+    const debugEvents=[];
+    const debugMark=(event,phase="client",detail="")=>{
+      const now=performance.now();
+      debugEvents.push({sequence:debugEvents.length+1,event,elapsedMs:Math.round(now-debugStartedAt),deltaMs:Math.round(now-debugLastAt),phase,detail:String(detail||"").slice(0,500)});
+      debugLastAt=now;
+    };
+    debugMark("submit_clicked","client","Booking button clicked");
+
     const resetAfterValidationError=()=>{
       bookingInProgress=false;
       $("book").disabled=false;
@@ -764,6 +777,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       return paymentError("Please select a valid payment mode.","payMode");
     }
 
+    debugMark("payment_validation_complete","client");
     const fieldValidationError=validateOpdPatientFields();
     if(fieldValidationError){
       const [field,message]=fieldValidationError;
@@ -810,8 +824,11 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     if(total>2000){$("submitStatus").textContent="OPD total cannot exceed ₹2000.";$("submitStatus").style.color="#b42318";resetAfterValidationError();return;}
     if(total<0){$("submitStatus").textContent="Enter a valid OPD amount.";$("submitStatus").style.color="#b42318";resetAfterValidationError();return;}
 
+    debugMark("required_fields_validation_complete","client");
     if(isOutsideUsualConsultationHours()){
+      debugMark("consultation_hours_check_started","client");
       const proceed=await showConsultationHoursNote();
+      debugMark("consultation_hours_check_complete","client",proceed?"proceed":"cancelled");
       if(!proceed){resetAfterValidationError();return;}
     }
 
@@ -819,6 +836,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     $("book").textContent="Confirming Appointment...";
     $("book").className="btn btn-primary";
     $("submitStatus").textContent="Wait We are Confirming your OPD Appointment...";
+    debugMark("confirming_ui_shown","client");
     $("submitStatus").style.color="#7b1fa2";
 
     // Lock fields only after all compulsory validation checks above pass.
@@ -856,6 +874,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     try{
       // Local recovery journaling is best-effort only. It must NEVER block
       // the actual online booking request or leave the UI stuck on Confirming.
+      debugMark("local_recovery_write_started","client");
       try{
 		  IDB.put("tx",{
 		    id,
@@ -864,19 +883,27 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
 		    payload
 		  });
 		}catch(_){}
+      debugMark("local_recovery_write_requested","client");
 
       const currentBookingSession=bookingSessionId;
+      debugMark("booking_api_request_started","network");
       const r=await NeuronAPI.call("bookAppointment",payload,25000);
+      debugMark("booking_api_response_received","network",JSON.stringify(r.debugTiming||{}));
       if(currentBookingSession!==bookingSessionId)return;
+      debugMark("local_completion_write_started","client");
       try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:r});}catch(_){ }
+      debugMark("local_completion_write_complete","client");
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
       $("submitStatus").style.color="#168a4a";
       const confirmationHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Confirmed</h2><p class="city-confirm">For <b>${U.esc(payload.city||"")}</b> City</p><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(r.patientName)}</b></div><div class="confirm-row"><span>Age</span><b>${r.age} ${r.ageUnit}</b></div><div class="confirm-row"><span>Address</span><b>${U.esc(r.address||payload.address)}</b></div><div class="confirm-row"><span>Date of Booking</span><b>${U.date(r.date)}</b></div><div class="confirm-row"><span>OPD Charges</span><b>${U.money(r.opdCharges)}</b></div><div class="confirm-row"><span>Cash</span><b>${U.money(r.opdCashPaid)}</b></div><div class="confirm-row"><span>Online</span><b>${U.money(r.opdOnlinePaid)}</b></div><div class="confirm-row"><span>Next Follow-up City</span><b>${U.esc(r.nextFollowupCity||payload.nextFollowupCity)}</b></div></div>`;
+      debugMark("confirmation_render_started","client");
       resetFields("Follow-up");
       // resetFields intentionally clears the booking form, so restore the
       // confirmation content AFTER the reset.
       $("confirmation").innerHTML=confirmationHTML;
       $("confirmation").hidden=false;
+      debugMark("confirmation_box_shown","client","Booking complete; confirmation box made visible");
+      NeuronAPI.sendDebugLog(debugSessionId,id,debugEvents,r.debugTiming||{});
       requestAnimationFrame(()=>$("confirmation").scrollIntoView({behavior:"smooth",block:"center"}));
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
       $("submitStatus").style.color="#168a4a";

@@ -55,6 +55,13 @@ window.NeuronAPI={
     if(externalSignal&&externalAbortHandler)externalSignal.removeEventListener("abort",externalAbortHandler);
   }
  },
+ sendDebugLog:(sessionId,bookingRequestId,events,serverTiming)=>{
+  try{
+   const u=NEURON_CONFIG.apiUrl;
+   if(!u||u.includes("PASTE_YOUR")||!navigator.onLine)return;
+   fetch(u,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({action:"saveDebugLog",sessionId,bookingRequestId,events,serverTiming}),keepalive:true,cache:"no-store"}).catch(()=>{});
+  }catch(_){}
+ },
  verifyBooking:async(id,city,retries=2)=>{
   const action="checkBookingRequest";
   const key="bookingRequestId";
