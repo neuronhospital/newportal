@@ -37,6 +37,12 @@ document.addEventListener("DOMContentLoaded",()=>{
     }
   }
 
+  function resetBookButton(){
+    $('book').disabled=false;
+    $('book').textContent='Book EEG Appointment';
+    $('book').className='cta';
+  }
+
   function clearLoadedState(){
     sel=null;
     $('confirmation').hidden=true;
@@ -47,6 +53,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     $('online').value='';
     $('total').textContent='₹0';
     $('status').textContent='';
+    resetBookButton();
   }
 
   $('mode').onchange=updatePayment;
@@ -176,14 +183,14 @@ document.addEventListener("DOMContentLoaded",()=>{
       const r=await NeuronAPI.call('bookEEG',p,25000);
       const confirmationPatient=r.patientName||sel.name;
       $('confirmation').innerHTML=`<div class="success"><div class="success-icon">✓</div><h2>EEG Appointment Confirmed</h2><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(confirmationPatient)}</b></div><div class="confirm-row"><span>EEG Charges</span><b>${U.money(r.eegCharges)}</b></div></div>`;
-      $('patients').innerHTML='';sel=null;$('payment').hidden=true;$('paymentPatientName').textContent='';$('amount').value='';$('cash').value='';$('online').value='';$('total').textContent='₹0';$('status').textContent='';$('confirmation').hidden=false;
+      $('patients').innerHTML='';sel=null;$('payment').hidden=true;$('paymentPatientName').textContent='';$('amount').value='';$('cash').value='';$('online').value='';$('total').textContent='₹0';$('status').textContent='';$('confirmation').hidden=false;resetBookButton();
     }catch(e){
       $('confirmation').innerHTML=`<div class="card"><h2>EEG Booking Uncertain</h2><p>We couldn't confirm the EEG booking.</p><p>The booking request may have been recorded safely.</p><p><b>Please do not create another booking yet.</b></p><button id="checkEEGStatus" type="button" class="cta" style="width:100%;margin-top:10px">Check Status</button><div id="eegStatusMessage" class="status" style="margin-top:10px"></div></div>`;
       $('confirmation').hidden=false;
       const check=$('checkEEGStatus');
       check.onclick=async()=>{
         if(check.disabled)return;check.disabled=true;check.textContent='Checking...';const msg=$('eegStatusMessage');if(msg)msg.textContent='Checking EEG booking...';
-        try{const r=await NeuronAPI.call('checkEEGBookingRequest',{eegBookingRequestId:id,appointmentId:p.appointmentId,rowNumber:p.rowNumber,city:p.city},10000);if(r&&r.found){const confirmationPatient=r.patientName||sel?.name||'';$('confirmation').innerHTML=`<div class="success"><div class="success-icon">✓</div><h2>EEG Appointment Confirmed</h2><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(confirmationPatient)}</b></div><div class="confirm-row"><span>EEG Charges</span><b>${U.money(r.eegCharges)}</b></div><div class="status" style="margin-top:10px">✓ Booking recovered</div></div>`;$('patients').innerHTML='';sel=null;$('payment').hidden=true;$('paymentPatientName').textContent='';$('amount').value='';$('cash').value='';$('online').value='';$('total').textContent='₹0';return;}$('eegStatusMessage').textContent='No matching EEG booking was found. You can book the EEG again.';}catch(e){if(msg)msg.textContent=e.message||'Could not check EEG booking status. Please try again.';}finally{check.disabled=false;check.textContent='Check Status';}
+        try{const r=await NeuronAPI.call('checkEEGBookingRequest',{eegBookingRequestId:id,appointmentId:p.appointmentId,rowNumber:p.rowNumber,city:p.city},10000);if(r&&r.found){const confirmationPatient=r.patientName||sel?.name||'';$('confirmation').innerHTML=`<div class="success"><div class="success-icon">✓</div><h2>EEG Appointment Confirmed</h2><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(confirmationPatient)}</b></div><div class="confirm-row"><span>EEG Charges</span><b>${U.money(r.eegCharges)}</b></div><div class="status" style="margin-top:10px">✓ Booking recovered</div></div>`;$('patients').innerHTML='';sel=null;$('payment').hidden=true;$('paymentPatientName').textContent='';$('amount').value='';$('cash').value='';$('online').value='';$('total').textContent='₹0';resetBookButton();return;}$('eegStatusMessage').textContent='No matching EEG booking was found. You can book the EEG again.';}catch(e){if(msg)msg.textContent=e.message||'Could not check EEG booking status. Please try again.';}finally{check.disabled=false;check.textContent='Check Status';}
       };
     }
   };
