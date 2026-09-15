@@ -887,14 +887,57 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
 
       const currentBookingSession=bookingSessionId;
       debugMark("booking_api_request_started","network","About to invoke booking API");
-      const apiClientStartedAtEpoch=Date.now();
+      const apiClientStartedEpoch=Date.now();
       const r=await NeuronAPI.call("bookAppointment",payload,25000,{debugMark});
+      const apiClientResponseReceivedEpoch=Date.now();
       debugMark("booking_api_response_received","network","Booking API response received; server timing is logged as separate rows");
-      // The API helper records the fetch/header/body/JSON phases. Keep the
-      // client epoch only as diagnostic metadata; it is never used by booking logic.
+      const fetchStartedEvent=debugEvents.find(ev=>ev.event==="api_fetch_initiated");
+      const headersReceivedEvent=debugEvents.find(ev=>ev.event==="api_response_headers_received");
+      const clientFetchStartedEpoch=fetchStartedEvent&&Number(fetchStartedEvent.epochMs)||apiClientStartedEpoch;
+      const clientHeadersReceivedEpoch=headersReceivedEvent&&Number(headersReceivedEvent.epochMs)||apiClientResponseReceivedEpoch;
+
+      // Capture both client and server wall-clock timestamps explicitly. The
+      // boundary rows are created on the client as well as by saveDebugLog_, so
+      // the critical measurements cannot disappear merely because a nested
+      // serverTiming field is missing or renamed.
+      let boundaryTiming={
+        client_fetch_started_epoch_ms: clientFetchStartedEpoch,
+        client_response_headers_epoch_ms: clientHeadersReceivedEpoch
+      };
       if(r&&r.debugTiming){
-        r.debugTiming.client_api_started_epoch_ms=apiClientStartedAtEpoch;
-        r.debugTiming.client_api_response_received_epoch_ms=Date.now();
+        r.debugTiming.client_api_started_epoch_ms=apiClientStartedEpoch;
+        r.debugTiming.client_api_response_received_epoch_ms=apiClientResponseReceivedEpoch;
+
+        const serverStart=Number(r.debugTiming.server_started_epoch_ms);
+        const serverFinish=Number(r.debugTiming.server_finished_epoch_ms);
+        const invocationStart=Number(r.debugTiming.invocation_received_epoch_ms);
+        const doPostReturn=Number(r.debugTiming.doPost_before_response_epoch_ms);
+
+        if(Number.isFinite(serverStart)){
+          const d=serverStart-clientFetchStartedEpoch;
+          debugMark("boundary_client_to_book_server_start","boundary",
+            "Approx. client fetch start to first line of bookAppointment_; delta="+d+" ms; clientEpoch="+clientFetchStartedEpoch+"; serverEpoch="+serverStart);
+          boundaryTiming.client_to_book_server_start_ms=d;
+          boundaryTiming.server_started_epoch_ms=serverStart;
+        }
+        if(Number.isFinite(invocationStart)){
+          const d=serverStart-invocationStart;
+          debugMark("boundary_invocation_to_book_start","boundary",
+            "Server invocation receipt to bookAppointment_ start; delta="+d+" ms; invocationEpoch="+invocationStart+"; bookEpoch="+serverStart);
+          boundaryTiming.invocation_to_book_start_ms=d;
+          boundaryTiming.invocation_received_epoch_ms=invocationStart;
+        }
+        if(Number.isFinite(serverFinish)){
+          const d=clientHeadersReceivedEpoch-serverFinish;
+          debugMark("boundary_book_finish_to_client_headers","boundary",
+            "Approx. last booking timestamp to client response headers; delta="+d+" ms; serverEpoch="+serverFinish+"; clientEpoch="+clientHeadersReceivedEpoch);
+          boundaryTiming.book_finish_to_client_headers_ms=d;
+          boundaryTiming.server_finished_epoch_ms=serverFinish;
+        }
+        if(Number.isFinite(doPostReturn)){
+          boundaryTiming.doPost_before_response_epoch_ms=doPostReturn;
+          boundaryTiming.book_to_doPost_return_ms=doPostReturn-serverFinish;
+        }
       }
       if(currentBookingSession!==bookingSessionId)return;
       debugMark("local_completion_write_started","client");
@@ -910,7 +953,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       $("confirmation").innerHTML=confirmationHTML;
       $("confirmation").hidden=false;
       debugMark("confirmation_box_shown","client","Booking complete; confirmation box made visible");
-      NeuronAPI.sendDebugLog(debugSessionId,id,debugEvents,r.debugTiming||{});
+      NeuronAPI.sendDebugLog(debugSessionId,id,debugEvents,r.debugTiming||{},boundaryTiming);
       requestAnimationFrame(()=>$("confirmation").scrollIntoView({behavior:"smooth",block:"center"}));
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
       $("submitStatus").style.color="#168a4a";
