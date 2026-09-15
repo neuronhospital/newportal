@@ -58,18 +58,18 @@ document.addEventListener("DOMContentLoaded",()=>{
    const chargeNum=chargeRaw===""?NaN:Number(chargeRaw);
    const cashNum=cashRaw===""?NaN:Number(cashRaw);
    const onlineNum=onlineRaw===""?NaN:Number(onlineRaw);
-   let charge=0,cash=0,online=0;
+   let charge=0,cash='',online='';
    if(mode!=="Split"){
      if(chargeRaw==="")return focusError("OPD Charges field cannot be empty. Enter 0 if no charge was paid.",'charge');
      if(!Number.isFinite(chargeNum)||chargeNum<0||chargeNum>MAX_OPD_AMOUNT)return focusError(`OPD Charges must be between ₹0 and ₹${MAX_OPD_AMOUNT}.`,'charge');
      charge=chargeNum;
-     cash=mode==="Cash"?charge:0;
-     online=mode==="Online"?charge:0;
+     cash=mode==="Cash"?charge:'';
+     online=mode==="Online"?charge:'';
    }else{
-     if(cashRaw==="")return focusError("Cash payment field cannot be empty. Enter 0 if no amount was paid in cash.",'cash');
-     if(onlineRaw==="")return focusError("Online payment field cannot be empty. Enter 0 if no amount was paid online.",'online');
-     if(!Number.isFinite(cashNum)||cashNum<0||cashNum>MAX_OPD_AMOUNT)return focusError(`Cash amount must be between ₹0 and ₹${MAX_OPD_AMOUNT}.`,'cash');
-     if(!Number.isFinite(onlineNum)||onlineNum<0||onlineNum>MAX_OPD_AMOUNT)return focusError(`Online amount must be between ₹0 and ₹${MAX_OPD_AMOUNT}.`,'online');
+     if(cashRaw==="")return focusError("Cash payment field cannot be empty.",'cash');
+     if(onlineRaw==="")return focusError("Online payment field cannot be empty.",'online');
+     if(!Number.isFinite(cashNum)||cashNum<=0||cashNum>=MAX_OPD_AMOUNT)return focusError(`Cash amount must be greater than ₹0 and less than ₹${MAX_OPD_AMOUNT}.`,'cash');
+     if(!Number.isFinite(onlineNum)||onlineNum<=0||onlineNum>=MAX_OPD_AMOUNT)return focusError(`Online amount must be greater than ₹0 and less than ₹${MAX_OPD_AMOUNT}.`,'online');
      cash=cashNum;online=onlineNum;charge=cash+online;
      if(charge>MAX_OPD_AMOUNT)return focusError(`Combined Cash + Online amount cannot exceed ₹${MAX_OPD_AMOUNT}.`,'cash');
    }
@@ -100,8 +100,8 @@ document.addEventListener("DOMContentLoaded",()=>{
    }
 
    setSaveBusy(true);$('saveStatus').hidden=false;$('saveStatus').className="status opd-loading";$('saveStatus').style.color="";$('saveStatus').textContent="Wait we are updating OPD details to system...";
-   const p={appointmentId:selected.appointmentId,rowNumber:selected.rowNumber,city:selected.city,whatsapp:selected.whatsapp,whatsappNew:newPhone,name:proposedName,age:age,ageUnit:$('unit').value,address:proposedAddress,referredBy:proposedReferredBy,nextFollowupCity:proposedFollowupCity,opdCharges:charge,opdPaymentMode:mode,opdCashPaid:cash,opdOnlinePaid:online};
-   try{const r=await NeuronAPI.call("updateOPDDetails",p,25000);const before=r.before||{},after=r.after||{};const fields=[['Patient Name',before.name,after.name],['Age',`${before.age} ${before.ageUnit}`,`${after.age} ${after.ageUnit}`],['Address',before.address,after.address],['Referred By Dr./Hospital',before.referredBy,after.referredBy],['WhatsApp Number',before.whatsapp,after.whatsapp],['Next Follow-up City',before.nextFollowupCity,after.nextFollowupCity],['OPD Charges Paid',before.opdTotalPaid,after.opdTotalPaid],['Paid in Cash',before.opdCashPaid,after.opdCashPaid],['Paid Online',before.opdOnlinePaid,after.opdOnlinePaid]];const changed=fields.filter(f=>String(f[1]??"")!==String(f[2]??""));$('confirmation').hidden=false;$('confirmation').innerHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Details Updated</h2><p>Appointment ID: <b>${U.esc(r.appointmentId)}</b></p>${changed.length?`<p><b>Changed and updated:</b></p><ul class="changed-list">${changed.map(f=>`<li><b>${U.esc(f[0])}</b>: ${U.esc(String(f[1]??""))} → <b>${U.esc(String(f[2]??""))}</b></li>`).join('')}</ul>`:`<p>No values were changed.</p>`}</div>`;selected=null;$('patients').innerHTML="";$('edit').hidden=true;$('name').value="";$('age').value="";$('address').value="";$('ref').value="";$('editWa').value="";$('nextFollowupCity').innerHTML="";$('charge').value="";$('cash').value="";$('online').value="";$('cash').dataset.actual="";$('online').dataset.actual="";$('totalPaid').textContent="0";}catch(e){$('saveStatus').hidden=false;$('saveStatus').style.color='#b42318';$('saveStatus').textContent=e.message||"Unable to update OPD details.";}finally{setSaveBusy(false);}
+   const p={appointmentId:selected.appointmentId,rowNumber:selected.rowNumber,city:selected.city,visitingCity:selected.city,whatsapp:selected.whatsapp,whatsappNew:newPhone,name:proposedName,age:age,ageUnit:$('unit').value,address:proposedAddress,patientType:selected.patientType||'Follow-up',referredBy:proposedReferredBy,nextFollowupCity:proposedFollowupCity,opdCharges:charge,opdPaymentMode:mode,opdCashPaid:cash,opdOnlinePaid:online};
+   try{const r=await NeuronAPI.call("updateOPDDetails",p,25000);const before={name:selected.name,age:selected.age,ageUnit:selected.ageUnit,address:selected.address,referredBy:selected.referredBy,whatsapp:selected.whatsapp,nextFollowupCity:selected.nextFollowupCity,opdTotalPaid:selected.opdTotalPaid,opdCashPaid:selected.opdCashPaid,opdOnlinePaid:selected.opdOnlinePaid};const after={name:proposedName,age:age,ageUnit:$('unit').value,address:proposedAddress,referredBy:proposedReferredBy,whatsapp:newPhone,nextFollowupCity:proposedFollowupCity,opdTotalPaid:charge,opdCashPaid:cash,opdOnlinePaid:online};const fields=[['Patient Name',before.name,after.name],['Age',`${before.age} ${before.ageUnit}`,`${after.age} ${after.ageUnit}`],['Address',before.address,after.address],['Referred By Dr./Hospital',before.referredBy,after.referredBy],['WhatsApp Number',before.whatsapp,after.whatsapp],['Next Follow-up City',before.nextFollowupCity,after.nextFollowupCity],['OPD Charges Paid',before.opdTotalPaid,after.opdTotalPaid],['Paid in Cash',before.opdCashPaid,after.opdCashPaid],['Paid Online',before.opdOnlinePaid,after.opdOnlinePaid]];const changed=fields.filter(f=>String(f[1]??"")!==String(f[2]??""));$('confirmation').hidden=false;$('confirmation').innerHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Details Updated</h2><p>Appointment ID: <b>${U.esc(r.appointmentId)}</b></p>${changed.length?`<p><b>Changed and updated:</b></p><ul class="changed-list">${changed.map(f=>`<li><b>${U.esc(f[0])}</b>: ${U.esc(String(f[1]??""))} → <b>${U.esc(String(f[2]??""))}</b></li>`).join('')}</ul>`:`<p>No values were changed.</p>`}</div>`;selected=null;$('patients').innerHTML="";$('edit').hidden=true;$('name').value="";$('age').value="";$('address').value="";$('ref').value="";$('editWa').value="";$('nextFollowupCity').innerHTML="";$('charge').value="";$('cash').value="";$('online').value="";$('cash').dataset.actual="";$('online').dataset.actual="";$('totalPaid').textContent="0";}catch(e){$('saveStatus').hidden=false;$('saveStatus').style.color='#b42318';$('saveStatus').textContent=e.message||"Unable to update OPD details.";}finally{setSaveBusy(false);}
  };
 
 });
