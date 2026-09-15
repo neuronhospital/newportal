@@ -55,12 +55,12 @@ window.NeuronAPI={
     if(externalSignal&&externalAbortHandler)externalSignal.removeEventListener("abort",externalAbortHandler);
   }
  },
- verifyBooking:async(id,city,retries=2)=>{
+ verifyBooking:async(id,city,retries=2,bookingData={})=>{
   const action="checkBookingRequest";
   const key="bookingRequestId";
   for(let i=0;i<retries;i++){
    try{
-    const r=await NeuronAPI.call(action,{[key]:id,city},5000);
+    const r=await NeuronAPI.call(action,{[key]:id,city,appointmentDate:bookingData.appointmentDate||"",whatsapp:bookingData.whatsapp||"",childName:bookingData.childName||""},5000);
     if(r&&r.found)return r;
    }catch(_){}
    if(i<retries-1)await new Promise(resolve=>setTimeout(resolve,2000));

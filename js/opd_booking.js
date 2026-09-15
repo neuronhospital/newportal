@@ -887,7 +887,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       // two checks with a 2-second delay between them.
       let recovered=false;
       try{
-        const s=await NeuronAPI.verifyBooking(id,payload.city);
+        const s=await NeuronAPI.verifyBooking(id,payload.city,2,payload);
         if(s&&s.found){
           recovered=true;
           try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:s});}catch(_){ }
@@ -911,14 +911,12 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       $("submitStatus").style.color="#b42318";
       const checkAgain=$("checkBookingAgain");
       if(checkAgain){
-        checkAgain.onclick=async()=>{
+        const runCheck=async()=>{
           checkAgain.disabled=true;
           checkAgain.textContent="Checking...";
-          let found=false;
           try{
-            const s=await NeuronAPI.verifyBooking(id,payload.city);
+            const s=await NeuronAPI.verifyBooking(id,payload.city,2,payload);
             if(s&&s.found){
-              found=true;
               try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:s});}catch(_){ }
               const recoveredHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Confirmed</h2><p class="city-confirm">For <b>${U.esc(s.city||payload.city||"")}</b> City</p><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(s.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(s.patientName)}</b></div><div class="confirm-row"><span>Age</span><b>${s.age} ${U.esc(s.ageUnit||"")}</b></div><div class="confirm-row"><span>Address</span><b>${U.esc(s.address||payload.address||"")}</b></div><div class="confirm-row"><span>Date of Booking</span><b>${U.date(s.date)}</b></div><div class="confirm-row"><span>OPD Charges</span><b>${U.money(s.opdCharges)}</b></div><div class="confirm-row"><span>Cash</span><b>${U.money(s.opdCashPaid)}</b></div><div class="confirm-row"><span>Online</span><b>${U.money(s.opdOnlinePaid)}</b></div><div class="confirm-row"><span>Next Follow-up City</span><b>${U.esc(s.nextFollowupCity||payload.nextFollowupCity||"")}</b></div></div>`;
               resetFields("Follow-up");
@@ -930,19 +928,19 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
               return;
             }
           }catch(_){ }
-          if(!found){
-            // Definitive failure after the single manual Check Again.
-            $("submitStatus").innerHTML=`<b>Booking unsuccessful.</b><br>Please book your OPD appointment again.`;
-            $("submitStatus").style.color="#b42318";
-            try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"failed",payload});}catch(_){ }
-            $("book").disabled=false;
-            $("book").textContent="Book Appointment";
-            $("book").className="cta";
-          }
+
+          try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"uncertain",payload});}catch(_){ }
+          checkAgain.disabled=false;
+          checkAgain.textContent="Check Again";
+          $("submitStatus").innerHTML=`Checking booking status…<br><br><b>Appointment status is still uncertain.</b><br>The booking may already have been recorded.<br><b>Please do not create another booking.</b>`;
+          $("submitStatus").style.color="#b42318";
         };
+        checkAgain.onclick=runCheck;
       }
     }finally{
-      if($("confirmation").hidden){
+      // Keep the Book button locked while an uncertain transaction has a
+      // recovery control. Only a confirmed result returns the normal flow.
+      if($("confirmation").hidden && !$("checkBookingAgain")){
         bookingInProgress=false;
         $("book").disabled=false;
         $("book").textContent="Book Appointment";
