@@ -51,10 +51,10 @@ document.addEventListener("DOMContentLoaded",()=>{
 
   const currentFollowupAge=(age,ageUnit,registrationDate)=>{
     const n=Number(age);
-    const raw=String(registrationDate||"").replace(/\D/g,"");
+    const raw=String(registrationDate||"");
     if(!Number.isFinite(n)||n<0||raw.length!==8)return{value:n,unit:ageUnit||"years"};
 
-    const rd=Number(raw.slice(0,2)), rm=Number(raw.slice(2,4)), ry=Number(raw.slice(4,8));
+    const ry=Number(raw.slice(0,4)), rm=Number(raw.slice(4,6)), rd=Number(raw.slice(6,8));
     const reg=new Date(Date.UTC(ry,rm-1,rd));
     if(!Number.isFinite(reg.getTime()))return{value:n,unit:ageUnit||"years"};
 
@@ -86,10 +86,14 @@ document.addEventListener("DOMContentLoaded",()=>{
 
   const todayKey=()=>{
     const p=U.parts();
+    return p.y+String(p.m).padStart(2,"0")+String(p.d).padStart(2,"0");
+  };
+  const scheduleTodayKey=()=>{
+    const p=U.parts();
     return String(p.d).padStart(2,"0")+String(p.m).padStart(2,"0")+p.y;
   };
   const scheduledCitiesForToday=()=>{
-    const p=U.parts(),key=todayKey();
+    const p=U.parts(),key=scheduleTodayKey();
     try{return cities.filter(c=>(Schedule.dates(c,p.y,p.m)||[]).includes(key));}catch(_){return [];}
   };
   const scheduledDefaultCityForToday=()=>{
@@ -115,7 +119,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   const isTodayFollowupRecord=(x)=>{
     const raw=String(x.date||x.bookingDate||x.visitDate||"").replace(/\D/g,"");
     const p=U.parts();
-    const today=String(p.d).padStart(2,"0")+String(p.m).padStart(2,"0")+p.y;
+    const today=p.y+String(p.m).padStart(2,"0")+String(p.d).padStart(2,"0");
     return raw===today;
   };
 

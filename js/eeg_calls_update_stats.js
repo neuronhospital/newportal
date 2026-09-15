@@ -12,15 +12,15 @@ function eegCallsUpdateEsc_(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":
 function eegCallsUpdateMoney_(n){return "₹"+(Number(n)||0).toLocaleString("en-IN");}
 function eegCallsUpdateTotalMoney_(n){return "₹ "+String(Math.round(Number(n)||0).toLocaleString("en-IN")).replace(/,/g,"");}
 function eegCallsUpdateFormatDate_(date){
-  const s=String(date||"").replace(/\D/g,"");
-  if(/^\d{8}$/.test(s))return `${s.substring(0,2)}/${s.substring(2,4)}/${s.substring(4,8)}`;
+  const s=String(date||"");
+  if(/^\d{8}$/.test(s))return `${s.substring(6,8)}/${s.substring(4,6)}/${s.substring(0,4)}`;
   return String(date||"");
 }
 function eegCallsUpdateSortPatients_(patients){
   return [...(Array.isArray(patients)?patients:[])].sort((a,b)=>{
-    const ad=String(a?.dateKey||"");
-    const bd=String(b?.dateKey||"");
-    if(ad!==bd)return ad.localeCompare(bd);
+    const ad=String(a?.dateKey||"")+String(a?.time||"");
+    const bd=String(b?.dateKey||"")+String(b?.time||"");
+    if(ad!==bd)return bd.localeCompare(ad);
     const ar=Number(a?.rowNumber)||0;
     const br=Number(b?.rowNumber)||0;
     return ar-br;

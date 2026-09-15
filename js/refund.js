@@ -60,7 +60,7 @@ function render(list){
   p.refundAvailable = {opd:opdPending,eeg:eegPending};
   return opdPending || eegPending;
  });
- list.sort((a,b)=>(Number(b.bookingTimestampMs||0)-Number(a.bookingTimestampMs||0)));
+ list.sort((a,b)=>{const at=String(a.date||"")+String(a.time||"");const bt=String(b.date||"")+String(b.time||"");return bt.localeCompare(at);});
  list.forEach((p,i)=>{
   let x=document.createElement('div');
   x.className='card patient-card';
