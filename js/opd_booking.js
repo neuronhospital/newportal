@@ -51,10 +51,10 @@ document.addEventListener("DOMContentLoaded",()=>{
 
   const currentFollowupAge=(age,ageUnit,registrationDate)=>{
     const n=Number(age);
-    const raw=String(registrationDate||"");
+    const raw=String(registrationDate||"").replace(/\D/g,"");
     if(!Number.isFinite(n)||n<0||raw.length!==8)return{value:n,unit:ageUnit||"years"};
 
-    const ry=Number(raw.slice(0,4)), rm=Number(raw.slice(4,6)), rd=Number(raw.slice(6,8));
+    const rd=Number(raw.slice(0,2)), rm=Number(raw.slice(2,4)), ry=Number(raw.slice(4,8));
     const reg=new Date(Date.UTC(ry,rm-1,rd));
     if(!Number.isFinite(reg.getTime()))return{value:n,unit:ageUnit||"years"};
 
@@ -86,14 +86,10 @@ document.addEventListener("DOMContentLoaded",()=>{
 
   const todayKey=()=>{
     const p=U.parts();
-    return p.y+String(p.m).padStart(2,"0")+String(p.d).padStart(2,"0");
-  };
-  const scheduleTodayKey=()=>{
-    const p=U.parts();
     return String(p.d).padStart(2,"0")+String(p.m).padStart(2,"0")+p.y;
   };
   const scheduledCitiesForToday=()=>{
-    const p=U.parts(),key=scheduleTodayKey();
+    const p=U.parts(),key=todayKey();
     try{return cities.filter(c=>(Schedule.dates(c,p.y,p.m)||[]).includes(key));}catch(_){return [];}
   };
   const scheduledDefaultCityForToday=()=>{
@@ -119,7 +115,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   const isTodayFollowupRecord=(x)=>{
     const raw=String(x.date||x.bookingDate||x.visitDate||"").replace(/\D/g,"");
     const p=U.parts();
-    const today=p.y+String(p.m).padStart(2,"0")+String(p.d).padStart(2,"0");
+    const today=String(p.d).padStart(2,"0")+String(p.m).padStart(2,"0")+p.y;
     return raw===today;
   };
 
@@ -820,8 +816,15 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     }
 
     $("book").disabled=true;
-    $("book").textContent="Confirming Appointment...";
+    $("book").textContent="Confirming Appointment";
     $("book").className="btn btn-primary";
+    // Once Follow-up booking actually starts, remove Edit immediately and
+    // let the confirmation-state button occupy the full action row.
+    if(type==="Follow-up") {
+      if($("editFollowup")) $("editFollowup").hidden=true;
+      const followupActions=$("editFollowup")?.closest(".followup-edit-actions");
+      if(followupActions) followupActions.classList.add("editing");
+    }
     $("submitStatus").textContent="Wait We are Confirming your OPD Appointment...";
     $("submitStatus").style.color="#7b1fa2";
 
@@ -876,7 +879,8 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
       $("submitStatus").style.color="#168a4a";
       const confirmationHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Confirmed</h2><p class="city-confirm">For <b>${U.esc(payload.city||"")}</b> City</p><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(r.patientName)}</b></div><div class="confirm-row"><span>Age</span><b>${r.age} ${r.ageUnit}</b></div><div class="confirm-row"><span>Address</span><b>${U.esc(r.address||payload.address)}</b></div><div class="confirm-row"><span>Date of Booking</span><b>${U.date(r.date)}</b></div><div class="confirm-row"><span>OPD Charges</span><b>${U.money(r.opdCharges)}</b></div><div class="confirm-row"><span>Cash</span><b>${U.money(r.opdCashPaid)}</b></div><div class="confirm-row"><span>Online</span><b>${U.money(r.opdOnlinePaid)}</b></div><div class="confirm-row"><span>Next Follow-up City</span><b>${U.esc(r.nextFollowupCity||payload.nextFollowupCity)}</b></div></div>`;
-      resetFields("Follow-up");
+      resetFields("New");
+      // Successful booking returns the portal to the New tab by default.
       // resetFields intentionally clears the booking form, so restore the
       // confirmation content AFTER the reset.
       $("confirmation").innerHTML=confirmationHTML;
@@ -896,7 +900,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
           recovered=true;
           try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:s});}catch(_){ }
           const recoveredHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Confirmed</h2><p class="city-confirm">For <b>${U.esc(s.city||payload.city||"")}</b> City</p><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(s.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(s.patientName)}</b></div><div class="confirm-row"><span>Age</span><b>${s.age} ${U.esc(s.ageUnit||"")}</b></div><div class="confirm-row"><span>Address</span><b>${U.esc(s.address||payload.address||"")}</b></div><div class="confirm-row"><span>Date of Booking</span><b>${U.date(s.date)}</b></div><div class="confirm-row"><span>OPD Charges</span><b>${U.money(s.opdCharges)}</b></div><div class="confirm-row"><span>Cash</span><b>${U.money(s.opdCashPaid)}</b></div><div class="confirm-row"><span>Online</span><b>${U.money(s.opdOnlinePaid)}</b></div><div class="confirm-row"><span>Next Follow-up City</span><b>${U.esc(s.nextFollowupCity||payload.nextFollowupCity||"")}</b></div></div>`;
-          resetFields("Follow-up");
+          resetFields("New");
           $("confirmation").innerHTML=recoveredHTML;
           $("confirmation").hidden=false;
           $("submitStatus").textContent="✓ Booking recovered successfully.";
@@ -923,7 +927,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
             if(s&&s.found){
               try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:s});}catch(_){ }
               const recoveredHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Confirmed</h2><p class="city-confirm">For <b>${U.esc(s.city||payload.city||"")}</b> City</p><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(s.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(s.patientName)}</b></div><div class="confirm-row"><span>Age</span><b>${s.age} ${U.esc(s.ageUnit||"")}</b></div><div class="confirm-row"><span>Address</span><b>${U.esc(s.address||payload.address||"")}</b></div><div class="confirm-row"><span>Date of Booking</span><b>${U.date(s.date)}</b></div><div class="confirm-row"><span>OPD Charges</span><b>${U.money(s.opdCharges)}</b></div><div class="confirm-row"><span>Cash</span><b>${U.money(s.opdCashPaid)}</b></div><div class="confirm-row"><span>Online</span><b>${U.money(s.opdOnlinePaid)}</b></div><div class="confirm-row"><span>Next Follow-up City</span><b>${U.esc(s.nextFollowupCity||payload.nextFollowupCity||"")}</b></div></div>`;
-              resetFields("Follow-up");
+              resetFields("New");
               $("confirmation").innerHTML=recoveredHTML;
               $("confirmation").hidden=false;
               $("submitStatus").textContent="✓ Booking recovered successfully.";
