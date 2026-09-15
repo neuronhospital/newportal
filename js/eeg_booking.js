@@ -171,7 +171,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     $('book').className='btn btn-success';
     $('bookMessage').hidden=false;
     $('bookMessage').textContent='Wait we are Confirming your EEG Booking...';
-    const id=U.uuid('eeg'),p={eegBookingRequestId:id,appointmentId:sel.appointmentId,rowNumber:sel.rowNumber,whatsapp:wa,city:$('city').value,eegCharges:total,eegPaymentMode:m,eegCashPaid:cPaid,eegOnlinePaid:oPaid};
+    const id=U.requestId8(),p={eegBookingRequestId:id,appointmentId:sel.appointmentId,rowNumber:sel.rowNumber,whatsapp:wa,city:$('city').value,eegCharges:total,eegPaymentMode:m,eegCashPaid:cPaid,eegOnlinePaid:oPaid};
     try{
       const r=await NeuronAPI.call('bookEEG',p,25000);
       const confirmationPatient=r.patientName||sel.name;
