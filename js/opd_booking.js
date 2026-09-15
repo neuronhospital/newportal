@@ -720,7 +720,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     const debugEvents=[];
     const debugMark=(event,phase="client",detail="")=>{
       const now=performance.now();
-      debugEvents.push({sequence:debugEvents.length+1,event,elapsedMs:Math.round(now-debugStartedAt),deltaMs:Math.round(now-debugLastAt),phase,detail:String(detail||"").slice(0,500)});
+      debugEvents.push({sequence:debugEvents.length+1,event,elapsedMs:Math.round(now-debugStartedAt),deltaMs:Math.round(now-debugLastAt),epochMs:Date.now(),phase,detail:String(detail||"").slice(0,500)});
       debugLastAt=now;
     };
     debugMark("submit_clicked","client","Booking button clicked");
