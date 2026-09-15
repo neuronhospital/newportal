@@ -886,9 +886,16 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       debugMark("local_recovery_write_requested","client");
 
       const currentBookingSession=bookingSessionId;
-      debugMark("booking_api_request_started","network");
-      const r=await NeuronAPI.call("bookAppointment",payload,25000);
+      debugMark("booking_api_request_started","network","About to invoke booking API");
+      const apiClientStartedAtEpoch=Date.now();
+      const r=await NeuronAPI.call("bookAppointment",payload,25000,{debugMark});
       debugMark("booking_api_response_received","network","Booking API response received; server timing is logged as separate rows");
+      // The API helper records the fetch/header/body/JSON phases. Keep the
+      // client epoch only as diagnostic metadata; it is never used by booking logic.
+      if(r&&r.debugTiming){
+        r.debugTiming.client_api_started_epoch_ms=apiClientStartedAtEpoch;
+        r.debugTiming.client_api_response_received_epoch_ms=Date.now();
+      }
       if(currentBookingSession!==bookingSessionId)return;
       debugMark("local_completion_write_started","client");
       try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:r});}catch(_){ }

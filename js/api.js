@@ -18,21 +18,39 @@ window.NeuronAPI={
   }
 
   const run=async()=>{
-    const r=await fetch(u,{
-      method:"POST",
-      headers:{"Content-Type":"text/plain;charset=utf-8"},
-      body:JSON.stringify({action,...data}),
-      signal:controller.signal,
-      cache:"no-store"
-    });
+    const debugMark = options && typeof options.debugMark === "function"
+      ? options.debugMark
+      : null;
+
+    if(debugMark) debugMark("api_fetch_initiated","network","fetch() invoked");
+    let r;
+    try {
+      r=await fetch(u,{
+        method:"POST",
+        headers:{"Content-Type":"text/plain;charset=utf-8"},
+        body:JSON.stringify({action,...data}),
+        signal:controller.signal,
+        cache:"no-store"
+      });
+    } catch(fetchError) {
+      if(debugMark) debugMark("api_fetch_failed","network",fetchError&&fetchError.message||String(fetchError));
+      throw fetchError;
+    }
+    if(debugMark) debugMark("api_response_headers_received","network","fetch() promise resolved; HTTP response headers received");
 
     const text=await r.text();
+    if(debugMark) debugMark("api_response_body_read_complete","network","response.text() completed; response body received");
     let j;
     try{j=JSON.parse(text||"{}");}
-    catch(_){throw Error("Server returned an invalid response.");}
+    catch(_){
+      if(debugMark) debugMark("api_json_parse_failed","network","Server returned an invalid response.");
+      throw Error("Server returned an invalid response.");
+    }
+    if(debugMark) debugMark("api_json_parse_complete","network","JSON response parsed");
 
     if(!r.ok)throw Error(j.error||("Server request failed ("+r.status+")."));
     if(j.ok===false)throw Error(j.error||"Server request failed.");
+    if(debugMark) debugMark("api_call_complete","network","NeuronAPI.call completed");
     return j;
   };
 
