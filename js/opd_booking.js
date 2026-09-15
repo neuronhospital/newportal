@@ -953,6 +953,43 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       $("confirmation").innerHTML=confirmationHTML;
       $("confirmation").hidden=false;
       debugMark("confirmation_box_shown","client","Booking complete; confirmation box made visible");
+
+      // Phase 4 diagnostic panel: opt-in via ?phase4=1. This is display-only and
+      // does not alter booking behavior, payloads, retries, or recovery logic.
+      try {
+        const phase4Enabled = new URLSearchParams(location.search).get("phase4") === "1";
+        if (phase4Enabled) {
+          const ev = name => debugEvents.find(x => x.event === name);
+          const fetchEv = ev("api_fetch_initiated");
+          const headersEv = ev("api_response_headers_received");
+          const bodyEv = ev("api_response_body_read_complete");
+          const completeEv = ev("api_call_complete");
+          const first = x => Number.isFinite(Number(x)) ? Number(x) : null;
+          const apiTotal = fetchEv && completeEv ? first(completeEv.elapsedMs) - first(fetchEv.elapsedMs) : null;
+          const headersWait = fetchEv && headersEv ? first(headersEv.elapsedMs) - first(fetchEv.elapsedMs) : null;
+          const bodyWait = headersEv && bodyEv ? first(bodyEv.elapsedMs) - first(headersEv.elapsedMs) : null;
+          const serverTotal = first(r.debugTiming && r.debugTiming.server_total_ms);
+          const invocationToBook = first(r.debugTiming && r.debugTiming.doPost_to_book_start_ms);
+          const clientToBook = first(boundaryTiming.client_to_book_server_start_ms);
+          const bookFinishToHeaders = first(boundaryTiming.book_finish_to_client_headers_ms);
+          const bookFinishToReturn = first(boundaryTiming.book_to_doPost_return_ms);
+          const panel = document.createElement("div");
+          panel.className = "card";
+          panel.style.marginTop = "16px";
+          panel.innerHTML = `<h3 style="margin-top:0">Phase 4 — Real Booking Timing</h3>
+            <div><b>Client API total:</b> ${apiTotal===null?"—":apiTotal+" ms"}</div>
+            <div><b>Client → bookAppointment_:</b> ${clientToBook===null?"—":clientToBook+" ms"}*</div>
+            <div><b>Invocation → bookAppointment_:</b> ${invocationToBook===null?"—":invocationToBook+" ms"}</div>
+            <div><b>Server booking execution:</b> ${serverTotal===null?"—":serverTotal+" ms"}</div>
+            <div><b>Book finish → response headers:</b> ${bookFinishToHeaders===null?"—":bookFinishToHeaders+" ms"}*</div>
+            <div><b>Book finish → doPost return:</b> ${bookFinishToReturn===null?"—":bookFinishToReturn+" ms"}</div>
+            <div><b>Headers → body:</b> ${bodyWait===null?"—":bodyWait+" ms"}</div>
+            <div style="font-size:.85em;margin-top:8px;opacity:.75">* Boundary values use browser and Apps Script wall clocks and may include clock skew. This panel is diagnostic only.</div>`;
+          const target = $("confirmation");
+          if (target && target.parentNode) target.parentNode.insertBefore(panel, target.nextSibling);
+        }
+      } catch (_) {}
+
       NeuronAPI.sendDebugLog(debugSessionId,id,debugEvents,r.debugTiming||{},boundaryTiming);
       requestAnimationFrame(()=>$("confirmation").scrollIntoView({behavior:"smooth",block:"center"}));
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
