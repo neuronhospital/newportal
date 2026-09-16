@@ -57,6 +57,27 @@ window.DailyCity=window.DailyCity||(()=>{
 })();
 window.$=window.U?.$||((id)=>document.getElementById(id));
 if("serviceWorker"in navigator)window.addEventListener("load",()=>{const v=encodeURIComponent(window.NEURON_CONFIG.appVersion);navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!sessionStorage.getItem("neuron-sw-reloaded-"+v)){sessionStorage.setItem("neuron-sw-reloaded-"+v,"1");location.reload();}});navigator.serviceWorker.register("./service-worker.js?v="+v).catch(()=>{});});
+const setFooterCurrentSection_=()=>{
+ const f=document.getElementById("footer");
+ if(!f)return;
+ const page=(location.pathname.split("/").pop()||"index.html").toLowerCase();
+ const map={
+  "index.html": [".footer-home-link"],
+  "opd_booking.html": [".footer-opd-link"],
+  "eeg_booking.html": [".footer-eeg-link"],
+  "opd_update.html": [".footer-update-trigger",".footer-opd-update-link"],
+  "eeg_update.html": [".footer-update-trigger",".footer-eeg-update-link"],
+  "refund.html": [".footer-refund-link"],
+  "statistics.html": [".footer-stats-link"]
+ };
+ f.querySelectorAll(".footer-nav .is-current").forEach(el=>{el.classList.remove("is-current");el.removeAttribute("aria-current")});
+ const selectors=map[page]||[];
+ selectors.forEach(selector=>{
+  const el=f.querySelector(selector);
+  if(el){el.classList.add("is-current");el.setAttribute("aria-current","page");}
+ });
+};
+
 document.addEventListener("DOMContentLoaded",()=>{
  const p=document.body.dataset.title||"Portal",h=document.getElementById("header"),f=document.getElementById("footer");
  if(h)h.innerHTML=`<header class="site-header"><div class="container header-inner"><a class="brand" href="index.html"><img class="brand-logo" src="assets/neuron_logo.svg" alt="NEURON Hospital Logo"><div><div class="brand-title">NEURON HOSPITAL LATUR</div><div class="brand-sub">Pediatric Neurology & Epilepsy Center</div></div></a><a class="header-home" href="index.html"><img src="assets/icons/home.svg" alt="Home"></a></div></header>`;
@@ -71,6 +92,7 @@ document.addEventListener("DOMContentLoaded",()=>{
 <a class="footer-desktop-update footer-opd-update-link" href="opd_update.html"><img class="nav-icon" src="assets/icons/opd-update.svg" alt=""><span>OPD Update</span></a>
 <a class="footer-desktop-update footer-eeg-update-link" href="eeg_update.html"><img class="nav-icon" src="assets/icons/eeg-update.svg" alt=""><span>EEG Update</span></a>
 </nav><div class="footer-update-popup" hidden><div class="footer-update-backdrop" data-close-update></div><div class="footer-update-dialog" role="dialog" aria-modal="true" aria-labelledby="footer-update-title"><button type="button" class="footer-update-close" aria-label="Close Update menu" data-close-update>×</button><div id="footer-update-title" class="footer-update-title">Select Update</div><div class="footer-update-options"><a href="opd_update.html"><img src="assets/icons/opd-update.svg" alt=""><span>Update OPD</span></a><a href="eeg_update.html"><img src="assets/icons/eeg-update.svg" alt=""><span>Update EEG</span></a></div></div></div><div class="footer-contact"><b>NEURON Hospital, Latur</b><br>Near Patil Plaza, Infront of Ashwini Hospital • Ausa Road, Latur • <b><a href="tel:02382242581">02382 242581</a></b><br></div></div></footer>`;
+ setFooterCurrentSection_();
  const updateTrigger=f?.querySelector('.footer-update-trigger'),updatePopup=f?.querySelector('.footer-update-popup');
  if(updateTrigger&&updatePopup){
   const closeUpdate=()=>{updatePopup.hidden=true;updateTrigger.setAttribute('aria-expanded','false');};
