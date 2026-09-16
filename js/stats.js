@@ -260,7 +260,11 @@ document.addEventListener("DOMContentLoaded",()=>{
        setRetrievalStatus("Retrieval cancelled successfully.");
        return;
      }
-     if(r && r.trendData && Array.isArray(r.trendData.daily) && selectedPeriod===`${U.parts().y}-${String(U.parts().m).padStart(2,"0")}` && citySelect.value!=="all") {
+     // Any retrieval that includes daily trend data must prepare the current
+     // month's daily view against the authoritative schedule. This lets broad
+     // retrievals (Last 12 Months / Last 5 Years / Current Year) feed Current
+     // Month without another retrieval.
+     if(r && r.trendData && Array.isArray(r.trendData.daily) && citySelect.value!=="all") {
        r.trendData=prepareScheduleAwareDailyTrend_(r.trendData,citySelect.value);
      }
      const relativeLabel=retrievalPeriodLabel(selectedPeriod);
@@ -501,15 +505,18 @@ document.addEventListener("DOMContentLoaded",()=>{
 
 });
 
-// v197.3: Statistics Performance Trends UI. Uses only compact trendData returned
-// by the existing Statistics retrieval; it never performs a graph-specific fetch.
+// v197.4: Statistics Performance Trends. The main Statistics retrieval is the
+// only data fetch. Performance Trends selects only compact OPD/EEG summaries
+// already present in the loaded response; changing trend period/metric never fetches.
 (function initPerformanceTrends_(){
  const $=U.$;
  const section=$("performanceTrends"), body=$("performanceBody"), toggle=$("performanceToggle");
  const periodEl=$("trendPeriod"), metricEl=$("trendMetric"), chartEl=$("trendChart"), summaryEl=$("trendSummary"), statusEl=$("trendStatus"), rangeEl=$("trendRange");
  if(!section||!body||!toggle||!periodEl||!metricEl||!chartEl||!summaryEl||!statusEl||!rangeEl)return;
- let latestResponse=null;
- const rootStyle=getComputedStyle(document.documentElement); const OPD=(rootStyle.getPropertyValue("--opd").trim()||"#3b82f6"), EEG=(rootStyle.getPropertyValue("--eeg").trim()||"#8b5cf6");
+ let latestResponse=null, loadedStatisticsPeriod=null;
+ const rootStyle=getComputedStyle(document.documentElement);
+ const OPD=(rootStyle.getPropertyValue("--opd").trim()||"#3b82f6");
+ const EEG=(rootStyle.getPropertyValue("--eeg").trim()||"#8b5cf6");
  const fmt=n=>Number.isInteger(n)?String(n):Number(n).toFixed(1).replace(/\.0$/,'');
  const esc=v=>U.esc(v);
  function setStatus(s){statusEl.textContent=s||"";}
@@ -517,91 +524,128 @@ document.addEventListener("DOMContentLoaded",()=>{
    const [y,m]=String(key).split("-").map(Number); if(!y||!m)return String(key);
    return new Intl.DateTimeFormat("en-IN",{month:"short",year:"numeric",timeZone:"Asia/Kolkata"}).format(new Date(Date.UTC(y,m-1,1)));
  }
- function dateLabel(key){
-   const s=String(key); if(!/^\d{8}$/.test(s))return s;
-   return `${s.slice(6,8)}/${s.slice(4,6)}`;
- }
+ function dateLabel(key){const s=String(key);return /^\d{8}$/.test(s)?`${s.slice(6,8)}/${s.slice(4,6)}`:s;}
  function yearLabel(y){return String(y)+(Number(y)===U.parts().y?" *":"");}
  function stats(vals){
    if(!vals.length)return null;
-   const sum=vals.reduce((a,b)=>a+b,0), mean=sum/vals.length;
-   return {min:Math.min(...vals),mean,max:Math.max(...vals)};
+   const sum=vals.reduce((a,b)=>a+b,0);
+   return {min:Math.min(...vals),mean:sum/vals.length,max:Math.max(...vals)};
  }
- function selectedSeries_(metric, points){
-   return metric==="opd"?[{key:"opd",label:"OPD",color:OPD}]:metric==="eeg"?[{key:"eeg",label:"EEG",color:EEG}]:[{key:"opd",label:"OPD",color:OPD},{key:"eeg",label:"EEG",color:EEG}];
+ function selectedKey_(){return metricEl.value==="eeg"?"eeg":"opd";}
+ function selectedLabel_(){return selectedKey_()==="eeg"?"EEG":"OPD";}
+ function niceScale_(values){
+   const max=Math.max(0,...values.map(v=>Number(v)||0));
+   if(max<=0)return {max:1,step:1};
+   const raw=max/5;
+   const pow=Math.pow(10,Math.floor(Math.log10(raw)));
+   const n=raw/pow;
+   const nice=n<=1?1:n<=2?2:n<=5?5:10;
+   const step=nice*pow;
+   return {max:Math.max(step,Math.ceil(max/step)*step),step:step};
  }
- function svgEsc_(s){return esc(String(s)).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+ function displayedPoints_(choice,td){
+   const q=U.parts(),endMonth=q.y*12+(q.m-1);
+   if(choice==="currentMonth"){
+     if(!Array.isArray(td.daily))return {points:[],type:"daily",message:"Current Month trend data is not available in the loaded Statistics response."};
+     const prefix=`${q.y}${String(q.m).padStart(2,"0")}`;
+     return {points:td.daily.filter(p=>String(p.date||"").startsWith(prefix)),type:"daily"};
+   }
+   if(choice==="last6"||choice==="last12"){
+     if(!Array.isArray(td.monthly))return {points:[],type:"month",message:"Monthly trend data is not available in the loaded Statistics response."};
+     const count=choice==="last6"?6:12,start=endMonth-(count-1);
+     return {points:td.monthly.filter(p=>{const a=String(p.month||"").split("-").map(Number);if(a.length!==2||!a[0]||!a[1])return false;const idx=a[0]*12+(a[1]-1);return idx>=start&&idx<=endMonth;}),type:"month"};
+   }
+   if(choice==="currentYear"||choice==="lastYear"||/^year:\d{4}$/.test(choice)||choice==="last5"){
+     if(!Array.isArray(td.yearly))return {points:[],type:"year",message:"Yearly trend data is not available in the loaded Statistics response."};
+     if(choice==="last5")return {points:td.yearly.slice().sort((a,b)=>Number(a.year)-Number(b.year)),type:"year"};
+     const year=choice==="currentYear"?q.y:choice==="lastYear"?q.y-1:Number(String(choice).slice(5));
+     return {points:td.yearly.filter(p=>Number(p.year)===year),type:"year"};
+   }
+   return {points:[],type:"year"};
+ }
+ function availableTrendOptions_(period,td){
+   const q=U.parts();
+   const opts=[];
+   const add=(value,label)=>opts.push({value,label});
+   if(Array.isArray(td.daily))add("currentMonth","Current Month");
+   if(Array.isArray(td.monthly)){
+     add("last6","Last 6 Months");
+     add("last12","Last 12 Months");
+   }
+   if(Array.isArray(td.yearly)){
+     add("currentYear",`Current Year (${q.y})`);
+     add("lastYear",`Last Year (${q.y-1})`);
+     for(let i=2;i<=5;i++)add(`year:${q.y-i}`,`${i} Years Ago (${q.y-i})`);
+     add("last5","Last 5 Years");
+   }
+   // Narrow retrievals should expose only views contained by that retrieval.
+   if(period==="last5")return opts;
+   if(period==="last12")return opts.filter(x=>["currentMonth","last6","last12"].includes(x.value));
+   if(period==="currentyear")return opts.filter(x=>["currentMonth","currentYear"].includes(x.value));
+   if(period==="lastyear")return opts.filter(x=>x.value==="lastYear");
+   if(/^\d{4}$/.test(period))return opts.filter(x=>x.value===`year:${period}`);
+   const cur=`${q.y}-${String(q.m).padStart(2,"0")}`;
+   return period===cur?opts.filter(x=>x.value==="currentMonth"):[];
+ }
+ function syncTrendOptions_(){
+   if(!latestResponse||!latestResponse.trendData){periodEl.innerHTML="";return;}
+   const opts=availableTrendOptions_(loadedStatisticsPeriod,latestResponse.trendData);
+   const current=periodEl.value;
+   periodEl.innerHTML=opts.map(o=>`<option value="${o.value}">${o.label}</option>`).join("");
+   if(opts.some(o=>o.value===current))periodEl.value=current;
+   else if(opts.length)periodEl.value=opts[0].value;
+ }
  function lineChart_(points,metric){
-   const W=920,H=320,L=48,R=16,T=28,B=48, cw=W-L-R,ch=H-T-B;
-   const series=selectedSeries_(metric,points); const vals=[]; points.forEach(p=>series.forEach(s=>vals.push(Number(p[s.key])||0)));
-   const max=Math.max(1,...vals); const n=points.length;
-   const x=i=>n<=1?L+cw/2:L+(i/(n-1))*cw, y=v=>T+ch-(v/max)*ch;
+   const key=metric==="eeg"?"eeg":"opd",label=key==="eeg"?"EEG":"OPD",color=key==="eeg"?EEG:OPD;
+   const W=920,H=320,L=56,R=16,T=28,B=48,cw=W-L-R,ch=H-T-B;
+   const vals=points.map(p=>Number(p[key])||0),scale=niceScale_(vals),max=scale.max;
+   const n=points.length,x=i=>n<=1?L+cw/2:L+(i/(n-1))*cw,y=v=>T+ch-(v/max)*ch;
    let g="";
-   for(let i=0;i<=4;i++){const v=max*i/4,yy=y(v);g+=`<line x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}" stroke="#e5e7eb" stroke-width="1"/><text x="${L-7}" y="${yy+4}" text-anchor="end" font-size="10" fill="#667085">${fmt(v)}</text>`;}
-   const labelEvery=Math.max(1,Math.ceil(n/8));
-   points.forEach((p,i)=>{if(i%labelEvery===0||i===n-1)g+=`<text x="${x(i)}" y="${H-18}" text-anchor="middle" font-size="10" fill="#667085">${svgEsc_(dateLabel(p.date))}</text>`;});
-   series.forEach(s=>{
-     const d=points.map((p,i)=>`${i?"L":"M"}${x(i).toFixed(1)},${y(Number(p[s.key])||0).toFixed(1)}`).join(" ");
-     g+=`<path d="${d}" fill="none" stroke="${s.color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
-     points.forEach((p,i)=>g+=`<circle cx="${x(i)}" cy="${y(Number(p[s.key])||0)}" r="3" fill="#fff" stroke="${s.color}" stroke-width="2"/>`);
-   });
-   return `<div class="trend-legend">${series.map(s=>`<span class="trend-legend-item"><span class="trend-legend-dot" style="background:${s.color}"></span>${s.label}</span>`).join("")}</div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Current month daily performance trend">${g}</svg>`;
+   for(let v=0;v<=max;v+=scale.step){const yy=y(v);g+=`<line x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}" stroke="#e5e7eb" stroke-width="1"/><text x="${L-8}" y="${yy+4}" text-anchor="end" font-size="10" fill="#667085">${fmt(v)}</text>`;}
+   const every=Math.max(1,Math.ceil(n/8));
+   points.forEach((p,i)=>{if(i%every===0||i===n-1)g+=`<text x="${x(i)}" y="${H-18}" text-anchor="middle" font-size="10" fill="#667085">${esc(dateLabel(p.date))}</text>`;});
+   const d=points.map((p,i)=>`${i?"L":"M"}${x(i).toFixed(1)},${y(Number(p[key])||0).toFixed(1)}`).join(" ");
+   g+=`<path d="${d}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+   points.forEach((p,i)=>g+=`<circle cx="${x(i)}" cy="${y(Number(p[key])||0)}" r="3" fill="#fff" stroke="${color}" stroke-width="2"/>`);
+   return `<div class="trend-legend"><span class="trend-legend-item"><span class="trend-legend-dot" style="background:${color}"></span>${label}</span></div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${label} current month daily performance trend">${g}</svg>`;
  }
  function barChart_(points,metric,type){
-   const W=920,H=320,L=44,R=14,T=28,B=54,cw=W-L-R,ch=H-T-B,series=selectedSeries_(metric,points);
-   const vals=[];points.forEach(p=>series.forEach(s=>vals.push(Number(p[s.key])||0)));const max=Math.max(1,...vals),n=points.length;
-   const groupW=cw/Math.max(1,n), gap=Math.min(8,groupW*.12), barW=series.length===1?Math.min(44,groupW-gap):Math.min(30,(groupW-gap*2)/2);
-   const x0=i=>L+i*groupW+groupW/2;
-   const y=v=>T+ch-(v/max)*ch;
-   let g="";for(let i=0;i<=4;i++){const v=max*i/4,yy=y(v);g+=`<line x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}" stroke="#e5e7eb" stroke-width="1"/><text x="${L-7}" y="${yy+4}" text-anchor="end" font-size="10" fill="#667085">${fmt(v)}</text>`;}
+   const key=metric==="eeg"?"eeg":"opd",label=key==="eeg"?"EEG":"OPD",color=key==="eeg"?EEG:OPD;
+   const W=920,H=320,L=52,R=14,T=28,B=54,cw=W-L-R,ch=H-T-B,vals=points.map(p=>Number(p[key])||0),scale=niceScale_(vals),max=scale.max,n=points.length,groupW=cw/Math.max(1,n),barW=Math.min(48,Math.max(8,groupW*.62)),x0=i=>L+i*groupW+groupW/2,y=v=>T+ch-(v/max)*ch;
+   let g="";
+   for(let v=0;v<=max;v+=scale.step){const yy=y(v);g+=`<line x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}" stroke="#e5e7eb" stroke-width="1"/><text x="${L-8}" y="${yy+4}" text-anchor="end" font-size="10" fill="#667085">${fmt(v)}</text>`;}
    const every=Math.max(1,Math.ceil(n/8));
-   points.forEach((p,i)=>{const center=x0(i), label=type==="year"?yearLabel(p.year):monthLabel(p.month); if(i%every===0||i===n-1)g+=`<text x="${center}" y="${H-18}" text-anchor="middle" font-size="10" fill="#667085">${svgEsc_(label)}</text>`; series.forEach((s,j)=>{const v=Number(p[s.key])||0;const xx=series.length===1?center-barW/2:center+(j-.5)*(barW+gap);g+=`<rect x="${xx}" y="${y(v)}" width="${barW}" height="${Math.max(0,T+ch-y(v))}" rx="3" fill="${s.color}"/>`;});});
-   return `<div class="trend-legend">${series.map(s=>`<span class="trend-legend-item"><span class="trend-legend-dot" style="background:${s.color}"></span>${s.label}</span>`).join("")}</div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Performance bar chart">${g}</svg>`;
+   points.forEach((p,i)=>{const center=x0(i),labelText=type==="year"?yearLabel(p.year):monthLabel(p.month);if(i%every===0||i===n-1)g+=`<text x="${center}" y="${H-18}" text-anchor="middle" font-size="10" fill="#667085">${esc(labelText)}</text>`;const v=Number(p[key])||0;g+=`<rect x="${center-barW/2}" y="${y(v)}" width="${barW}" height="${Math.max(0,T+ch-y(v))}" rx="3" fill="${color}"/>`;});
+   return `<div class="trend-legend"><span class="trend-legend-item"><span class="trend-legend-dot" style="background:${color}"></span>${label}</span></div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${label} performance bar chart">${g}</svg>`;
  }
  function summary_(points,metric,type){
-   const series=selectedSeries_(metric,points);let h="";
-   series.forEach(s=>{const st=stats(points.map(p=>Number(p[s.key])||0));if(!st)return;h+=`<div class="trend-summary-card ${s.key}"><div class="trend-summary-title">${s.label}</div><div class="trend-summary-grid"><div><small>Min</small><strong>${fmt(st.min)}</strong></div><div><small>Mean</small><strong>${fmt(st.mean)}</strong></div><div><small>Max</small><strong>${fmt(st.max)}</strong></div></div></div>`;});
-   return h;
+   const key=metric==="eeg"?"eeg":"opd",label=key==="eeg"?"EEG":"OPD",st=stats(points.map(p=>Number(p[key])||0));
+   if(!st)return "";
+   const total=points.reduce((a,p)=>a+(Number(p[key])||0),0),avg=points.length?total/points.length:0;
+   return `<div class="trend-summary-card ${key}"><div class="trend-summary-title">${label}</div><div class="trend-summary-grid"><div><small>Total</small><strong>${fmt(total)}</strong></div><div><small>Average</small><strong>${fmt(avg)}</strong></div><div><small>Min</small><strong>${fmt(st.min)}</strong></div><div><small>Mean</small><strong>${fmt(st.mean)}</strong></div><div><small>Max</small><strong>${fmt(st.max)}</strong></div></div></div>`;
  }
- function currentMonthSummary_(points,city){
-   const available=points.length,opd=points.reduce((a,p)=>a+(Number(p.opd)||0),0),eeg=points.reduce((a,p)=>a+(Number(p.eeg)||0),0);
-   const opda=available?opd/available:0, eega=available?eeg/available:0;
-   const os=stats(points.map(p=>Number(p.opd)||0))||{min:0,mean:0,max:0};
-   const es=stats(points.map(p=>Number(p.eeg)||0))||{min:0,mean:0,max:0};
-   return `<div class="trend-summary-card opd"><div class="trend-summary-title">OPD</div><div class="trend-summary-grid"><div><small>Available days</small><strong>${available}</strong></div><div><small>Total</small><strong>${fmt(opd)}</strong></div><div><small>Average / day</small><strong>${fmt(opda)}</strong></div></div></div><div class="trend-summary-card eeg"><div class="trend-summary-title">EEG</div><div class="trend-summary-grid"><div><small>Available days</small><strong>${available}</strong></div><div><small>Total</small><strong>${fmt(eeg)}</strong></div><div><small>Average / day</small><strong>${fmt(eega)}</strong></div></div></div><div class="trend-summary-card opd"><div class="trend-summary-title">OPD — Daily Min / Mean / Max</div><div class="trend-summary-grid"><div><small>Min</small><strong>${fmt(os.min)}</strong></div><div><small>Mean</small><strong>${fmt(os.mean)}</strong></div><div><small>Max</small><strong>${fmt(os.max)}</strong></div></div></div><div class="trend-summary-card eeg"><div class="trend-summary-title">EEG — Daily Min / Mean / Max</div><div class="trend-summary-grid"><div><small>Min</small><strong>${fmt(es.min)}</strong></div><div><small>Mean</small><strong>${fmt(es.mean)}</strong></div><div><small>Max</small><strong>${fmt(es.max)}</strong></div></div></div>`;
+ function currentMonthSummary_(points,metric){
+   const key=metric==="eeg"?"eeg":"opd",label=key==="eeg"?"EEG":"OPD",available=points.length,total=points.reduce((a,p)=>a+(Number(p[key])||0),0),avg=available?total/available:0,st=stats(points.map(p=>Number(p[key])||0))||{min:0,mean:0,max:0};
+   return `<div class="trend-summary-card ${key}"><div class="trend-summary-title">${label}</div><div class="trend-summary-grid"><div><small>Available days</small><strong>${available}</strong></div><div><small>Total</small><strong>${fmt(total)}</strong></div><div><small>Average / day</small><strong>${fmt(avg)}</strong></div><div><small>Min</small><strong>${fmt(st.min)}</strong></div><div><small>Mean</small><strong>${fmt(st.mean)}</strong></div><div><small>Max</small><strong>${fmt(st.max)}</strong></div></div></div>`;
  }
  function renderTrend_(){
    if(!latestResponse||!latestResponse.trendData){setStatus("Retrieve Statistics data first. Trends use the same retrieval data and make no separate graph request.");chartEl.innerHTML='<div class="trend-empty">No trend data is loaded yet.</div>';summaryEl.innerHTML="";rangeEl.textContent="";return;}
-   const city=String($('city').value||'all');
+   const city=String($("city").value||"all");
    if(city.toLowerCase()==="all"){setStatus("Performance Trends require one selected city. Select a city in Statistics and retrieve the data again.");chartEl.innerHTML='<div class="trend-empty">Select a specific city to view schedule-aware performance trends.</div>';summaryEl.innerHTML="";rangeEl.textContent="";return;}
-   const choice=periodEl.value,metric=metricEl.value,td=latestResponse.trendData;
-   let points=[],type="";
-   if(choice==="currentMonth"){
-     if(!Array.isArray(td.daily)){setStatus("Current Month trend data is not in the loaded Statistics response. Select the current month and retrieve again.");points=[];}else{points=td.daily;type="daily";setStatus("Daily data includes only doctor-available dates; available zero-activity days are shown as zero.");}
-   }else if(choice==="last6"||choice==="last12"){
-     if(!Array.isArray(td.monthly)){setStatus("Monthly trend data is not in the loaded Statistics response. Select Last 12 Months and retrieve again.");points=[];}else{
-       const count=choice==="last6"?6:12;
-       const q=U.parts(),endIndex=q.y*12+(q.m-1),startIndex=endIndex-(count-1);
-       points=td.monthly.filter(p=>{const m=String(p.month||"").split("-").map(Number);if(m.length!==2||!m[0]||!m[1])return false;const idx=m[0]*12+(m[1]-1);return idx>=startIndex&&idx<=endIndex;});
-       type="month";setStatus("Monthly totals are actual recorded totals; months with no data are omitted.");
-     }
-   }else{
-     if(!Array.isArray(td.yearly)){setStatus("Yearly trend data is not in the loaded Statistics response. Select Last 5 Years and retrieve again.");points=[];}else{points=td.yearly;type="year";setStatus("Current year is partial through today and is marked with *.");}
-   }
-   if(!points.length){chartEl.innerHTML='<div class="trend-empty">No trend data available for this selection.</div>';summaryEl.innerHTML="";rangeEl.textContent="";return;}
-   chartEl.innerHTML=type==="daily"?lineChart_(points,metric):barChart_(points,metric,type);
-   summaryEl.innerHTML=type==="daily"?currentMonthSummary_(points,city):summary_(points,metric,type);
-   if(type==="daily"){
+   syncTrendOptions_();
+   const choice=periodEl.value,metric=selectedKey_(),td=latestResponse.trendData,res=displayedPoints_(choice,td);
+   if(res.message)setStatus(res.message);else if(res.type==="daily")setStatus("Daily data includes only doctor-available dates; available zero-activity days are shown as zero.");else if(res.type==="month")setStatus("Monthly totals are actual recorded totals; months with no data are omitted.");else setStatus("Yearly totals are actual recorded totals; current year is partial through today and is marked with *.");
+   if(!res.points.length){chartEl.innerHTML='<div class="trend-empty">No trend data available for this selection.</div>';summaryEl.innerHTML="";rangeEl.textContent="";return;}
+   chartEl.innerHTML=res.type==="daily"?lineChart_(res.points,metric):barChart_(res.points,metric,res.type);
+   summaryEl.innerHTML=res.type==="daily"?currentMonthSummary_(res.points,metric):summary_(res.points,metric,res.type);
+   if(res.type==="daily"){
      const q=U.parts();rangeEl.textContent=`${new Intl.DateTimeFormat("en-IN",{month:"long",year:"numeric",timeZone:"Asia/Kolkata"}).format(new Date(Date.UTC(q.y,q.m-1,1)))} • ${esc(city)}`;
-   }else if(type==="month"){
-     rangeEl.textContent=`${points.length} displayed month${points.length===1?"":"s"} • ${esc(city)}`;
-   }else{
-     rangeEl.textContent=`${points.length} displayed year${points.length===1?"":"s"} • ${esc(city)}`;
-   }
+   }else if(res.type==="month")rangeEl.textContent=`${res.points.length} displayed month${res.points.length===1?"":"s"} • ${esc(city)}`;
+   else rangeEl.textContent=`${res.points.length} displayed year${res.points.length===1?"":"s"} • ${esc(city)}`;
  }
  window.NEURON_StatisticsTrends={
-   consume:function(r){latestResponse=r||null;section.hidden=false;section.classList.add("is-collapsed");toggle.setAttribute("aria-expanded","false");toggle.textContent="Show";renderTrend_();},
-   clear:function(){latestResponse=null;section.hidden=true;section.classList.add("is-collapsed");toggle.setAttribute("aria-expanded","false");toggle.textContent="Show";chartEl.innerHTML="";summaryEl.innerHTML="";rangeEl.textContent="";setStatus("");}
+   consume:function(r){latestResponse=r||null;loadedStatisticsPeriod=String($("period").value||"");syncTrendOptions_();section.hidden=false;section.classList.add("is-collapsed");toggle.setAttribute("aria-expanded","false");toggle.textContent="Show";renderTrend_();},
+   clear:function(){latestResponse=null;loadedStatisticsPeriod=null;section.hidden=true;section.classList.add("is-collapsed");toggle.setAttribute("aria-expanded","false");toggle.textContent="Show";periodEl.innerHTML="";chartEl.innerHTML="";summaryEl.innerHTML="";rangeEl.textContent="";setStatus("");}
  };
  toggle.onclick=()=>{const collapsed=section.classList.toggle("is-collapsed");toggle.setAttribute("aria-expanded",String(!collapsed));toggle.textContent=collapsed?"Show":"Hide";if(!collapsed)renderTrend_();};
  periodEl.onchange=renderTrend_; metricEl.onchange=renderTrend_;
