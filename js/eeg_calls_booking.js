@@ -103,18 +103,12 @@ document.addEventListener("DOMContentLoaded",()=>{
 
   const showBookingFailure=()=>{
     setStatus("Booking unsuccessful. You can Book Again.","#b42318");
-    const old=document.querySelector(".booking-error"); if(old)old.remove();
     const modal=$("bookingFailureModal");
-    if(modal){
-      modal.hidden=false;
-      requestAnimationFrame(()=>$("bookingFailureAgain")?.focus());
-    }
+    if(modal){modal.hidden=false;requestAnimationFrame(()=>$('bookingFailureAgain')?.focus());}
   };
 
   const bookAgain=()=>{
     $("bookingFailureModal").hidden=true;
-    document.querySelector(".booking-error")?.remove();
-    document.querySelectorAll("#submitStatus br, #submitStatus button").forEach(el=>el.remove());
     setStatus("");
     $("confirmation").hidden=true;
     $("confirmation").innerHTML="";
@@ -125,17 +119,35 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("book").textContent="Book EEG Appointment";
     $("book").className="cta";
   };
-
   $("bookingFailureAgain")?.addEventListener("click",bookAgain);
 
-
-  const checkEEGCallsStatus=async(requestId,automatic=false)=>{
-    try{
-      const r=await NeuronAPI.verifyEEGCallsBooking(requestId,automatic?2:1);
-      if(r&&r.found)return r;
-    }catch(_){ }
-    return null;
-  };
+  window.addEventListener("neuron:recovery-result",e=>{
+    const d=e.detail||{};
+    if(d.type!=="EEG_CALLS_BOOKING")return;
+    const currentName=U.title($("patientName")?.value||"");
+    const currentPhone=U.phone($("whatsapp")?.value||"");
+    const payload=d.payload||{};
+    const samePatient=
+      String(d.patientName||"").trim().replace(/\s+/g," ").toLowerCase()===String(currentName||"").trim().replace(/\s+/g," ").toLowerCase() &&
+      (!currentPhone || U.phone(payload.whatsapp||"")===currentPhone);
+    if(!samePatient)return;
+    if(d.status==="recovered"){
+      showRecoveredConfirmation(d.result||{},"✓ EEG Appointment recovered successfully.");
+      resetForm();
+      bookingInProgress=false;
+      setFieldsDisabled(false);
+      $("book").disabled=false;
+      $("book").textContent="Book EEG Appointment";
+      $("book").className="cta";
+    }else if(d.status==="failed"){
+      showBookingFailure();
+      bookingInProgress=false;
+      setFieldsDisabled(false);
+      $("book").disabled=false;
+      $("book").textContent="Book EEG Appointment";
+      $("book").className="cta";
+    }
+  });
 
   $("book").onclick=async()=>{
     if(bookingInProgress)return;
@@ -152,10 +164,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     ];
     for(const [id,msg] of required){
       if(!String($(id).value||"").trim()){
-        setStatus(msg,"#b42318");
-        $(id).focus();
-        bookingInProgress=false;
-        return;
+        setStatus(msg,"#b42318");$(id).focus();bookingInProgress=false;return;
       }
     }
     const age=Number($("age").value),payment=Number($("paymentReceived").value);
@@ -163,14 +172,24 @@ document.addEventListener("DOMContentLoaded",()=>{
     if(!checkWhatsApp()){setStatus("Please enter matching WhatsApp numbers.","#b42318");$("verifyWhatsapp").focus();bookingInProgress=false;return;}
     if(!Number.isFinite(payment)||payment<0){setStatus("Please enter a valid Payment Received amount.","#b42318");$("paymentReceived").focus();bookingInProgress=false;return;}
 
-    const requestId=U.uuid("eegcalls");
+    const bookingPhone=U.phone($("whatsapp").value);
+    const recoveryPatientName=U.title($("patientName").value);
+    if(await window.NeuronRecovery?.isPatientRecovering?.({
+      type:"EEG_CALLS_BOOKING",name:recoveryPatientName,whatsapp:bookingPhone
+    })){
+      setStatus(`${recoveryPatientName} has a pending EEG Calls appointment. The system is recovering the appointment status. Please wait for the recovery status to update before booking this patient again.`,"#7b1fa2");
+      bookingInProgress=false;
+      return;
+    }
+
+    const id=U.requestId8();
     const payload={
-      bookingRequestId:requestId,
+      bookingRequestId:id,
       patientName:U.title($("patientName").value),
       age:age,
       ageUnit:$("ageUnit").value,
       address:U.title($("address").value),
-      whatsapp:U.phone($("whatsapp").value),
+      whatsapp:bookingPhone,
       referredBy:U.title($("referredBy").value),
       eegTechnician:U.title($("eegTechnician").value),
       paymentReceived:payment
@@ -183,62 +202,35 @@ document.addEventListener("DOMContentLoaded",()=>{
     setFieldsDisabled(true);
 
     try{
-      const r=await NeuronAPI.call("bookEEGCallsAppointment",payload,25000);
+      try{await IDB.put("tx",{id,type:"EEG_CALLS_BOOKING",status:"pending",payload});}catch(_){}
+      const r=await NeuronAPI.call("bookEEGCallsAppointment",payload,12000);
+      try{await IDB.put("tx",{id,type:"EEG_CALLS_BOOKING",status:"complete",payload,result:r});}catch(_){ }
       showConfirmation(r);
       setStatus("✓ EEG Appointment submitted successfully.","#168a4a");
       resetForm();
+      bookingInProgress=false;
+      setFieldsDisabled(false);
+      $("book").disabled=false;
+      $("book").textContent="Book EEG Appointment";
+      $("book").className="cta";
     }catch(e){
-      // The server may have committed the booking even though the original
-      // response was lost. Check the SAME request ID before offering another booking.
-      const recovered=await checkEEGCallsStatus(requestId,true);
-      if(recovered){
-        showRecoveredConfirmation(recovered,"✓ Booking recovered successfully.");
-        resetForm();
-        bookingInProgress=false;
-        setFieldsDisabled(false);
+      // The outcome is unknown. Keep the same request ID in IndexedDB and let
+      // shared recovery.js verify/reconcile it in the background.
+      try{await IDB.put("tx",{id,type:"EEG_CALLS_BOOKING",status:"uncertain",payload});}catch(_){ }
+      try{window.NeuronRecovery?.reconcilePendingBookings?.();}catch(_){ }
+      setStatus("🔄 Checking EEG Appointment status…","#7b1fa2");
+      bookingInProgress=false;
+      setFieldsDisabled(false);
+      $("book").disabled=false;
+      $("book").textContent="Book EEG Appointment";
+      $("book").className="cta";
+    }finally{
+      if($("confirmation").hidden && !bookingInProgress){
         $("book").disabled=false;
         $("book").textContent="Book EEG Appointment";
         $("book").className="cta";
-        return;
-      }
-
-      const old=document.querySelector(".booking-error"); if(old)old.remove();
-      const err=document.createElement("div");
-      err.className="booking-error";
-      err.textContent="We couldn't confirm the booking yet. Please do not book again until you check the booking status.";
-      $("submitStatus").after(err);
-      setStatus("Booking response was not confirmed. Please check the booking status.","#b42318");
-
-      // Exactly one manual recovery opportunity, using the original request ID.
-      const check=document.createElement("button");
-      check.type="button";
-      check.className="btn btn-secondary";
-      check.style.marginTop="12px";
-      check.textContent="Check Booking Status";
-      $("submitStatus").append(document.createElement("br"));
-      $("submitStatus").append(check);
-
-      check.onclick=async()=>{
-        check.disabled=true;
-        check.textContent="Checking...";
-        const found=await checkEEGCallsStatus(requestId,false);
-        if(found){
-          showRecoveredConfirmation(found,"✓ Booking recovered successfully.");
-          resetForm();
-          return;
-        }
-        showBookingFailure();
-      };
-    }finally{
-      if($("confirmation").hidden){
-        bookingInProgress=false;
-        setFieldsDisabled(false);
-        $("book").disabled=false;
-        if($("book").textContent!=="Book Again"){
-          $("book").textContent="Book EEG Appointment";
-          $("book").className="cta";
-        }
       }
     }
   };
+
 });

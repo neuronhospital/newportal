@@ -21,7 +21,7 @@
   function showWorking(x){
     const b=ensureBar();
     const name=nameOf(x);
-    const type=x.type==="EEG_BOOKING"?"EEG appointment":"appointment";
+    const type=x.type==="EEG_BOOKING"?"EEG appointment":x.type==="EEG_CALLS_BOOKING"?"EEG Calls appointment":"appointment";
     b.className="neuron-recovery-bar is-working";
     b.innerHTML=`<span class="neuron-recovery-icon" aria-hidden="true">↻</span><span><b>${esc(name)}</b> has a pending ${type}. The system is recovering the appointment status…</span>`;
     b.hidden=false;
@@ -64,12 +64,21 @@
     }catch(_){return null;}
   }
 
+  async function verifyEEGCallsOnce(x){
+    try{
+      return await NeuronAPI.call("checkEEGCallsBookingRequest",{
+        bookingRequestId:x.id
+      },5000);
+    }catch(_){return null;}
+  }
+
   async function verifyTransaction(x){
-    const first=x.type==="OPD_BOOKING"?await verifyOPDOnce(x):await verifyEEGOnce(x);
+    const verify=x.type==="OPD_BOOKING"?verifyOPDOnce:x.type==="EEG_BOOKING"?verifyEEGOnce:verifyEEGCallsOnce;
+    const first=await verify(x);
     if(first?.found)return {result:first,definitiveNotFound:false};
     if(!(first?.ok===true && first?.found===false))return {result:null,definitiveNotFound:false};
     await new Promise(resolve=>setTimeout(resolve,1500));
-    const second=x.type==="OPD_BOOKING"?await verifyOPDOnce(x):await verifyEEGOnce(x);
+    const second=await verify(x);
     if(second?.found)return {result:second,definitiveNotFound:false};
     return {result:null,definitiveNotFound:second?.ok===true && second?.found===false};
   }
@@ -84,18 +93,18 @@
       for(const x of items){
       if(!x || !x.id)continue;
       const name=nameOf(x);
-      recoveringPatientNames.add(normalizedName(name));
+      recoveringPatientNames.add(x.type+"|"+normalizedName(name));
       showWorking(x);
       const checked=await verifyTransaction(x);
 
       if(checked.result?.found){
         try{await IDB.put("tx",{...x,status:"complete",result:checked.result,recoveredAt:Date.now()});}catch(_){}
-        recoveringPatientNames.delete(normalizedName(name));
+        recoveringPatientNames.delete(x.type+"|"+normalizedName(name));
         showResult("recovered",x,checked.result);
         window.dispatchEvent(new CustomEvent("neuron:recovery-result",{detail:{status:"recovered",type:x.type,patientName:name,result:checked.result,payload:x.payload}}));
       }else if(checked.definitiveNotFound){
         try{await IDB.put("tx",{...x,status:"failed",failedAt:Date.now(),failureReason:"Request not found after recovery verification"});}catch(_){}
-        recoveringPatientNames.delete(normalizedName(name));
+        recoveringPatientNames.delete(x.type+"|"+normalizedName(name));
         showResult("failed",x,null);
         window.dispatchEvent(new CustomEvent("neuron:recovery-result",{detail:{status:"failed",type:x.type,patientName:name,result:null,payload:x.payload}}));
       }
@@ -115,12 +124,13 @@
     const targetPhone=normalizedPhone(c.whatsapp);
     const targetCity=String(c.city||"").trim().toLowerCase();
     const targetDate=String(c.appointmentDate||"").trim();
-    if(recoveringPatientNames.has(targetName) && !targetPhone && !targetCity)return true;
+    const targetType=String(c.type||"OPD_BOOKING").trim();
+    if(recoveringPatientNames.has(targetType+"|"+targetName) && !targetPhone && !targetCity)return true;
     const items=await window.IDB.pending().catch(()=>[]);
     return items.some(x=>{
-      if(x.type!=="OPD_BOOKING")return false;
+      if(x.type!==targetType)return false;
       const p=x.payload||{};
-      const sameName=normalizedName(p.childName)===targetName;
+      const sameName=normalizedName(p.childName||p.patientName)===targetName;
       const samePhone=!targetPhone || normalizedPhone(p.whatsapp)===targetPhone;
       const sameCity=!targetCity || String(p.city||"").trim().toLowerCase()===targetCity;
       const sameDate=!targetDate || String(p.appointmentDate||"").trim()===targetDate;
