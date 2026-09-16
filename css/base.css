@@ -213,6 +213,8 @@
 .footer-nav a:nth-child(3n),.footer-nav button:nth-child(3n){border-right:0}
 .footer-nav a:nth-last-child(-n+3),.footer-nav button:nth-last-child(-n+3){border-bottom:0}
 .footer-nav a:active,.footer-nav button:active,.footer-nav button[aria-expanded="true"]{background:#eefaf2}
+.footer-nav .is-current{background:#eee7f7;color:var(--pd);box-shadow:inset 0 -3px 0 var(--p)}
+.footer-nav .is-current .nav-icon{filter:none}
 .footer-nav a:focus-visible,.footer-nav button:focus-visible{outline:2px solid var(--p);outline-offset:-2px;position:relative;z-index:1}
 .nav-icon{width:22px;height:22px;display:block;margin:0}
 .footer-desktop-update{display:none!important}
