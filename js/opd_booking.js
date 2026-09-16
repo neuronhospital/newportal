@@ -883,7 +883,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       }catch(_){}
 
       const currentBookingSession=bookingSessionId;
-      const r=await NeuronAPI.call("bookAppointment",payload,12000);
+      const r=await NeuronAPI.call("bookAppointment",payload,15000);
       if(currentBookingSession!==bookingSessionId)return;
       try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:r});}catch(_){ }
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
@@ -922,6 +922,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
 
   window.addEventListener("neuron:recovery-result",e=>{
     const d=e.detail||{};
+    if(d.globalHandled)return;
     if(d.type!=="OPD_BOOKING")return;
     const currentName=U.title($("name")?.value||"");
     const currentPhone=U.phone($(type==="Follow-up"?"followWa":"wa")?.value||"");
@@ -953,6 +954,25 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
   initFollowupCity();
   fillCities();
   resetFields("New");
+  const applyRecoveryPrefill=()=>{
+    let r=null;
+    try{r=JSON.parse(localStorage.getItem("neuronRecoveryPrefillV1")||"null")}catch(_){r=null}
+    if(!r||r.type!=="OPD_BOOKING")return;
+    const p=r.payload||{};
+    resetFields("New");
+    const set=(id,v)=>{if($(id)&&v!==undefined&&v!==null)$(id).value=String(v)};
+    set("name",p.childName||p.patientName); set("age",p.age); set("unit",p.ageUnit||"years");
+    set("address",p.address); set("ref",p.referredBy); set("wa",p.whatsapp); set("city",p.city); set("next",p.nextFollowupCity);
+    updateCityOptions(); syncCityPickerTrigger();
+    if($("date")){setTodayDateDisplay();$("date").dataset.key=todayKey();$("date").disabled=true;}
+    verified=false;
+    setPostVerifyFieldsLocked(true);
+    lockBookingFields(false);
+    try{localStorage.removeItem("neuronRecoveryPrefillV1")}catch(_){}
+    if($("submitStatus")){ $("submitStatus").textContent="Patient details pre-filled from the failed recovery. Please review the details and submit a new booking."; $("submitStatus").style.color="#7b1fa2"; }
+  };
+
+  applyRecoveryPrefill();
   setTodayDateDisplay();
   $("date").dataset.key=todayKey();
   $("date").disabled=true;

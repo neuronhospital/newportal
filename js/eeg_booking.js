@@ -43,21 +43,19 @@ document.addEventListener("DOMContentLoaded",()=>{
     $('book').className='cta';
   }
 
-  window.addEventListener('neuron:recovery-result',e=>{
-    const d=e.detail||{};
-    if(d.type!=='EEG_BOOKING')return;
-    const patient=String(d.patientName||'').trim();
-    if(!sel || String(sel.name||'').trim()!==patient)return;
-    if(d.status==='recovered'){
-      $('confirmation').innerHTML=`<div class="success"><div class="success-icon">✓</div><h2>Appointment recovered successfully</h2><div class="confirm-row"><span>Patient Name</span><b>${U.esc(patient)}</b></div><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(d.result?.appointmentId||'')}</b></div></div>`;
-      $('confirmation').hidden=false;
-      $('patients').innerHTML='';sel=null;$('payment').hidden=true;resetBookButton();
-    }else if(d.status==='failed'){
-      $('confirmation').innerHTML=`<div class="card"><h2>Appointment failed for ${U.esc(patient)}</h2><p>You can book the appointment again.</p></div>`;
-      $('confirmation').hidden=false;
-      resetBookButton();
-    }
-  });
+  const applyRecoveryPrefill=()=>{
+    let r=null;
+    try{r=JSON.parse(localStorage.getItem("neuronRecoveryPrefillV1")||"null")}catch(_){r=null}
+    if(!r||r.type!=="EEG_BOOKING")return;
+    const p=r.payload||{};
+    if(p.city&&cities.includes(String(p.city)))$('city').value=String(p.city);
+    if(p.whatsapp)$('wa').value=String(p.whatsapp).replace(/\D/g,"").slice(-10);
+    try{localStorage.removeItem("neuronRecoveryPrefillV1")}catch(_){}
+    $('status').textContent="Patient WhatsApp and city pre-filled from the failed recovery. Please load the patient, review the details and submit a new EEG booking.";
+    $('status').style.color='#7b1fa2';
+  };
+  applyRecoveryPrefill();
+
 
   function clearLoadedState(){
     sel=null;
@@ -208,8 +206,9 @@ document.addEventListener("DOMContentLoaded",()=>{
     }catch(e){
       try{await IDB.put('tx',{id,type:'EEG_BOOKING',status:'uncertain',payload:p});}catch(_){}
       try{window.NeuronRecovery?.reconcilePendingBookings?.();}catch(_){}
-      $('confirmation').innerHTML=`<div class="card"><h2>EEG Booking Status</h2><p><b>${U.esc(sel?.name||p.patientName||'Patient')}</b> has a pending EEG appointment.</p><p>The system is recovering the appointment status. You may continue using the portal, but please wait for the recovery status to update before booking the same patient again.</p></div>`;
-      $('confirmation').hidden=false;
+      // Global Recovery Manager is authoritative for the recovery status UI.
+      $('confirmation').hidden=true;
+      $('confirmation').innerHTML='';
       $('book').disabled=false;
       $('book').textContent='Book EEG Appointment';
       $('book').className='cta';

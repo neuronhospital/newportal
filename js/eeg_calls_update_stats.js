@@ -1,6 +1,17 @@
 const EEG_CALLS_ACCESS_KEY="neuron_eeg_calls_access";
 const EEG_CALLS_UPDATE_PASSWORD_HASH="7931486c46d8a4d07e683f1dfa62296fe5ffe494746c59b02a5540a1f1423390";
-let eegCallsUpdateState={months:[],selected:null,busy:false,originMonthKey:""};
+let eegCallsUpdateState={months:[],selected:null,busy:false,originMonthKey:"",cache:null};
+const EEG_CALLS_CACHE_KEY="eegCallsRawCacheV1";
+const EEG_CALLS_CACHE_MONTHS=4;
+function eegCallsUpdateNow_(){return Date.now();}
+function eegCallsUpdateMonthKey_(){const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit"}).formatToParts(new Date());const y=parts.find(x=>x.type==="year")?.value||"";const m=parts.find(x=>x.type==="month")?.value||"";return `${y}-${m}`;}
+function eegCallsUpdateMonthKeys_(){const [y,m]=eegCallsUpdateMonthKey_().split("-").map(Number);const keys=[];for(let i=0;i<EEG_CALLS_CACHE_MONTHS;i++){const d=new Date(Date.UTC(y,m-1-i,1));keys.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}`);}return keys;}
+function eegCallsUpdateTrimRecords_(records){const keys=new Set(eegCallsUpdateMonthKeys_().map(k=>k.replace("-","")));return (Array.isArray(records)?records:[]).filter(r=>keys.has(String(r?.dateKey||"").substring(0,6)));}
+function eegCallsUpdateFormatTimestamp_(value){if(!value)return "-";try{return new Intl.DateTimeFormat("en-IN",{timeZone:"Asia/Kolkata",dateStyle:"medium",timeStyle:"short"}).format(new Date(value));}catch(_){return String(value);}}
+async function eegCallsUpdateGetCache_(){return await IDB.get("cache",EEG_CALLS_CACHE_KEY);}
+async function eegCallsUpdateSaveCache_(cache){await IDB.put("cache",{...cache,key:EEG_CALLS_CACHE_KEY});eegCallsUpdateState.cache=cache;}
+function eegCallsUpdateBuildMonths_(records){const source=eegCallsUpdateTrimRecords_(records);const keys=eegCallsUpdateMonthKeys_();return keys.map((key,offset)=>{const compact=key.replace("-","");const patients=eegCallsUpdateSortPatients_(source.filter(r=>String(r?.dateKey||"").substring(0,6)===compact));const d=new Date(`${key}-01T00:00:00Z`);return {key,label:new Intl.DateTimeFormat("en-IN",{timeZone:"Asia/Kolkata",month:"long",year:"numeric"}).format(d),totalCalls:patients.length,collection:patients.reduce((t,r)=>t+(Number(r.paymentReceived)||0),0),editable:offset===0,patients};});}
+function eegCallsUpdateRenderCacheStatus_(message=""){const box=document.getElementById("cacheStatus");if(!box)return;const c=eegCallsUpdateState.cache;box.innerHTML=`<div><b>Last Data Updated:</b> ${eegCallsUpdateEsc_(eegCallsUpdateFormatTimestamp_(c?.lastDataUpdatedAt))}</div><div><b>Checked At:</b> ${eegCallsUpdateEsc_(eegCallsUpdateFormatTimestamp_(c?.lastCheckedAt))}</div>${message?`<div style="margin-top:6px">${eegCallsUpdateEsc_(message)}</div>`:""}`;box.hidden=false;}
 
 async function eegCallsUpdateSha256_(message){
   const data=new TextEncoder().encode(message);
@@ -64,14 +75,14 @@ function eegCallsUpdateSyncTotalWidths_(){
 function eegCallsUpdateScheduleTotalWidthSync_(){
   requestAnimationFrame(()=>eegCallsUpdateSyncTotalWidths_());
 }
-function eegCallsUpdateRender_(r){
+function eegCallsUpdateRender_(records){
   const root=document.getElementById("monthlyStats");
-  const months=Array.isArray(r.months)?r.months:[];
+  const months=eegCallsUpdateBuildMonths_(records);
   eegCallsUpdateState.months=months;
-  if(!months.length){root.innerHTML=`<div class="card eeg-calls-error">Unable to prepare EEG Calls details.</div>`;return;}
   let html="";
   months.forEach((m,i)=>{html+=eegCallsUpdateRenderMonth_(m,i).html;});
   root.innerHTML=html;
+  eegCallsUpdateRenderCacheStatus_();
   eegCallsUpdateScheduleTotalWidthSync_();
 }
 function eegCallsUpdateShowHistoryError_(message){
@@ -192,77 +203,51 @@ function eegCallsUpdateNoChanges_(){
     samePayment;
 }
 async function eegCallsUpdateSubmit_(){
-  if(eegCallsUpdateNoChanges_()){
-    window.alert("No changes were made. Update was not done.");
-    return;
-  }
+  if(eegCallsUpdateNoChanges_()){window.alert("No changes were made. Update was not done.");return;}
   const p=eegCallsUpdateState.selected;if(!p||eegCallsUpdateState.busy)return;
-  const name=document.getElementById("editName").value.trim();
-  const address=document.getElementById("editAddress").value.trim();
-  const whatsapp=document.getElementById("editWhatsapp").value.replace(/\D/g,"").slice(0,10);
-  const referredBy=document.getElementById("editReferredBy").value.trim();
-  const payment=Number(document.getElementById("editPayment").value);
-  if(!name)return eegCallsUpdateError_("Please enter the patient's name.");
-  if(!address)return eegCallsUpdateError_("Please enter the patient's address.");
-  if(!/^[6-9]\d{9}$/.test(whatsapp))return eegCallsUpdateError_("Enter a valid 10-digit WhatsApp number.");
-  if(!referredBy)return eegCallsUpdateError_("Please enter Referred By Dr / Hospital.");
-  if(!Number.isFinite(payment)||payment<0)return eegCallsUpdateError_("Enter a valid Payment Received amount.");
-  eegCallsUpdateSetBusy_(true);
-  document.getElementById("updateError").hidden=true;
+  const name = document.getElementById("editName").value.trim();
+  const address = document.getElementById("editAddress").value.trim();
+  const whatsapp = document.getElementById("editWhatsapp").value.replace(/\D/g,"").slice(0,10);
+  const referredBy = document.getElementById("editReferredBy").value.trim();
+  const payment = Number(document.getElementById("editPayment").value);
+  if(!name)return eegCallsUpdateError_("Please enter the patient's name.");if(!address)return eegCallsUpdateError_("Please enter the patient's address.");if(!/^[6-9]\d{9}$/.test(whatsapp))return eegCallsUpdateError_("Enter a valid 10-digit WhatsApp number.");if(!referredBy)return eegCallsUpdateError_("Please enter Referred By Dr / Hospital.");if(!Number.isFinite(payment)||payment<0)return eegCallsUpdateError_("Enter a valid Payment Received amount.");
+  eegCallsUpdateSetBusy_(true);document.getElementById("updateError").hidden=true;
   try{
-    // Age, age unit, and EEG technician remain unchanged and are carried
-    // forward from the selected record because the backend update contract
-    // intentionally remains unchanged for this UI-only revision.
-    const r=await NeuronAPI.call("updateEEGCallsPatientDetails",{
-      rowNumber:p.rowNumber,
-      appointmentId:p.appointmentId,
-      patientName:name,
-      age:p.age,
-      ageUnit:p.ageUnit,
-      address,
-      whatsapp,
-      referredBy,
-      eegTechnician:p.eegTechnician,
-      paymentReceived:payment
-    },25000);
+    // Age, age unit, and EEG technician remain unchanged and are carried forward from the selected record because the backend update contract intentionally remains unchanged for this UI-only revision.
+    const r=await NeuronAPI.call("updateEEGCallsPatientDetails",{rowNumber:p.rowNumber,appointmentId:p.appointmentId,patientName:name,age:p.age,ageUnit:p.ageUnit,address,whatsapp,referredBy,eegTechnician:p.eegTechnician,paymentReceived:payment},25000);
     if(!r||r.ok===false||!r.before||!r.after)throw Error("The EEG Calls update response was incomplete or invalid.");
-    const m=eegCallsUpdateState.months.find(x=>Array.isArray(x.patients)&&x.patients.some(y=>Number(y.rowNumber)===Number(p.rowNumber)));
-    if(m){
-      const idx=m.patients.findIndex(y=>Number(y.rowNumber)===Number(p.rowNumber));
-      if(idx>=0){
-        m.patients[idx]={...m.patients[idx],...r.after,ageText:`${r.after.age} ${r.after.ageUnit}`,whatsapp:r.after.whatsapp,paymentReceived:r.after.paymentReceived};
-        m.collection=m.patients.reduce((t,x)=>t+(Number(x.paymentReceived)||0),0);
-        m.totalCalls=m.patients.length;
-      }
-    }
-    const origin=eegCallsUpdateState.originMonthKey;
-    eegCallsUpdateSetBusy_(false);
-    eegCallsUpdateClearForm_();
-    eegCallsUpdateRender_({months:eegCallsUpdateState.months});
-    eegCallsUpdateShowConfirmation_(r);
-    if(origin){
-      const section=document.getElementById(`eeg-calls-month-${origin.replace(/[^A-Za-z0-9_-]/g,"-")}`);
-      if(section)section.scrollIntoView({behavior:"smooth",block:"start"});
-    }
-  }catch(e){
-    eegCallsUpdateError_(e.message||"Unable to update EEG details. Please try again.");
-    eegCallsUpdateSetBusy_(false);
-  }
+    const cache=eegCallsUpdateState.cache||await eegCallsUpdateGetCache_();if(!cache)throw Error("Local EEG Calls cache is unavailable. Please reload the portal.");
+    const idx=cache.records.findIndex(y=>Number(y.rowNumber)===Number(p.rowNumber));if(idx<0)throw Error("The updated EEG Calls record is not present in the local cache. Please reload the portal.");
+    cache.records[idx]={...cache.records[idx],...r.after,ageText:`${r.after.age} ${r.after.ageUnit}`,whatsapp:r.after.whatsapp,paymentReceived:r.after.paymentReceived};
+    cache.records=eegCallsUpdateTrimRecords_(cache.records);cache.lastDataUpdatedAt=eegCallsUpdateNow_();
+    await eegCallsUpdateSaveCache_(cache);
+    const origin=eegCallsUpdateState.originMonthKey;eegCallsUpdateSetBusy_(false);eegCallsUpdateClearForm_();eegCallsUpdateRender_(cache.records);eegCallsUpdateShowConfirmation_(r);
+    if(origin){const section=document.getElementById(`eeg-calls-month-${origin.replace(/[^A-Za-z0-9_-]/g,"-")}`);if(section)section.scrollIntoView({behavior:"smooth",block:"start"});}
+  }catch(e){eegCallsUpdateError_(e.message||"Unable to update EEG details. Please try again.");eegCallsUpdateSetBusy_(false);}
 }
 function eegCallsUpdateError_(message){
   const box=document.getElementById("updateError");if(!box)return;box.textContent=message;box.hidden=false;box.scrollIntoView({behavior:"smooth",block:"center"});
 }
 async function eegCallsUpdateLoad_(){
-  eegCallsUpdateShow_("loading",true);eegCallsUpdateShow_("error",false);eegCallsUpdateShow_("portal",false);eegCallsUpdateShow_("edit",false);eegCallsUpdateShow_("confirmation",false);
+  eegCallsUpdateShow_("loading",true);eegCallsUpdateShow_("error",false);eegCallsUpdateShow_("portal",false);
   try{
-    const r=await NeuronAPI.call("getEEGCallsUpdateStats",{},25000);
-    if(!r||r.ok===false||!Array.isArray(r.months))throw Error("The EEG Calls data response was incomplete or invalid.");
-    eegCallsUpdateRender_(r);eegCallsUpdateShow_("portal",true);
-  }catch(e){
-    const box=document.getElementById("error");
-    box.innerHTML=`Unable to Load EEG Calls Details<br><span style="font-weight:600">${eegCallsUpdateEsc_(e.message||"Unexpected error. Please try again.")}</span><br><button id="retryEEGCalls" class="btn btn-secondary" type="button" style="margin-top:10px">Retry</button>`;
-    eegCallsUpdateShow_("error",true);const retry=document.getElementById("retryEEGCalls");if(retry)retry.onclick=eegCallsUpdateLoad_;
-  }finally{eegCallsUpdateShow_("loading",false);}
+    const cached=await eegCallsUpdateGetCache_();
+    if(cached&&Array.isArray(cached.records)&&Number.isInteger(Number(cached.lastScannedRow))){cached.records=eegCallsUpdateTrimRecords_(cached.records);eegCallsUpdateState.cache=cached;eegCallsUpdateRender_(cached.records);eegCallsUpdateShow_("portal",true);return;}
+    const r=await NeuronAPI.call("getEEGCallsRawRecords",{mode:"initial"},25000);if(!r||r.ok===false||!Array.isArray(r.records))throw Error("The EEG Calls data response was incomplete or invalid.");
+    const now=eegCallsUpdateNow_();const cache={key:EEG_CALLS_CACHE_KEY,records:eegCallsUpdateTrimRecords_(r.records),lastDataUpdatedAt:now,lastCheckedAt:now,lastScannedRow:Number(r.lastScannedRow)||0};await eegCallsUpdateSaveCache_(cache);eegCallsUpdateRender_(cache.records);eegCallsUpdateShow_("portal",true);
+  }catch(e){const box=document.getElementById("error");box.innerHTML=`Unable to Load EEG Calls Details<br><span style="font-weight:600">${eegCallsUpdateEsc_(e.message||"Unexpected error. Please try again.")}</span><br><button id="retryEEGCalls" class="btn btn-secondary" type="button" style="margin-top:10px">Retry</button>`;eegCallsUpdateShow_("error",true);const retry=document.getElementById("retryEEGCalls");if(retry)retry.onclick=eegCallsUpdateLoad_;}
+  finally{eegCallsUpdateShow_("loading",false);}
+}
+async function eegCallsUpdateRefreshData_(){
+  if(eegCallsUpdateState.busy)return;const button=document.getElementById("updateData");if(button)button.disabled=true;eegCallsUpdateClearHistoryError_();
+  try{
+    const cache=eegCallsUpdateState.cache||await eegCallsUpdateGetCache_();if(!cache)throw Error("Local EEG Calls cache is unavailable. Please reload the portal.");
+    const r=await NeuronAPI.call("getEEGCallsRawRecords",{mode:"incremental",startRow:Number(cache.lastScannedRow)+1},25000);if(!r||r.ok===false||!Array.isArray(r.records))throw Error("The EEG Calls update response was incomplete or invalid.");
+    const now=eegCallsUpdateNow_();cache.lastScannedRow=Number(r.lastScannedRow)||cache.lastScannedRow;cache.lastCheckedAt=now;
+    if(r.records.length){const byRow=new Map(cache.records.map(x=>[Number(x.rowNumber),x]));r.records.forEach(x=>byRow.set(Number(x.rowNumber),x));cache.records=eegCallsUpdateTrimRecords_(Array.from(byRow.values()));cache.lastDataUpdatedAt=now;await eegCallsUpdateSaveCache_(cache);eegCallsUpdateRender_(cache.records);eegCallsUpdateRenderCacheStatus_("New EEG Calls data loaded successfully.");}
+    else{await eegCallsUpdateSaveCache_(cache);eegCallsUpdateRenderCacheStatus_("No new EEG Calls data found.");}
+  }catch(e){eegCallsUpdateShowHistoryError_(e.message||"Unable to update EEG Calls data. Please try again.");}
+  finally{if(button)button.disabled=false;}
 }
 
 document.addEventListener("DOMContentLoaded",()=>{
@@ -300,6 +285,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     if(patient)eegCallsUpdateRenderEdit_({...patient,monthKey:eegCallsUpdateState.months[0].key});
   });
   document.getElementById("updateDetails").onclick=eegCallsUpdateSubmit_;
+  document.getElementById("updateData").onclick=eegCallsUpdateRefreshData_;
   document.getElementById("cancelUpdate").onclick=eegCallsUpdateCancel_;
   const downloadMonthFromHeader=e=>{
     const th=e.target.closest(".eeg-mobile-download");

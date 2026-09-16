@@ -17,6 +17,7 @@
 .month-empty{color:var(--muted);font-size:13px;font-weight:600;padding:10px 0 2px}
 .month-total{text-align:center;font-size:13px;font-weight:650;padding:12px 8px 2px;white-space:nowrap;width:var(--eeg-table-width,max-content);max-width:100%;box-sizing:border-box;margin-left:0;margin-right:0}
 .secure-note{text-align:center;color:var(--muted);font-size:12px;margin-top:6px}
+.eeg-cache-toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap}.eeg-cache-status{font-size:12px;color:var(--muted);line-height:1.5}.eeg-cache-status b{color:#222}
 .eeg-edit-separator{border:0;border-top:1px solid var(--line);margin:28px 0 22px}
 .selected-patient{font-size:18px;font-weight:900;margin-bottom:18px}
 .update-busy{background:#6b7280 !important;color:#fff !important;opacity:1}
@@ -30,6 +31,7 @@
 <section id="loading" class="card eeg-calls-loading" hidden>Wait We are Loading EEG Calls Details ...</section>
 <section id="error" class="card eeg-calls-error" hidden></section>
 <section id="portal" hidden>
+  <section class="card eeg-cache-toolbar"><div id="cacheStatus" class="eeg-cache-status" hidden></div><button id="updateData" class="btn btn-secondary" type="button">Update Data</button></section>
   <section id="monthlyStats"></section>
   <div id="historyError" class="update-error" hidden></div>
   <hr class="eeg-edit-separator">
@@ -48,4 +50,4 @@
 </section>
 </div></main><div id="footer"></div>
 <script src="js/config.js"></script><script src="js/api.js"></script><script src="js/utils.js"></script><script src="js/common.js"></script><script src="js/eeg_calls_update_stats.js"></script>
-</body></html>
+<script src="js/idb.js"></script><script src="js/recovery.js"></script></body></html>

@@ -89,6 +89,21 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("waStatus").textContent="";
   };
 
+  const applyRecoveryPrefill=()=>{
+    let r=null;
+    try{r=JSON.parse(localStorage.getItem("neuronRecoveryPrefillV1")||"null")}catch(_){r=null}
+    if(!r||r.type!=="EEG_CALLS_BOOKING")return;
+    const p=r.payload||{};
+    const set=(id,v)=>{if($(id)&&v!==undefined&&v!==null)$(id).value=String(v)};
+    set("patientName",p.patientName||p.childName); set("age",p.age); set("ageUnit",p.ageUnit||"years"); set("address",p.address);
+    set("whatsapp",p.whatsapp); set("verifyWhatsapp",""); set("referredBy",p.referredBy);
+    // Payment and transaction identity are intentionally reset to normal defaults.
+    try{localStorage.removeItem("neuronRecoveryPrefillV1")}catch(_){}
+    checkWhatsApp();
+    setStatus("Patient details pre-filled from the failed recovery. Please review the details and submit a new EEG Calls booking.","#7b1fa2");
+  };
+  applyRecoveryPrefill();
+
   const showConfirmation=(r)=>{
     const html=`<div class="success"><div class="success-icon">✓</div><h2>EEG Appointment Confirmed</h2><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(r.patientName)}</b></div><div class="confirm-row"><span>Age</span><b>${U.esc(r.age)} ${U.esc(r.ageUnit)}</b></div><div class="confirm-row"><span>Address</span><b>${U.esc(r.address)}</b></div><div class="confirm-row"><span>WhatsApp</span><b>+91 ${U.esc(r.whatsapp)}</b></div><div class="confirm-row"><span>Referred By</span><b>${U.esc(r.referredBy)}</b></div><div class="confirm-row"><span>EEG Technician</span><b>${U.esc(r.eegTechnician)}</b></div><div class="confirm-row"><span>Payment Received</span><b>${U.money(r.paymentReceived)}</b></div><div class="confirm-row"><span>Date of Booking</span><b>${U.date(r.date)}</b></div></div>`;
     $("confirmation").innerHTML=html;
@@ -123,6 +138,7 @@ document.addEventListener("DOMContentLoaded",()=>{
 
   window.addEventListener("neuron:recovery-result",e=>{
     const d=e.detail||{};
+    if(d.globalHandled)return;
     if(d.type!=="EEG_CALLS_BOOKING")return;
     const currentName=U.title($("patientName")?.value||"");
     const currentPhone=U.phone($("whatsapp")?.value||"");
@@ -203,7 +219,7 @@ document.addEventListener("DOMContentLoaded",()=>{
 
     try{
       try{await IDB.put("tx",{id,type:"EEG_CALLS_BOOKING",status:"pending",payload});}catch(_){}
-      const r=await NeuronAPI.call("bookEEGCallsAppointment",payload,12000);
+      const r=await NeuronAPI.call("bookEEGCallsAppointment",payload,15000);
       try{await IDB.put("tx",{id,type:"EEG_CALLS_BOOKING",status:"complete",payload,result:r});}catch(_){ }
       showConfirmation(r);
       setStatus("✓ EEG Appointment submitted successfully.","#168a4a");
