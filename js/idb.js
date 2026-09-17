@@ -4,7 +4,7 @@ window.IDB={
  put(s,v){return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction(s,"readwrite");t.objectStore(s).put({...v,updatedAt:Date.now()});t.oncomplete=ok;t.onerror=()=>no(t.error)}))},
  get(s,k){return this.open().then(d=>new Promise((ok,no)=>{const r=d.transaction(s).objectStore(s).get(k);r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)}))},
  delete(s,k){return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction(s,"readwrite");t.objectStore(s).delete(k);t.oncomplete=ok;t.onerror=()=>no(t.error)}))},
- replace(s,k,v){return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction(s,"readwrite"),st=t.objectStore(s);st.delete(k);st.put({...v,key:k,updatedAt:Date.now()});t.oncomplete=ok;t.onerror=()=>no(t.error)}))},
+ replace(s,k,v){return this.open().then(d=>new Promise((ok,no)=>{let settled=false;const done=fn=>x=>{if(settled)return;settled=true;fn(x)};const t=d.transaction(s,"readwrite"),st=t.objectStore(s);t.oncomplete=done(ok);t.onerror=done(()=>no(t.error||new Error("IndexedDB replacement failed.")));t.onabort=done(()=>no(t.error||new Error("IndexedDB replacement aborted.")));st.delete(k);st.put({...v,key:k,updatedAt:Date.now()});}))},
  all(s){return this.open().then(d=>new Promise((ok,no)=>{const r=d.transaction(s).objectStore(s).getAll();r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)}))},
  pending(){return this.all("tx").then(a=>a.filter(x=>x.status==="pending"||x.status==="uncertain"))}
 };
