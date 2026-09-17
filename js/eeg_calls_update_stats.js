@@ -234,7 +234,7 @@ async function eegCallsUpdateLoad_(){
     const cached=await eegCallsUpdateGetCache_();
     if(cached&&Array.isArray(cached.records)&&Number.isInteger(Number(cached.lastScannedRow))){cached.records=eegCallsUpdateTrimRecords_(cached.records);eegCallsUpdateState.cache=cached;eegCallsUpdateRender_(cached.records);eegCallsUpdateShow_("portal",true);return;}
     const r=await NeuronAPI.call("getEEGCallsRawRecords",{mode:"initial"},25000);if(!r||r.ok===false||!Array.isArray(r.records))throw Error("The EEG Calls data response was incomplete or invalid.");
-    const now=eegCallsUpdateNow_();const cache={key:EEG_CALLS_CACHE_KEY,records:eegCallsUpdateTrimRecords_(r.records),lastDataUpdatedAt:now,lastCheckedAt:now,lastScannedRow:Number(r.lastScannedRow)||0};await eegCallsUpdateSaveCache_(cache);eegCallsUpdateRender_(cache.records);eegCallsUpdateShow_("portal",true);
+    const now=eegCallsUpdateNow_();const cache={key:EEG_CALLS_CACHE_KEY,records:r.records,lastDataUpdatedAt:now,lastCheckedAt:now,lastScannedRow:Number(r.lastScannedRow)||0};await eegCallsUpdateSaveCache_(cache);eegCallsUpdateRender_(cache.records);eegCallsUpdateShow_("portal",true);
   }catch(e){const box=document.getElementById("error");box.innerHTML=`Unable to Load EEG Calls Details<br><span style="font-weight:600">${eegCallsUpdateEsc_(e.message||"Unexpected error. Please try again.")}</span><br><button id="retryEEGCalls" class="btn btn-secondary" type="button" style="margin-top:10px">Retry</button>`;eegCallsUpdateShow_("error",true);const retry=document.getElementById("retryEEGCalls");if(retry)retry.onclick=eegCallsUpdateLoad_;}
   finally{eegCallsUpdateShow_("loading",false);}
 }
@@ -242,10 +242,13 @@ async function eegCallsUpdateRefreshData_(){
   if(eegCallsUpdateState.busy)return;const button=document.getElementById("updateData");if(button)button.disabled=true;eegCallsUpdateClearHistoryError_();
   try{
     const cache=eegCallsUpdateState.cache||await eegCallsUpdateGetCache_();if(!cache)throw Error("Local EEG Calls cache is unavailable. Please reload the portal.");
-    const r=await NeuronAPI.call("getEEGCallsRawRecords",{mode:"incremental",startRow:Number(cache.lastScannedRow)+1},25000);if(!r||r.ok===false||!Array.isArray(r.records))throw Error("The EEG Calls update response was incomplete or invalid.");
-    const now=eegCallsUpdateNow_();cache.lastScannedRow=Number(r.lastScannedRow)||cache.lastScannedRow;cache.lastCheckedAt=now;
-    if(r.records.length){const byRow=new Map(cache.records.map(x=>[Number(x.rowNumber),x]));r.records.forEach(x=>byRow.set(Number(x.rowNumber),x));cache.records=eegCallsUpdateTrimRecords_(Array.from(byRow.values()));cache.lastDataUpdatedAt=now;await eegCallsUpdateSaveCache_(cache);eegCallsUpdateRender_(cache.records);eegCallsUpdateRenderCacheStatus_("New EEG Calls data loaded successfully.");}
-    else{await eegCallsUpdateSaveCache_(cache);eegCallsUpdateRenderCacheStatus_("No new EEG Calls data found.");}
+    const r=await NeuronAPI.call("getEEGCallsRawRecords",{mode:"latest120"},25000);if(!r||r.ok===false||!Array.isArray(r.records))throw Error("The EEG Calls update response was incomplete or invalid.");
+    const now=eegCallsUpdateNow_();
+    const freshCache={key:EEG_CALLS_CACHE_KEY,records:r.records,lastDataUpdatedAt:now,lastCheckedAt:now,lastScannedRow:Number(r.lastScannedRow)||0};
+    await IDB.replace("cache",EEG_CALLS_CACHE_KEY,freshCache);
+    eegCallsUpdateState.cache=freshCache;
+    eegCallsUpdateRender_(freshCache.records);
+    eegCallsUpdateRenderCacheStatus_("EEG Calls data updated successfully.");
   }catch(e){eegCallsUpdateShowHistoryError_(e.message||"Unable to update EEG Calls data. Please try again.");}
   finally{if(button)button.disabled=false;}
 }

@@ -102,6 +102,32 @@ document.addEventListener("DOMContentLoaded",()=>{
     checkWhatsApp();
     setStatus("Patient details pre-filled from the failed recovery. Please review the details and submit a new EEG Calls booking.","#7b1fa2");
   };
+  async function updateEEGCallsCacheFromBooking_(result){
+    const rowNumber=Number(result?.rowNumber);
+    if(!Number.isInteger(rowNumber)||rowNumber<2)return;
+    const record={
+      rowNumber:rowNumber, appointmentId:String(result.appointmentId||""),
+      date:String(result.date||""), dateKey:/^\d{8}$/.test(String(result.date||""))?String(result.date):"",
+      time:String(result.time||""), patientName:String(result.patientName||""), age:result.age, ageUnit:String(result.ageUnit||""),
+      ageText:(result.age!=null&&result.ageUnit)?`${result.age} ${result.ageUnit}`:"",
+      address:String(result.address||""), whatsapp:String(result.whatsapp||""),
+      referredBy:String(result.referredBy||""), paymentReceived:Number(result.paymentReceived)||0,
+      eegTechnician:String(result.eegTechnician||"")
+    };
+    const key="eegCallsRawCacheV1";
+    const cache=await IDB.get("cache",key);
+    if(cache&&Array.isArray(cache.records)){
+      const byRow=new Map(cache.records.map(x=>[Number(x?.rowNumber),x]));
+      byRow.set(rowNumber,record);
+      cache.records=Array.from(byRow.values()).sort((a,b)=>(Number(a.rowNumber)||0)-(Number(b.rowNumber)||0));
+      if(cache.records.length>120)cache.records=cache.records.slice(-120);
+      cache.lastScannedRow=Math.max(Number(cache.lastScannedRow)||0,rowNumber);
+      cache.lastCheckedAt=Date.now();
+      cache.lastDataUpdatedAt=Date.now();
+      await IDB.put("cache",cache);
+    }
+  }
+
   applyRecoveryPrefill();
 
   const showConfirmation=(r)=>{
@@ -221,6 +247,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       try{await IDB.put("tx",{id,type:"EEG_CALLS_BOOKING",status:"pending",payload});}catch(_){}
       const r=await NeuronAPI.call("bookEEGCallsAppointment",payload,15000);
       try{await IDB.put("tx",{id,type:"EEG_CALLS_BOOKING",status:"complete",payload,result:r});}catch(_){ }
+      try{await updateEEGCallsCacheFromBooking_(r);}catch(_){ }
       showConfirmation(r);
       setStatus("✓ EEG Appointment submitted successfully.","#168a4a");
       resetForm();
