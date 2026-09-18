@@ -41,7 +41,7 @@
       case "waiting_network": return "Waiting for network connection…";
       case "retry_wait": return `Verification ${a} of 3 — Waiting to retry…`;
       case "retrying": return `Verification ${a} of 3 — Checking appointment…`;
-      case "confirming": return `Verification ${a} of 3 — Appointment not found · Confirming in 2.5 sec…`;
+      case "confirming": return `Verification ${a} of 3 — Appointment not found · Confirming in 2 sec…`;
       case "verifying": return `Verification ${a} of 3 — Checking appointment…`;
       case "final": return "Verification 3 of 3 — Final confirmation…";
       default: return "Recovering appointment status…";
@@ -222,7 +222,7 @@
           }
           // A positive response that does not match the original request is
           // an unresolved verification result. Consume this attempt and move
-          // to the next verification after the fixed 2.5 second gap.
+          // to the next verification after the fixed 2 second gap.
           if(attempt===3){await failRecovery(x);return;}
           upsertState({id:x.id,status:"recovering",attempt,phase:"retry_wait",updatedAt:Date.now()});
           renderBar();
@@ -250,7 +250,7 @@
         // response. If the browser is now offline, do not consume the attempt:
         // wait for the online event and repeat this same verification attempt.
         // If the browser is online, this was a real failed verification attempt
-        // and it must be consumed before advancing after the fixed 2.5s gap.
+        // and it must be consumed before advancing after the fixed 2s gap.
         if(!navigator.onLine){
           upsertState({id:x.id,status:"recovering",attempt,phase:"waiting_network",updatedAt:Date.now()});
           renderBar();
