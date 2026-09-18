@@ -112,7 +112,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     $('load').className='btn btn-primary';
     $('loadMessage').hidden=false;
     try{
-      const r=await NeuronAPI.call('getEEGBookingPatients',{whatsapp:U.phone($('wa').value),city:$('city').value});
+      const r=await IDB.getTodayPatientsByWhatsApp_({whatsapp:U.phone($('wa').value),city:$('city').value});r.patients=(r.patients||[]).filter(p=>p.eegCharges===null||p.eegCharges===undefined||p.eegCharges==='');
       $('patients').innerHTML='';
       if(!r.patients.length){
         $('status').textContent = r.todayAppointmentFound===false

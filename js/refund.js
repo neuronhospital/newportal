@@ -23,9 +23,8 @@ function loadRefund(){
  const b=document.getElementById('loadBtn');b.textContent='Loading...';b.disabled=true;
  document.getElementById('status').style.color='';
  document.getElementById('status').textContent='Wait we are retrieving patient information';
- api({action:'getRefundPatients',whatsapp:document.getElementById('whatsapp').value,city:document.getElementById('refundCity').value}).then(x=>{
+ IDB.getTodayPatientsByWhatsApp_({whatsapp:document.getElementById('whatsapp').value,city:document.getElementById('refundCity').value}).then(x=>{
   b.textContent='Load';b.disabled=false;
-  if(!x.ok) throw Error(x.error||'Unable to retrieve patient information.');
   const patients=x.patients||[];
   if(!patients.length){
    document.getElementById('status').textContent=x.todayAppointmentFound===false

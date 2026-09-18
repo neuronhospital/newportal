@@ -27,6 +27,50 @@ window.IDB={
  all(s){return this.open().then(d=>new Promise((ok,no)=>{const r=d.transaction(s).objectStore(s).getAll();r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)}))},
  pending(){return this.all("tx").then(a=>a.filter(x=>x.status==="pending"||x.status==="uncertain"))},
  deleteCacheByPrefixExcept(s,prefix,keepPrefix){return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction(s,"readwrite"),st=t.objectStore(s),r=st.openCursor();r.onsuccess=()=>{const c=r.result;if(!c)return;const k=String(c.key||"");if(k.startsWith(prefix)&&(!keepPrefix||!k.startsWith(keepPrefix)))c.delete();c.continue()};r.onerror=()=>no(r.error);t.oncomplete=ok;t.onerror=()=>no(t.error)}))},
+ todayKey_(){
+  const p=window.U?.parts?.()||(()=>{const d=new Date();return {y:d.getFullYear(),m:d.getMonth()+1,d:d.getDate()};})();
+  return `${p.y}${String(p.m).padStart(2,"0")}${String(p.d).padStart(2,"0")}`;
+ },
+ normalizeWhatsApp_(v){
+  const raw=String(v==null?"":v).replace(/\D/g,"");
+  return raw.length>10?raw.slice(-10):raw;
+ },
+ findTodayPatientsByWhatsApp_({city,whatsapp,date}={}){
+  const c=String(city||"").trim();
+  const d=/^\d{8}$/.test(String(date||""))?String(date):this.todayKey_();
+  const phone=this.normalizeWhatsApp_(whatsapp);
+  const key=`OPD_TODAY|${d}|${c}`;
+  if(!c||!phone)return Promise.resolve({cache:null,patients:[]});
+  return this.get("cache",key).then(cache=>{
+   const patients=Array.isArray(cache?.patients)?cache.patients.filter(p=>
+    String(p?.city||c).trim()===c && this.normalizeWhatsApp_(p?.whatsapp)===phone
+   ):[];
+   return {cache:cache||null,patients,todayAppointmentFound:Array.isArray(cache?.patients)&&cache.patients.some(p=>String(p?.city||c).trim()===c)};
+  });
+ },
+ getTodayPatientsByWhatsApp_({city,whatsapp}={}){
+  const c=String(city||"").trim();
+  const phone=this.normalizeWhatsApp_(whatsapp);
+  const date=this.todayKey_();
+  if(!c||!/^\d{10}$/.test(phone))return Promise.resolve({source:"invalid",patients:[],cache:null});
+  return this.findTodayPatientsByWhatsApp_({city:c,whatsapp:phone,date}).then(async local=>{
+   if(local.patients.length)return {source:"idb",patients:local.patients,cache:local.cache,todayAppointmentFound:local.todayAppointmentFound};
+   const r=await window.NeuronAPI.call("getTodayOPDPatientList",{city:c},15000);
+   if(!r||r.ok!==true)throw Error(r?.error||"Unable to retrieve today's OPD patient list.");
+   const serverDate=/^\d{8}$/.test(String(r.date||""))?String(r.date):date;
+   const serverCity=String(r.city||c).trim()||c;
+   const patients=Array.isArray(r.patients)?r.patients:[];
+   const now=Date.now();
+   const key=`OPD_TODAY|${serverDate}|${serverCity}`;
+   const record={key,type:"OPD_TODAY",date:serverDate,city:serverCity,patients:[...patients],
+    status:r.complete===false?"CACHED_INCOMPLETE":"REFRESHED",complete:r.complete===true,
+    lastServerRefreshAt:now,lastServerCheckAt:now,cachedAt:now};
+   if(r.serialGapDetected===true||this.serialGap_(patients,"appointmentId"))record.status="STALE";
+   await this.replace("cache",key,record);
+   const matches=patients.filter(p=>String(p?.city||serverCity).trim()===c&&this.normalizeWhatsApp_(p?.whatsapp)===phone);
+   return {source:"server",patients:matches,cache:record,todayAppointmentFound:patients.some(p=>String(p?.city||serverCity).trim()===c)};
+  });
+ },
  syncBookingCaches_(booking){return this.open().then(d=>new Promise((ok,no)=>{
   const kind=String(booking?.kind||"").trim();
   const appointmentId=String(booking?.appointmentId||"").trim();
