@@ -195,10 +195,10 @@ document.addEventListener("DOMContentLoaded",()=>{
     $('book').className='btn btn-success';
     $('bookMessage').hidden=false;
     $('bookMessage').textContent='Wait we are Confirming your EEG Booking...';
-    const id=U.requestId8(),p={eegBookingRequestId:id,bookingRequestId:sel.bookingRequestId||"",appointmentId:sel.appointmentId,rowNumber:sel.rowNumber,patientName:sel.name,whatsapp:wa,city:$('city').value,eegCharges:total,eegPaymentMode:m,eegCashPaid:cPaid,eegOnlinePaid:oPaid};
+    const id=U.requestId8(),startedAt=Date.now(),timeoutMs=15000,p={eegBookingRequestId:id,bookingRequestId:sel.bookingRequestId||"",appointmentId:sel.appointmentId,rowNumber:sel.rowNumber,patientName:sel.name,whatsapp:wa,city:$('city').value,eegCharges:total,eegPaymentMode:m,eegCashPaid:cPaid,eegOnlinePaid:oPaid};
     try{
-      try{await IDB.put('tx',{id,type:'EEG_BOOKING',status:'pending',payload:p});}catch(_){}
-      const r=await NeuronAPI.call('bookEEG',p,20000);
+      try{await IDB.put('tx',{id,type:'EEG_BOOKING',status:'pending',startedAt,timeoutMs,payload:p});}catch(_){}
+      const r=await NeuronAPI.call('bookEEG',p,timeoutMs);
       try{await IDB.put('tx',{id,type:'EEG_BOOKING',status:'complete',payload:p,result:r});}catch(_){}
       try{await window.syncSuccessfulBookingToTodayCaches_?.({kind:'EEG_BOOKING',appointmentId:r.appointmentId||p.appointmentId,date:r.date||sel.date||(()=>{const q=U.parts();return q.y+String(q.m).padStart(2,'0')+String(q.d).padStart(2,'0')})(),time:r.time||sel.time||'',patientName:r.patientName||sel.name,age:r.age??sel.age,ageUnit:r.ageUnit||sel.ageUnit,address:r.address??sel.address,patientType:r.patientType||sel.patientType,whatsapp:p.whatsapp,city:r.city||p.city,referredBy:r.referredBy??sel.referredBy,nextFollowupCity:r.nextFollowupCity??sel.nextFollowupCity,bookingRequestId:p.bookingRequestId,eegCharges:r.eegCharges??p.eegCharges,eegCashPaid:r.eegCashPaid??p.eegCashPaid,eegOnlinePaid:r.eegOnlinePaid??p.eegOnlinePaid,eegTotalPaid:r.eegTotalPaid??p.eegCharges,eegBookingRequestId:r.eegBookingRequestId||id});}catch(_){}
       const confirmationPatient=r.patientName||sel.name;

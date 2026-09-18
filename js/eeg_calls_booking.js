@@ -198,7 +198,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       return;
     }
 
-    const id=U.requestId8();
+    const id=U.requestId8(),startedAt=Date.now(),timeoutMs=15000;
     const payload={
       bookingRequestId:id,
       patientName:U.title($("patientName").value),
@@ -218,8 +218,8 @@ document.addEventListener("DOMContentLoaded",()=>{
     setFieldsDisabled(true);
 
     try{
-      try{await IDB.put("tx",{id,type:"EEG_CALLS_BOOKING",status:"pending",payload});}catch(_){}
-      const r=await NeuronAPI.call("bookEEGCallsAppointment",payload,15000);
+      try{await IDB.put("tx",{id,type:"EEG_CALLS_BOOKING",status:"pending",startedAt,timeoutMs,payload});}catch(_){}
+      const r=await NeuronAPI.call("bookEEGCallsAppointment",payload,timeoutMs);
       try{await IDB.put("tx",{id,type:"EEG_CALLS_BOOKING",status:"complete",payload,result:r});}catch(_){ }
       try{await window.syncSuccessfulBookingToTodayCaches_?.({kind:"EEG_CALLS_BOOKING",rowNumber:r.rowNumber,appointmentId:r.appointmentId,date:r.date,time:r.time,patientName:r.patientName,age:r.age,ageUnit:r.ageUnit,address:r.address,whatsapp:r.whatsapp,referredBy:r.referredBy,paymentReceived:r.paymentReceived,eegTechnician:r.eegTechnician,bookingRequestId:id});}catch(_){ }
       showConfirmation(r);

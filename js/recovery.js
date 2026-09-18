@@ -8,6 +8,7 @@
   let reconcilePromise=null;
   const activeWorkers=new Set();
   const onlineWaiters=new Set();
+  const pendingTimers=new Map();
 
   const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
   const nameOf=x=>String(x?.payload?.childName||x?.payload?.patientName||"Patient").trim()||"Patient";
@@ -49,11 +50,14 @@
 
   function renderBar(){
     const states=readState();
-    const active=states.find(x=>x.status==="recovering")||states.find(x=>x.status==="recovered"||x.status==="failed");
+    const active=states.find(x=>x.status==="recovering")||states.find(x=>x.status==="pending")||states.find(x=>x.status==="recovered"||x.status==="failed");
     const b=ensureBar();
     if(!active){b.hidden=true;return}
     const label=typeLabel(active.type),name=nameOf(active);
-    if(active.status==="recovering"){
+    if(active.status==="pending"){
+      b.className="neuron-recovery-bar is-working";
+      b.innerHTML=`<span class="neuron-recovery-icon" aria-hidden="true">↻</span><span><b>${esc(label)}</b> — Booking still in progress<br>Patient Name: <b>${esc(name)}</b><br>The previous booking request is still pending. We’ll verify it automatically after the normal timeout.</span>`;
+    }else if(active.status==="recovering"){
       b.className="neuron-recovery-bar is-working";
       b.innerHTML=`<span class="neuron-recovery-icon" aria-hidden="true">↻</span><span><b>${esc(label)}</b> Recovery in progress<br>Patient Name: <b>${esc(name)}</b><br>${esc(recoveryPhaseText(active))}</span>`;
     }else if(active.status==="recovered"){
@@ -146,6 +150,7 @@
   window.syncRecoveredBookingToTodayCaches_=syncRecoveredBookingToTodayCaches_;
 
   async function completeRecovery(x,result){
+    clearPendingTimer(x.id);
     const booking={
       kind:x.type,
       appointmentId:result.appointmentId||x.payload?.appointmentId||"",
@@ -182,6 +187,7 @@
   }
 
   async function failRecovery(x){
+    clearPendingTimer(x.id);
     // Persist the recovery journal state so it is no longer considered
     // pending. No IDB application cache is written or refreshed.
     try{await IDB.put("tx",{...x,status:"failed",failedAt:Date.now(),failureReason:"Request not found after recovery verification"});}catch(_){ }
@@ -267,18 +273,59 @@
     }
   }
 
+  function pendingTiming(x){
+    const startedAt=Number(x?.startedAt)||Number(x?.updatedAt)||0;
+    const timeoutMs=Number(x?.timeoutMs)||15000;
+    return {startedAt,timeoutMs};
+  }
+
+  function clearPendingTimer(id){
+    const t=pendingTimers.get(id);
+    if(t){clearTimeout(t);pendingTimers.delete(id);}
+  }
+
+  function schedulePendingExpiry(x){
+    if(!x?.id)return;
+    clearPendingTimer(x.id);
+    const {startedAt,timeoutMs}=pendingTiming(x);
+    if(!startedAt||!Number.isFinite(timeoutMs)||timeoutMs<=0)return;
+    const delay=Math.max(0,startedAt+timeoutMs-Date.now()+10);
+    const timer=setTimeout(()=>{pendingTimers.delete(x.id);reconcilePendingBookings();},delay);
+    pendingTimers.set(x.id,timer);
+  }
+
   async function reconcilePendingBookings(){
     if(reconcilePromise)return reconcilePromise;
     if(!window.IDB?.pending)return;
     reconcilePromise=(async()=>{
       try{
-        // IDB.pending() intentionally includes both live pending requests and
-        // uncertain requests. Recovery is allowed only for uncertain requests.
-        const items=(await window.IDB.pending().catch(()=>[])).filter(x=>x?.status==="uncertain");
-        const pendingIds=new Set(items.map(x=>x?.id).filter(Boolean));
-        readState().filter(x=>x.status==="recovering"&&!pendingIds.has(x.id)&&!activeWorkers.has(x.id)).forEach(x=>removeState(x.id));
-        for(const x of items){
-          if(!x?.id)continue;
+        const all=(await window.IDB.pending().catch(()=>[])).filter(x=>x?.id);
+        const uncertain=[];
+        const livePending=[];
+        const now=Date.now();
+        for(const x of all){
+          if(x.status==="uncertain"){
+            uncertain.push(x);
+            continue;
+          }
+          if(x.status!=="pending")continue;
+          const {startedAt,timeoutMs}=pendingTiming(x);
+          if(startedAt&&Number.isFinite(timeoutMs)&&timeoutMs>0&&now>=startedAt+timeoutMs){
+            const promoted={...x,status:"uncertain",uncertainAt:now};
+            try{await IDB.put("tx",promoted);uncertain.push(promoted);clearPendingTimer(x.id);}catch(_){
+              livePending.push(x);
+            }
+          }else{
+            livePending.push(x);
+            upsertState({id:x.id,type:x.type,status:"pending",payload:x.payload||{},startedAt,timeoutMs,updatedAt:now});
+            schedulePendingExpiry(x);
+          }
+        }
+
+        const activeIds=new Set([...uncertain,...livePending].map(x=>x.id));
+        readState().filter(x=>(x.status==="recovering"||x.status==="pending")&&!activeIds.has(x.id)&&!activeWorkers.has(x.id)).forEach(x=>{clearPendingTimer(x.id);removeState(x.id)});
+
+        for(const x of uncertain){
           const existing=getState(x.id);
           upsertState({id:x.id,type:x.type,status:"recovering",payload:x.payload||{},result:existing?.result||null,attempt:existing?.attempt||1,phase:(!navigator.onLine?"waiting_network":existing?.phase||"retrying"),updatedAt:Date.now()});
           renderBar();
@@ -286,8 +333,10 @@
           // coordinator and normal website operations remain non-blocking.
           runRecovery(x);
         }
-        if(!navigator.onLine&&items.length){
+        if(!navigator.onLine&&uncertain.length){
           readState().filter(x=>x.status==="recovering").forEach(x=>upsertState({id:x.id,phase:"waiting_network",updatedAt:Date.now()}));
+          renderBar();
+        }else if(livePending.length&&!uncertain.length){
           renderBar();
         }
       }finally{
