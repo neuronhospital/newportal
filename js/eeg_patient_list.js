@@ -1,6 +1,7 @@
 (() => {
-  const CACHE_PREFIX = "EEG_TODAY|";
-  const CACHE_TYPE = "EEG_TODAY";
+  const CACHE_PREFIX = "OPD_TODAY|";
+  const CACHE_TYPE = "OPD_TODAY";
+  const LEGACY_EEG_PREFIX = ["EEG", "TODAY"].join("_") + "|";
   const popupState = { open: false, city: "", key: "", updating: false };
 
   const esc = v => U.esc(v == null ? "" : v);
@@ -12,6 +13,14 @@
 
   function currentCity() {
     return String(window.TodayCity?.resolve?.() || "").trim();
+  }
+
+  function isEEGPatient(p) {
+    return p?.eegCharges !== null && p?.eegCharges !== undefined && p?.eegCharges !== "";
+  }
+
+  function eegPatients(patients) {
+    return (Array.isArray(patients) ? patients : []).filter(isEEGPatient);
   }
 
   function ageText(p) {
@@ -52,7 +61,7 @@
   function render(record) {
     const list = $("eegTodayList");
     if (!list) return;
-    const patients = sortPatients(record?.patients || []);
+    const patients = sortPatients(eegPatients(record?.patients));
     if (!patients.length) {
       list.innerHTML = '<div class="eeg-today-empty">No EEG patients found for today.</div>';
       return;
@@ -89,28 +98,13 @@
     }
   }
 
-  async function cleanupOldCaches(today) {
-    try { await IDB.deleteCacheByPrefixExcept("cache", CACHE_PREFIX, `${CACHE_PREFIX}${today}|`); } catch (_) {}
-  }
-
-  function baseRecord(date, city, patients, complete, refreshAt) {
-    return {
-      key: cacheKey(date, city),
-      type: CACHE_TYPE,
-      date,
-      city,
-      patients: sortPatients(patients),
-      status: complete ? "CACHED_COMPLETE" : "CACHED_INCOMPLETE",
-      complete: complete === true,
-      lastServerRefreshAt: refreshAt,
-      lastServerCheckAt: refreshAt,
-      cachedAt: refreshAt
-    };
+  async function cleanupLegacyCache() {
+    try { await IDB.deleteCacheByPrefixExcept("cache", LEGACY_EEG_PREFIX, "__none__"); } catch (_) {}
   }
 
   async function retrieveFromServer(city) {
-    const r = await NeuronAPI.call("getTodayEEGPatientList", { city }, 25000);
-    if (!r || r.ok !== true) throw Error(r?.error || "Unable to retrieve today's EEG patient list.");
+    const r = await NeuronAPI.call("getTodayOPDPatientList", { city }, 25000);
+    if (!r || r.ok !== true) throw Error(r?.error || "Unable to retrieve today's OPD patient list.");
     return r;
   }
 
@@ -123,8 +117,20 @@
     try {
       const r = await retrieveFromServer(city);
       const now = Date.now();
-      const record = baseRecord(date, city, r.patients, r.complete !== false, now);
-      record.status = r.complete === false ? "CACHED_INCOMPLETE" : "REFRESHED";
+      const patients = Array.isArray(r.patients) ? r.patients : [];
+      const record = {
+        key,
+        type: CACHE_TYPE,
+        date: String(r.date || date),
+        city: String(r.city || city).trim() || city,
+        patients,
+        status: r.complete === false ? "CACHED_INCOMPLETE" : "REFRESHED",
+        complete: r.complete === true,
+        lastServerRefreshAt: now,
+        lastServerCheckAt: now,
+        cachedAt: now
+      };
+      if (r.serialGapDetected === true || IDB.serialGap_(patients, "appointmentId")) record.status = "STALE";
       await IDB.replace("cache", key, record);
       render(record);
       setLastUpdated(record);
@@ -164,7 +170,7 @@
     }
 
     $("eegTodayList").innerHTML = '<div class="eeg-today-loading">Loading…</div>';
-    await cleanupOldCaches(date);
+    await cleanupLegacyCache();
 
     let record = await IDB.get("cache", popupState.key).catch(() => null);
     if (record) {

@@ -55,7 +55,7 @@ window.IDB={
   if(!c||!/^\d{10}$/.test(phone))return Promise.resolve({source:"invalid",patients:[],cache:null});
   return this.findTodayPatientsByWhatsApp_({city:c,whatsapp:phone,date}).then(async local=>{
    if(local.patients.length)return {source:"idb",patients:local.patients,cache:local.cache,todayAppointmentFound:local.todayAppointmentFound};
-   const r=await window.NeuronAPI.call("getTodayOPDPatientList",{city:c},15000);
+   const r=await window.NeuronAPI.call("getTodayOPDPatientList",{city:c},25000);
    if(!r||r.ok!==true)throw Error(r?.error||"Unable to retrieve today's OPD patient list.");
    const serverDate=/^\d{8}$/.test(String(r.date||""))?String(r.date):date;
    const serverCity=String(r.city||c).trim()||c;
@@ -78,14 +78,13 @@ window.IDB={
   const date=String(booking?.date||booking?.appointmentDate||"").trim();
   const isTodayBooking=(kind==="OPD_BOOKING"||kind==="EEG_BOOKING") && city && /^\d{8}$/.test(date) && appointmentId;
   const isEEGCalls=kind==="EEG_CALLS_BOOKING";
-  if(!isTodayBooking&&!isEEGCalls){ok({opdUpdated:false,eegUpdated:false,eegCallsUpdated:false});return;}
+  if(!isTodayBooking&&!isEEGCalls){ok({todayUpdated:false,eegCallsUpdated:false});return;}
   const t=d.transaction("cache","readwrite"),st=t.objectStore("cache");
   const opdKey=isTodayBooking?`OPD_TODAY|${date}|${city}`:"";
-  const eegKey=isTodayBooking?`EEG_TODAY|${date}|${city}`:"";
   const callsKey="eegCallsRawCacheV1";
-  let opdCache=null,eegCache=null,callsCache=null;
-  let opdRead=!isTodayBooking,eegRead=!isTodayBooking,callsRead=!isEEGCalls;
-  const result={opdUpdated:false,eegUpdated:false,eegCallsUpdated:false};
+  let opdCache=null,callsCache=null;
+  let opdRead=!isTodayBooking,callsRead=!isEEGCalls;
+  const result={todayUpdated:false,eegCallsUpdated:false};
   const normalizePayment=(v,fallback)=>{const n=Number(v);return Number.isFinite(n)?n:fallback;};
   const patientData=booking?.patient&&typeof booking.patient==="object"?booking.patient:{};
   const common={
@@ -134,10 +133,8 @@ window.IDB={
     if(Number.isFinite(sa)&&Number.isFinite(sb)&&sa!==sb)return sa-sb;
     return String(a?.time||"").localeCompare(String(b?.time||""));
   });
-  const applyToday=(cache,isEEG)=>{
+  const applyToday=cache=>{
     if(!cache||!Array.isArray(cache.patients))return;
-    const shouldUpdate=isEEG?eegPresent:(kind==="OPD_BOOKING"||kind==="EEG_BOOKING");
-    if(!shouldUpdate)return;
     const patients=cache.patients.slice();
     const i=patients.findIndex(x=>String(x?.appointmentId||"").trim()===appointmentId);
     if(i>=0)patients[i]=makePatient(patients[i]);else patients.push(makePatient(null));
@@ -145,7 +142,7 @@ window.IDB={
     const next={...cache,patients,cacheUpdatedAt:Date.now()};
     if(this.cacheStale_(next,patients,"appointmentId"))next.status="STALE";
     st.put(next);
-    if(isEEG)result.eegUpdated=true;else result.opdUpdated=true;
+    result.todayUpdated=true;
   };
   const makeCallsRecord=()=>{
     const rowNumber=Number(booking.rowNumber);
@@ -183,13 +180,12 @@ window.IDB={
     result.eegCallsUpdated=true;
   };
   const maybeDone=()=>{
-    if(!opdRead||!eegRead||!callsRead)return;
-    if(isTodayBooking){applyToday(opdCache,false);applyToday(eegCache,true);}
+    if(!opdRead||!callsRead)return;
+    if(isTodayBooking)applyToday(opdCache);
     if(isEEGCalls)applyCalls(callsCache);
   };
   if(isTodayBooking){
     const r1=st.get(opdKey);r1.onsuccess=()=>{opdCache=r1.result;opdRead=true;maybeDone()};r1.onerror=()=>no(r1.error);
-    const r2=st.get(eegKey);r2.onsuccess=()=>{eegCache=r2.result;eegRead=true;maybeDone()};r2.onerror=()=>no(r2.error);
   }
   if(isEEGCalls){
     const r3=st.get(callsKey);r3.onsuccess=()=>{callsCache=r3.result;callsRead=true;maybeDone()};r3.onerror=()=>no(r3.error);
