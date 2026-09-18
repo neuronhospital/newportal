@@ -112,7 +112,7 @@
   }
 
   async function retrieveFromServer(city) {
-    const r = await NeuronAPI.call("getTodayOPDPatientList", { city }, 15000);
+    const r = await NeuronAPI.call("getTodayOPDPatientList", { city }, 25000);
     if (!r || r.ok !== true) throw Error(r?.error || "Unable to retrieve today's OPD patient list.");
     return r;
   }

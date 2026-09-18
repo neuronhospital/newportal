@@ -109,7 +109,7 @@
   }
 
   async function retrieveFromServer(city) {
-    const r = await NeuronAPI.call("getTodayEEGPatientList", { city }, 15000);
+    const r = await NeuronAPI.call("getTodayEEGPatientList", { city }, 25000);
     if (!r || r.ok !== true) throw Error(r?.error || "Unable to retrieve today's EEG patient list.");
     return r;
   }
