@@ -1,5 +1,24 @@
 window.IDB={
  db:null,
+ CACHE_FRESHNESS_MS:30*60*1000,
+ serialGap_(records,field="appointmentId"){
+  const serials=(Array.isArray(records)?records:[]).map(x=>{const m=String(x?.[field]||"").match(/-(\d+)$/);return m?Number(m[1]):null}).filter(n=>Number.isInteger(n)&&n>=0);
+  if(serials.length<2)return false;
+  const unique=[...new Set(serials)].sort((a,b)=>a-b);
+  for(let i=1;i<unique.length;i++)if(unique[i]!==unique[i-1]+1)return true;
+  return false;
+ },
+ cacheStale_(cache,records,field="appointmentId"){
+  if(!cache)return false;
+  if(this.serialGap_(records,field))return true;
+  const ts=Number(cache.lastServerCheckAt||cache.lastServerRefreshAt||cache.lastCheckedAt||0);
+  return !!ts&&(Date.now()-ts>this.CACHE_FRESHNESS_MS);
+ },
+ markCacheStale_(cache,records,field="appointmentId"){
+  if(!cache)return cache;
+  if(this.cacheStale_(cache,records,field))return {...cache,status:"STALE"};
+  return cache;
+ },
  open(){if(this.db)return this.db;return this.db=new Promise((ok,no)=>{const r=indexedDB.open("NEURON_V2",6);r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains("followupCache"))d.createObjectStore("followupCache",{keyPath:"key"});if(!d.objectStoreNames.contains("tx")){const st=d.createObjectStore("tx",{keyPath:"id"});st.createIndex("status","status");st.createIndex("type","type")}if(!d.objectStoreNames.contains("cache"))d.createObjectStore("cache",{keyPath:"key"});if(!d.objectStoreNames.contains("meta"))d.createObjectStore("meta",{keyPath:"key"});if(!d.objectStoreNames.contains("statisticsRetrieval")){const st=d.createObjectStore("statisticsRetrieval",{keyPath:"retrievalKey"});st.createIndex("status","status");st.createIndex("updatedAt","updatedAt")}};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})},
  put(s,v){return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction(s,"readwrite");t.objectStore(s).put({...v,updatedAt:Date.now()});t.oncomplete=ok;t.onerror=()=>no(t.error)}))},
  get(s,k){return this.open().then(d=>new Promise((ok,no)=>{const r=d.transaction(s).objectStore(s).get(k);r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)}))},
@@ -79,7 +98,9 @@ window.IDB={
     const i=patients.findIndex(x=>String(x?.appointmentId||"").trim()===appointmentId);
     if(i>=0)patients[i]=makePatient(patients[i]);else patients.push(makePatient(null));
     sortPatients(patients);
-    st.put({...cache,patients,cacheUpdatedAt:Date.now()});
+    const next={...cache,patients,cacheUpdatedAt:Date.now()};
+    if(this.cacheStale_(next,patients,"appointmentId"))next.status="STALE";
+    st.put(next);
     if(isEEG)result.eegUpdated=true;else result.opdUpdated=true;
   };
   const makeCallsRecord=()=>{
@@ -112,7 +133,9 @@ window.IDB={
     let records=Array.from(byRow.values()).sort((a,b)=>(Number(a.rowNumber)||0)-(Number(b.rowNumber)||0));
     if(records.length>120)records=records.slice(-120);
     const now=Date.now();
-    st.put({...cache,records,lastScannedRow:Math.max(Number(cache.lastScannedRow)||0,record.rowNumber),lastCheckedAt:now,lastDataUpdatedAt:now});
+    const next={...cache,records,lastScannedRow:Math.max(Number(cache.lastScannedRow)||0,record.rowNumber),lastDataUpdatedAt:now};
+    if(this.cacheStale_(next,records,"appointmentId"))next.status="STALE";
+    st.put(next);
     result.eegCallsUpdated=true;
   };
   const maybeDone=()=>{

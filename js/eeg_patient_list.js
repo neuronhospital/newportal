@@ -77,8 +77,9 @@
 
   function showCacheStatus(record) {
     const status = String(record?.status || "");
-    if (status === "CACHED_INCOMPLETE" || status === "STALE") {
-      setStatus("⚠ Patient list may not be up-to-date.", "warning");
+    const stale = window.IDB?.cacheStale_?.(record, record?.patients, "appointmentId") === true;
+    if (status === "CACHED_INCOMPLETE" || status === "STALE" || stale) {
+      setStatus("⚠ This list is not up to date. Please Update.", "warning");
     } else if (status === "REFRESHING") {
       setStatus("Updating from server…", "working");
     } else if (status === "REFRESHED") {
@@ -102,6 +103,7 @@
       status: complete ? "CACHED_COMPLETE" : "CACHED_INCOMPLETE",
       complete: complete === true,
       lastServerRefreshAt: refreshAt,
+      lastServerCheckAt: refreshAt,
       cachedAt: refreshAt
     };
   }

@@ -883,7 +883,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       }catch(_){}
 
       const currentBookingSession=bookingSessionId;
-      const r=await NeuronAPI.call("bookAppointment",payload,10000);
+      const r=await NeuronAPI.call("bookAppointment",payload,12000);
       if(currentBookingSession!==bookingSessionId)return;
       try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:r});}catch(_){ }
       try{await window.syncSuccessfulBookingToTodayCaches_?.({kind:"OPD_BOOKING",appointmentId:r.appointmentId||"",date:r.date||payload.appointmentDate,time:r.time||"",patientName:r.patientName||payload.childName,age:r.age??payload.age,ageUnit:r.ageUnit||payload.ageUnit,address:r.address??payload.address,patientType:r.patientType||payload.patientType,whatsapp:payload.whatsapp,city:r.city||payload.city,referredBy:r.referredBy??payload.referredBy,nextFollowupCity:r.nextFollowupCity??payload.nextFollowupCity,bookingRequestId:id,opdCharges:r.opdCharges??payload.opdCharges,opdCashPaid:r.opdCashPaid??payload.opdCashPaid,opdOnlinePaid:r.opdOnlinePaid??payload.opdOnlinePaid,opdTotalPaid:r.opdTotalPaid??(Number(payload.opdCashPaid)||0)+(Number(payload.opdOnlinePaid)||0)});}catch(_){ }
