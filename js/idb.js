@@ -78,6 +78,18 @@ window.IDB={
     const c=String(city||"").trim(),phone=this.normalizeWhatsApp_(whatsapp);if(!c||!/^[6-9]\d{9}$/.test(phone))return Promise.resolve([]);
     return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction("followupCache"),r=t.objectStore("followupCache").index("cityWhatsapp").getAll(IDBKeyRange.only([c,phone]));r.onsuccess=()=>ok((r.result||[]).filter(x=>x.type==="FOLLOWUP_VISIT"));r.onerror=()=>no(r.error);}));
   },
+  followupBuildLockKey_(city){return `LOCK|${String(city||"").trim()}`;},
+  async acquireFollowupBuildLock_(city,ttlMs=120000){
+    const c=String(city||"").trim();if(!c)throw new Error("Follow-up city is required.");
+    const d=await this.open(),key=this.followupBuildLockKey_(c),owner=`${Date.now()}-${Math.random().toString(36).slice(2)}`,now=Date.now();
+    const acquired=await new Promise((ok,no)=>{let acquired=false;const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache"),r=st.get(key);r.onsuccess=()=>{const old=r.result;if(old&&Number(old.expiresAt)>now){acquired=false;return;}st.put({key,type:"FOLLOWUP_BUILD_LOCK",city:c,owner,expiresAt:now+ttlMs,updatedAt:now});acquired=true;};r.onerror=()=>no(r.error);t.oncomplete=()=>ok(acquired);t.onerror=()=>no(t.error||new Error("Follow-up build lock failed."));});
+    return acquired?owner:null;
+  },
+  async releaseFollowupBuildLock_(city,owner){
+    const c=String(city||"").trim();if(!c||!owner)return;
+    const d=await this.open();
+    await new Promise((ok,no)=>{const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache"),r=st.get(this.followupBuildLockKey_(c));r.onsuccess=()=>{if(r.result?.owner===owner)st.delete(this.followupBuildLockKey_(c));};r.onerror=()=>no(r.error);t.oncomplete=ok;t.onerror=()=>no(t.error||new Error("Follow-up build lock release failed."));});
+  },
   async beginFollowupCityBuild(city){
     const c=String(city||"").trim();if(!c)throw new Error("Follow-up city is required.");
     await this.setFollowupMeta({city:c,type:"FOLLOWUP_META",status:"BUILDING",updatedAt:Date.now()});
@@ -111,41 +123,89 @@ window.IDB={
     const city=String(booking?.city||"").trim(),row=Number(booking?.rowNumber);if(!city||!Number.isInteger(row)||row<2)return null;
     return {city,sourceRow:row,date:String(booking.date||"").trim(),time:String(booking.time||"").trim(),name:String(booking.patientName||booking.name||""),age:booking.age,ageUnit:String(booking.ageUnit||""),address:String(booking.address||""),patientType:String(booking.patientType||""),whatsapp:String(booking.whatsapp||"")};
   },
+  followupSyncLockKey_(city){return `SYNC|${String(city||"").trim()}`;},
+  async releaseFollowupSyncLock_(city,owner){
+    const c=String(city||"").trim();if(!c||!owner)return;
+    const d=await this.open();
+    await new Promise((ok,no)=>{const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache"),r=st.get(this.followupSyncLockKey_(c));r.onsuccess=()=>{if(r.result?.owner===owner)st.delete(this.followupSyncLockKey_(c));};r.onerror=()=>no(r.error);t.oncomplete=ok;t.onerror=()=>no(t.error||new Error("Follow-up synchronization lock release failed."));});
+  },
   async reconcileFollowupCityGaps_(city){
     const c=String(city||"").trim();if(!c)return;
-    const meta=await this.getFollowupMeta(c);if(!meta||meta.status!=="READY")return;
-    const from=Math.max(2,(Number(meta.highestContiguousSourceRow)||1)+1);
-    const r=await window.NeuronAPI.call("getFollowupCitySyncRange",{city:c,fromRow:from},100000);
-    if(!r||r.ok!==true)throw new Error(r?.error||"Unable to synchronize Follow-up history.");
-    const records=Array.isArray(r.records)?r.records:[];
-    for(let i=0;i<records.length;i+=250)await this.putFollowupBuildBatch(c,records.slice(i,i+250));
-    const latest=Number(r.highestKnownSourceRow)||Number(meta.highestKnownSourceRow)||1;
-    const present=new Set(records.map(x=>Number(x.sourceRow)));
-    let contiguous=Math.max(Number(meta.highestContiguousSourceRow)||1,0);
-    const maxKnown=Math.max(Number(meta.highestKnownSourceRow)||0,latest,...records.map(x=>Number(x.sourceRow)||0));
-    if(from<=maxKnown){for(let row=from;row<=maxKnown;row++){if(!present.has(row)){// It may already have been cached; verify by source-row index below.
-          const existing=await this.get("followupCache",this.followupVisitKey_(c,row));if(!existing)break;
-        } contiguous=row;}}
-    await this.setFollowupMeta({...meta,city:c,status:"READY",highestKnownSourceRow:maxKnown,highestContiguousSourceRow:contiguous,lastUpdatedAt:Date.now()});
+    const lockKey=this.followupSyncLockKey_(c),d=await this.open(),owner=`${Date.now()}-${Math.random().toString(36).slice(2)}`,now=Date.now();
+    const locked=await new Promise((ok,no)=>{let acquired=false;const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache"),r=st.get(lockKey);r.onsuccess=()=>{if(r.result&&Number(r.result.expiresAt)>now){acquired=false;return;}st.put({key:lockKey,type:"FOLLOWUP_SYNC_LOCK",city:c,owner,expiresAt:now+120000,updatedAt:now});acquired=true;};r.onerror=()=>no(r.error);t.oncomplete=()=>ok(acquired);t.onerror=()=>no(t.error||new Error("Follow-up synchronization lock failed."));});
+    if(!locked)return;
+    try{
+      const meta=await this.getFollowupMeta(c);if(!meta||meta.status!=="READY")return;
+      const from=Math.max(2,(Number(meta.highestContiguousSourceRow)||1)+1);
+      const knownAtStart=Number(meta.highestKnownSourceRow)||0;
+      const r=await window.NeuronAPI.call("getFollowupCitySyncRange",{city:c,fromRow:from},100000);
+      if(!r||r.ok!==true)throw new Error(r?.error||"Unable to synchronize Follow-up history.");
+      const records=Array.isArray(r.records)?r.records:[];
+      for(let i=0;i<records.length;i+=250)await this.putFollowupBuildBatch(c,records.slice(i,i+250));
+      const scannedTo=Math.max(Number(r.toRow)||0,Number(r.highestKnownSourceRow)||0,from-1);
+      const latest=Math.max(knownAtStart,Number(r.highestKnownSourceRow)||0,scannedTo);
+      const current=await this.getFollowupMeta(c);
+      if(current&&current.status==="READY"){
+        const currentKnown=Number(current.highestKnownSourceRow)||0;
+        const currentContiguous=Number(current.highestContiguousSourceRow)||0;
+        let contiguous=Math.max(currentContiguous,0);
+        const coveredTo=Math.max(scannedTo,from-1);
+        if(from<=coveredTo)contiguous=Math.max(contiguous,coveredTo);
+        await this.setFollowupMeta({...current,city:c,status:"READY",highestKnownSourceRow:Math.max(currentKnown,latest),highestContiguousSourceRow:contiguous,lastUpdatedAt:Date.now()});
+      }
+    }finally{
+      await this.releaseFollowupSyncLock_(c,owner).catch(()=>{});
+    }
   },
 
   async getOrBuildFollowupPatients_(city,whatsapp){
-    const c=String(city||"").trim(),phone=this.normalizeWhatsApp_(whatsapp);if(!c||!/^[6-9]\d{9}$/.test(phone))return [];
+    const c=String(city||"").trim(),phone=this.normalizeWhatsApp_(whatsapp);
+    if(!c||!/^[6-9]\d{9}$/.test(phone))return [];
     let meta=await this.getFollowupMeta(c);
     if(!meta||meta.status!=="READY"){
-      await this.beginFollowupCityBuild(c);
+      let owner=null,startedBuild=false;
       try{
-        const r=await window.NeuronAPI.call("getFollowupCityHistory",{city:c},100000);if(!r||r.ok!==true)throw new Error(r?.error||"Unable to build Follow-up history.");
-        const records=Array.isArray(r.records)?r.records:[],BATCH=250;
-        for(let i=0;i<records.length;i+=BATCH)await this.putFollowupBuildBatch(c,records.slice(i,i+BATCH));
-        const p=window.U?.parts?.()||{},month=p.y?`${p.y}-${String(p.m).padStart(2,"0")}`:"";
-        await this.finishFollowupCityBuild(c,{city:c,boundaryDate:String(r.boundaryDate||""),oldestDate:records[0]?.date||"",newestDate:records[records.length-1]?.date||"",recordCount:records.length,highestKnownSourceRow:Number(r.highestKnownSourceRow)||1,highestContiguousSourceRow:Number(r.highestContiguousSourceRow)||1,createdAt:Date.now(),lastFullBuildAt:Date.now(),lastCleanupMonth:month});
-      }catch(e){await this.setFollowupMeta({city:c,status:"BUILD_FAILED",lastUpdatedAt:Date.now()}).catch(()=>{});throw e;}
+        const deadline=Date.now()+130000;
+        while(Date.now()<deadline){
+          meta=await this.getFollowupMeta(c);
+          if(meta?.status==="READY")break;
+          owner=await this.acquireFollowupBuildLock_(c);
+          if(owner){
+            startedBuild=true;
+            await this.beginFollowupCityBuild(c);
+            try{
+              const r=await window.NeuronAPI.call("getFollowupCityHistory",{city:c},100000);
+              if(!r||r.ok!==true)throw new Error(r?.error||"Unable to build Follow-up history.");
+              const records=Array.isArray(r.records)?r.records:[],BATCH=250;
+              for(let i=0;i<records.length;i+=BATCH)await this.putFollowupBuildBatch(c,records.slice(i,i+BATCH));
+              const p=window.U?.parts?.()||{},month=p.y?`${p.y}-${String(p.m).padStart(2,"0")}`:"";
+              await this.finishFollowupCityBuild(c,{city:c,boundaryDate:String(r.boundaryDate||""),oldestDate:records[0]?.date||"",newestDate:records[records.length-1]?.date||"",recordCount:records.length,highestKnownSourceRow:Number(r.highestKnownSourceRow)||1,highestContiguousSourceRow:Number(r.highestContiguousSourceRow)||1,createdAt:Date.now(),lastFullBuildAt:Date.now(),lastCleanupMonth:month});
+            }catch(e){
+              await this.setFollowupMeta({city:c,status:"BUILD_FAILED",lastUpdatedAt:Date.now()}).catch(()=>{});
+              throw e;
+            }
+            break;
+          }
+          await new Promise(resolve=>setTimeout(resolve,500));
+        }
+        meta=await this.getFollowupMeta(c);
+        if(meta?.status!=="READY")throw new Error("Follow-up city cache is still being built. Please try again.");
+      }finally{
+        if(startedBuild&&owner)await this.releaseFollowupBuildLock_(c,owner).catch(()=>{});
+      }
     }
-    let patients=await this.getFollowupPatients_(c,phone);const p=window.U?.parts?.()||{},today=p.y?`${p.y}${String(p.m).padStart(2,"0")}${String(p.d).padStart(2,"0")}`:"";
+    let patients=await this.getFollowupPatients_(c,phone);
+    const p=window.U?.parts?.()||{},today=p.y?`${p.y}${String(p.m).padStart(2,"0")}${String(p.d).padStart(2,"0")}`:"";
     patients=patients.filter(x=>String(x.date||"")!==today).sort((a,b)=>{const at=String(a.date||"")+String(a.time||"");const bt=String(b.date||"")+String(b.time||"");return bt.localeCompare(at)||(Number(b.sourceRow)||0)-(Number(a.sourceRow)||0);});
-    const meta2=await this.getFollowupMeta(c);const month=p.y?`${p.y}-${String(p.m).padStart(2,"0")}`:"";
-    if(meta2&&meta2.status==="READY"&&month&&meta2.lastCleanupMonth!==month){const boundaryDate=new Date(Date.UTC(Number(p.y)-2,Number(p.m)-1,Number(p.d)||1));const boundary=`${boundaryDate.getUTCFullYear()}${String(boundaryDate.getUTCMonth()+1).padStart(2,"0")}${String(boundaryDate.getUTCDate()).padStart(2,"0")}`;void this.pruneFollowupCity(c,boundary,month).catch(()=>{});}
+    const meta2=await this.getFollowupMeta(c),month=p.y?`${p.y}-${String(p.m).padStart(2,"0")}`:"";
+    if(meta2&&meta2.status==="READY"&&month&&meta2.lastCleanupMonth!==month){
+      const boundaryDate=new Date(Date.UTC(Number(p.y)-2,Number(p.m)-1,Number(p.d)||1));
+      const boundary=`${boundaryDate.getUTCFullYear()}${String(boundaryDate.getUTCMonth()+1).padStart(2,"0")}${String(boundaryDate.getUTCDate()).padStart(2,"0")}`;
+      void this.pruneFollowupCity(c,boundary,month).catch(()=>{});
+    }
+    if(meta2&&meta2.status==="READY"&&Number(meta2.highestKnownSourceRow)>Number(meta2.highestContiguousSourceRow||0)){
+      void this.reconcileFollowupCityGaps_(c).catch(()=>{});
+    }
     return patients;
   },
   
