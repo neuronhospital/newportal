@@ -1,8 +1,8 @@
 (() => {
   const UI_KEY="neuronRecoveryStateV2";
   const PREFILL_KEY="neuronRecoveryPrefillV1";
-  const VERIFICATION_TIMEOUTS=[5000,8000,12000];
-  const NOT_FOUND_DELAY_MS=2500;
+  const VERIFICATION_TIMEOUTS=[6500,9000,13000];
+  const NOT_FOUND_DELAY_MS=2000;
   let bar=null;
   let popup=null;
   let reconcilePromise=null;
