@@ -179,8 +179,8 @@
       paymentReceived:result.paymentReceived??result.patient?.paymentReceived??x.payload?.paymentReceived,
       eegTechnician:result.eegTechnician??result.patient?.eegTechnician??x.payload?.eegTechnician
     };
-    try{await IDB.put("tx",{...x,status:"complete",result,recoveredAt:Date.now()});}catch(_){ }
-    try{await syncRecoveredBookingToTodayCaches_(booking);}catch(_){ }
+    try{void IDB.put("tx",{...x,status:"complete",result,recoveredAt:Date.now()}).catch(()=>{});}catch(_){ }
+    try{void syncRecoveredBookingToTodayCaches_(booking);}catch(_){ }
     upsertState({id:x.id,type:x.type,status:"recovered",payload:x.payload||{},result,phase:"recovered",updatedAt:Date.now()});
     renderBar();
     window.dispatchEvent(new CustomEvent("neuron:recovery-result",{detail:{status:"recovered",type:x.type,patientName:nameOf(x),result,payload:x.payload,globalHandled:true}}));

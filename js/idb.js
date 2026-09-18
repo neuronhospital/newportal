@@ -19,7 +19,7 @@ window.IDB={
   if(this.cacheStale_(cache,records,field))return {...cache,status:"STALE"};
   return cache;
  },
- open(){if(this.db)return this.db;return this.db=new Promise((ok,no)=>{const r=indexedDB.open("NEURON_V2",6);r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains("followupCache"))d.createObjectStore("followupCache",{keyPath:"key"});if(!d.objectStoreNames.contains("tx")){const st=d.createObjectStore("tx",{keyPath:"id"});st.createIndex("status","status");st.createIndex("type","type")}if(!d.objectStoreNames.contains("cache"))d.createObjectStore("cache",{keyPath:"key"});if(!d.objectStoreNames.contains("meta"))d.createObjectStore("meta",{keyPath:"key"});if(!d.objectStoreNames.contains("statisticsRetrieval")){const st=d.createObjectStore("statisticsRetrieval",{keyPath:"retrievalKey"});st.createIndex("status","status");st.createIndex("updatedAt","updatedAt")}};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})},
+ open(){if(this.db)return this.db;return this.db=new Promise((ok,no)=>{const r=indexedDB.open("NEURON_V2",7);r.onupgradeneeded=e=>{const d=r.result;let fst;if(!d.objectStoreNames.contains("followupCache")){fst=d.createObjectStore("followupCache",{keyPath:"key"});}else{fst=e.transaction.objectStore("followupCache");}if(fst&&!fst.indexNames.contains("cityWhatsapp"))fst.createIndex("cityWhatsapp",["city","normalizedWhatsapp"],{unique:false});if(fst&&!fst.indexNames.contains("citySourceRow"))fst.createIndex("citySourceRow",["city","sourceRow"],{unique:false});if(fst&&!fst.indexNames.contains("cityDate"))fst.createIndex("cityDate",["city","date"],{unique:false});if(!d.objectStoreNames.contains("tx")){const st=d.createObjectStore("tx",{keyPath:"id"});st.createIndex("status","status");st.createIndex("type","type")}if(!d.objectStoreNames.contains("cache"))d.createObjectStore("cache",{keyPath:"key"});if(!d.objectStoreNames.contains("meta"))d.createObjectStore("meta",{keyPath:"key"});if(!d.objectStoreNames.contains("statisticsRetrieval")){const st=d.createObjectStore("statisticsRetrieval",{keyPath:"retrievalKey"});st.createIndex("status","status");st.createIndex("updatedAt","updatedAt")}};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})},
  put(s,v){return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction(s,"readwrite");t.objectStore(s).put({...v,updatedAt:Date.now()});t.oncomplete=ok;t.onerror=()=>no(t.error)}))},
  get(s,k){return this.open().then(d=>new Promise((ok,no)=>{const r=d.transaction(s).objectStore(s).get(k);r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)}))},
  delete(s,k){return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction(s,"readwrite");t.objectStore(s).delete(k);t.oncomplete=ok;t.onerror=()=>no(t.error)}))},
@@ -71,7 +71,85 @@ window.IDB={
    return {source:"server",patients:matches,cache:record,todayAppointmentFound:patients.some(p=>String(p?.city||serverCity).trim()===c)};
   });
  },
- syncBookingCaches_(booking){return this.open().then(d=>new Promise((ok,no)=>{
+ followupVisitKey_(city,rowNumber){return `VISIT|${String(city||"").trim()}|${Number(rowNumber)}`;},
+  followupMetaKey_(city){return `META|${String(city||"").trim()}`;},
+  getFollowupMeta(city){return this.get("followupCache",this.followupMetaKey_(city));},
+  getFollowupPatients_(city,whatsapp){
+    const c=String(city||"").trim(),phone=this.normalizeWhatsApp_(whatsapp);if(!c||!/^[6-9]\d{9}$/.test(phone))return Promise.resolve([]);
+    return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction("followupCache"),r=t.objectStore("followupCache").index("cityWhatsapp").getAll(IDBKeyRange.only([c,phone]));r.onsuccess=()=>ok((r.result||[]).filter(x=>x.type==="FOLLOWUP_VISIT"));r.onerror=()=>no(r.error);}));
+  },
+  async beginFollowupCityBuild(city){
+    const c=String(city||"").trim();if(!c)throw new Error("Follow-up city is required.");
+    await this.setFollowupMeta({city:c,type:"FOLLOWUP_META",status:"BUILDING",updatedAt:Date.now()});
+    const d=await this.open();
+    const keys=await new Promise((ok,no)=>{const t=d.transaction("followupCache"),idx=t.objectStore("followupCache").index("citySourceRow"),r=idx.getAllKeys(IDBKeyRange.bound([c,0],[c,Number.MAX_SAFE_INTEGER]));r.onsuccess=()=>ok(r.result||[]);r.onerror=()=>no(r.error);});
+    for(let i=0;i<keys.length;i+=250){
+      const batch=keys.slice(i,i+250);
+      await new Promise((ok,no)=>{const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache");batch.forEach(k=>st.delete(k));t.oncomplete=ok;t.onerror=()=>no(t.error||new Error("Unable to clear Follow-up cache build batch."));t.onabort=()=>no(t.error||new Error("Follow-up cache build clear aborted."));});
+    }
+  },
+  putFollowupBuildBatch(city,records){
+    const c=String(city||"").trim(),list=Array.isArray(records)?records:[];return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache");list.forEach(x=>{const row=Number(x?.sourceRow);if(!Number.isInteger(row)||row<2)return;st.put({...x,key:this.followupVisitKey_(c,row),type:"FOLLOWUP_VISIT",city:c,normalizedWhatsapp:this.normalizeWhatsApp_(x.whatsapp),sourceRow:row});});t.oncomplete=ok;t.onerror=()=>no(t.error||new Error("Follow-up cache batch write failed."));t.onabort=()=>no(t.error||new Error("Follow-up cache batch write aborted."));}));
+  },
+  setFollowupMeta(meta){const c=String(meta?.city||"").trim();return this.put("followupCache",{...meta,key:this.followupMetaKey_(c),type:"FOLLOWUP_META",city:c});},
+  finishFollowupCityBuild(city,meta){const c=String(city||"").trim();return this.setFollowupMeta({...meta,city:c,status:"READY",lastUpdatedAt:Date.now()});},
+  appendFollowupVisitAndMeta(visit,meta){
+    const c=String(visit?.city||meta?.city||"").trim(),row=Number(visit?.sourceRow);if(!c||!Number.isInteger(row)||row<2)return Promise.resolve({updated:false});
+    return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache");st.put({...visit,key:this.followupVisitKey_(c,row),type:"FOLLOWUP_VISIT",city:c,normalizedWhatsapp:this.normalizeWhatsApp_(visit.whatsapp),sourceRow:row});if(meta)st.put({...meta,key:this.followupMetaKey_(c),type:"FOLLOWUP_META",city:c,status:"READY",updatedAt:Date.now()});t.oncomplete=()=>ok({updated:true});t.onerror=()=>no(t.error||new Error("Follow-up booking cache update failed."));t.onabort=()=>no(t.error||new Error("Follow-up booking cache update aborted."));}));
+  },
+  async pruneFollowupCity(city,boundaryDate,lastCleanupMonth){
+    const c=String(city||"").trim(),boundary=String(boundaryDate||"");if(!c||!/^[0-9]{8}$/.test(boundary))return;
+    const d=await this.open();
+    const keys=await new Promise((ok,no)=>{const t=d.transaction("followupCache"),idx=t.objectStore("followupCache").index("cityDate"),r=idx.getAllKeys(IDBKeyRange.bound([c,"00000000"],[c,boundary],false,true));r.onsuccess=()=>ok(r.result||[]);r.onerror=()=>no(r.error);});
+    for(let i=0;i<keys.length;i+=250){
+      const batch=keys.slice(i,i+250);
+      await new Promise((ok,no)=>{const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache");batch.forEach(k=>st.delete(k));t.oncomplete=ok;t.onerror=()=>no(t.error||new Error("Follow-up cache cleanup batch failed."));t.onabort=()=>no(t.error||new Error("Follow-up cache cleanup batch aborted."));});
+    }
+    const m=await this.getFollowupMeta(c);if(m)await this.setFollowupMeta({...m,lastCleanupMonth,boundaryDate:boundary,status:"READY",lastUpdatedAt:Date.now()});
+  },
+  followupRecordFromBooking_(booking){
+    const city=String(booking?.city||"").trim(),row=Number(booking?.rowNumber);if(!city||!Number.isInteger(row)||row<2)return null;
+    return {city,sourceRow:row,date:String(booking.date||"").trim(),time:String(booking.time||"").trim(),name:String(booking.patientName||booking.name||""),age:booking.age,ageUnit:String(booking.ageUnit||""),address:String(booking.address||""),patientType:String(booking.patientType||""),whatsapp:String(booking.whatsapp||"")};
+  },
+  async reconcileFollowupCityGaps_(city){
+    const c=String(city||"").trim();if(!c)return;
+    const meta=await this.getFollowupMeta(c);if(!meta||meta.status!=="READY")return;
+    const from=Math.max(2,(Number(meta.highestContiguousSourceRow)||1)+1);
+    const r=await window.NeuronAPI.call("getFollowupCitySyncRange",{city:c,fromRow:from},100000);
+    if(!r||r.ok!==true)throw new Error(r?.error||"Unable to synchronize Follow-up history.");
+    const records=Array.isArray(r.records)?r.records:[];
+    for(let i=0;i<records.length;i+=250)await this.putFollowupBuildBatch(c,records.slice(i,i+250));
+    const latest=Number(r.highestKnownSourceRow)||Number(meta.highestKnownSourceRow)||1;
+    const present=new Set(records.map(x=>Number(x.sourceRow)));
+    let contiguous=Math.max(Number(meta.highestContiguousSourceRow)||1,0);
+    const maxKnown=Math.max(Number(meta.highestKnownSourceRow)||0,latest,...records.map(x=>Number(x.sourceRow)||0));
+    if(from<=maxKnown){for(let row=from;row<=maxKnown;row++){if(!present.has(row)){// It may already have been cached; verify by source-row index below.
+          const existing=await this.get("followupCache",this.followupVisitKey_(c,row));if(!existing)break;
+        } contiguous=row;}}
+    await this.setFollowupMeta({...meta,city:c,status:"READY",highestKnownSourceRow:maxKnown,highestContiguousSourceRow:contiguous,lastUpdatedAt:Date.now()});
+  },
+
+  async getOrBuildFollowupPatients_(city,whatsapp){
+    const c=String(city||"").trim(),phone=this.normalizeWhatsApp_(whatsapp);if(!c||!/^[6-9]\d{9}$/.test(phone))return [];
+    let meta=await this.getFollowupMeta(c);
+    if(!meta||meta.status!=="READY"){
+      await this.beginFollowupCityBuild(c);
+      try{
+        const r=await window.NeuronAPI.call("getFollowupCityHistory",{city:c},100000);if(!r||r.ok!==true)throw new Error(r?.error||"Unable to build Follow-up history.");
+        const records=Array.isArray(r.records)?r.records:[],BATCH=250;
+        for(let i=0;i<records.length;i+=BATCH)await this.putFollowupBuildBatch(c,records.slice(i,i+BATCH));
+        const p=window.U?.parts?.()||{},month=p.y?`${p.y}-${String(p.m).padStart(2,"0")}`:"";
+        await this.finishFollowupCityBuild(c,{city:c,boundaryDate:String(r.boundaryDate||""),oldestDate:records[0]?.date||"",newestDate:records[records.length-1]?.date||"",recordCount:records.length,highestKnownSourceRow:Number(r.highestKnownSourceRow)||1,highestContiguousSourceRow:Number(r.highestContiguousSourceRow)||1,createdAt:Date.now(),lastFullBuildAt:Date.now(),lastCleanupMonth:month});
+      }catch(e){await this.setFollowupMeta({city:c,status:"BUILD_FAILED",lastUpdatedAt:Date.now()}).catch(()=>{});throw e;}
+    }
+    let patients=await this.getFollowupPatients_(c,phone);const p=window.U?.parts?.()||{},today=p.y?`${p.y}${String(p.m).padStart(2,"0")}${String(p.d).padStart(2,"0")}`:"";
+    patients=patients.filter(x=>String(x.date||"")!==today).sort((a,b)=>{const at=String(a.date||"")+String(a.time||"");const bt=String(b.date||"")+String(b.time||"");return bt.localeCompare(at)||(Number(b.sourceRow)||0)-(Number(a.sourceRow)||0);});
+    const meta2=await this.getFollowupMeta(c);const month=p.y?`${p.y}-${String(p.m).padStart(2,"0")}`:"";
+    if(meta2&&meta2.status==="READY"&&month&&meta2.lastCleanupMonth!==month){const boundaryDate=new Date(Date.UTC(Number(p.y)-2,Number(p.m)-1,Number(p.d)||1));const boundary=`${boundaryDate.getUTCFullYear()}${String(boundaryDate.getUTCMonth()+1).padStart(2,"0")}${String(boundaryDate.getUTCDate()).padStart(2,"0")}`;void this.pruneFollowupCity(c,boundary,month).catch(()=>{});}
+    return patients;
+  },
+  
+  syncBookingCaches_(booking){return this.open().then(d=>new Promise((ok,no)=>{
   const kind=String(booking?.kind||"").trim();
   const appointmentId=String(booking?.appointmentId||"").trim();
   const city=String(booking?.city||"").trim();
@@ -79,12 +157,13 @@ window.IDB={
   const isTodayBooking=(kind==="OPD_BOOKING"||kind==="EEG_BOOKING") && city && /^\d{8}$/.test(date) && appointmentId;
   const isEEGCalls=kind==="EEG_CALLS_BOOKING";
   if(!isTodayBooking&&!isEEGCalls){ok({todayUpdated:false,eegCallsUpdated:false});return;}
-  const t=d.transaction("cache","readwrite"),st=t.objectStore("cache");
+  const t=d.transaction(["cache","followupCache"],"readwrite"),st=t.objectStore("cache"),fst=t.objectStore("followupCache");
   const opdKey=isTodayBooking?`OPD_TODAY|${date}|${city}`:"";
   const callsKey="eegCallsRawCacheV1";
   let opdCache=null,callsCache=null;
-  let opdRead=!isTodayBooking,callsRead=!isEEGCalls;
-  const result={todayUpdated:false,eegCallsUpdated:false};
+  let opdRead=!isTodayBooking,callsRead=!isEEGCalls,followupRead=kind!=="OPD_BOOKING";
+  const result={todayUpdated:false,eegCallsUpdated:false,followupUpdated:false};
+  let followupMeta=null;
   const normalizePayment=(v,fallback)=>{const n=Number(v);return Number.isFinite(n)?n:fallback;};
   const patientData=booking?.patient&&typeof booking.patient==="object"?booking.patient:{};
   const common={
@@ -179,10 +258,28 @@ window.IDB={
     st.put(next);
     result.eegCallsUpdated=true;
   };
+  const applyFollowup=()=>{
+    if(kind!=="OPD_BOOKING"||!followupMeta||followupMeta.status!=="READY")return;
+    const row=Number(booking.rowNumber);if(!Number.isInteger(row)||row<2)return;
+    const visit=this.followupRecordFromBooking_(booking);if(!visit)return;
+    const oldKnown=Number(followupMeta.highestKnownSourceRow)||0,oldContiguous=Number(followupMeta.highestContiguousSourceRow)||0;
+    const visitKey=this.followupVisitKey_(visit.city,row);
+    const nextKnown=Math.max(oldKnown,row);
+    const nextContiguous=row===oldContiguous+1?row:oldContiguous;
+    const nextMeta={...followupMeta,highestKnownSourceRow:nextKnown,highestContiguousSourceRow:nextContiguous,lastUpdatedAt:Date.now()};
+    const existing=fst.get(visitKey);
+    existing.onsuccess=()=>{
+      fst.put({...visit,key:visitKey,type:"FOLLOWUP_VISIT",city:visit.city,normalizedWhatsapp:this.normalizeWhatsApp_(visit.whatsapp),sourceRow:row});
+      if(!existing.result)nextMeta.recordCount=Math.max(0,Number(followupMeta.recordCount)||0)+1;
+      fst.put({...nextMeta,key:this.followupMetaKey_(visit.city),type:"FOLLOWUP_META",city:visit.city,status:"READY",updatedAt:Date.now()});
+    };
+    result.followupUpdated=true;
+  };
   const maybeDone=()=>{
-    if(!opdRead||!callsRead)return;
+    if(!opdRead||!callsRead||!followupRead)return;
     if(isTodayBooking)applyToday(opdCache);
     if(isEEGCalls)applyCalls(callsCache);
+    applyFollowup();
   };
   if(isTodayBooking){
     const r1=st.get(opdKey);r1.onsuccess=()=>{opdCache=r1.result;opdRead=true;maybeDone()};r1.onerror=()=>no(r1.error);
@@ -190,6 +287,10 @@ window.IDB={
   if(isEEGCalls){
     const r3=st.get(callsKey);r3.onsuccess=()=>{callsCache=r3.result;callsRead=true;maybeDone()};r3.onerror=()=>no(r3.error);
   }
+  if(kind==="OPD_BOOKING"){
+    const r4=fst.get(this.followupMetaKey_(city));r4.onsuccess=()=>{followupMeta=r4.result||null;followupRead=true;maybeDone()};r4.onerror=()=>no(r4.error);
+  }
+  if(kind!=="OPD_BOOKING")followupMeta=null;
   t.oncomplete=()=>ok(result);t.onerror=()=>no(t.error);t.onabort=()=>no(t.error||new Error("IndexedDB booking cache synchronization aborted."));
  }))},
 
