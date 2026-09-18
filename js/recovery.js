@@ -3,11 +3,9 @@
   const PREFILL_KEY="neuronRecoveryPrefillV1";
   const VERIFICATION_TIMEOUTS=[5000,8000,12000];
   const NOT_FOUND_DELAY_MS=2500;
-  const ONLINE_RETRY_DELAY_MS=10000;
   let bar=null;
   let popup=null;
   let reconcilePromise=null;
-  let retryTimer=null;
   const activeWorkers=new Set();
   const onlineWaiters=new Set();
 
@@ -138,15 +136,6 @@
     });
   }
 
-  function scheduleRetry(){
-    if(retryTimer)return;
-    if(!readState().some(x=>x.status==="recovering"))return;
-    retryTimer=setTimeout(()=>{
-      retryTimer=null;
-      reconcilePendingBookings();
-    },ONLINE_RETRY_DELAY_MS);
-  }
-
   async function syncSuccessfulBookingToTodayCaches_(booking){
     return IDB.syncBookingCaches_(booking);
   }
@@ -226,12 +215,17 @@
             return;
           }
           // A positive response that does not match the original request is
-          // inconclusive. Never turn it into NOT_FOUND; retry without consuming
-          // a verification attempt.
+          // an unresolved verification result. Consume this attempt and move
+          // to the next verification after the fixed 2.5 second gap.
+          if(attempt===3){await failRecovery(x);return;}
           upsertState({id:x.id,status:"recovering",attempt,phase:"retry_wait",updatedAt:Date.now()});
           renderBar();
-          scheduleRetry();
-          return;
+          await new Promise(resolve=>setTimeout(resolve,NOT_FOUND_DELAY_MS));
+          if(!getState(x.id)||getState(x.id).status!=="recovering")return;
+          attempt+=1;
+          upsertState({id:x.id,status:"recovering",attempt,phase:"verifying",updatedAt:Date.now()});
+          renderBar();
+          continue;
         }
 
         if(result?.ok===true&&result?.found===false){
@@ -246,19 +240,26 @@
           continue;
         }
 
-        // UNKNOWN: timeout/network/server/malformed response. Do not consume
-        // an attempt. If offline, wait for the online event; otherwise use the
-        // single global self-scheduled retry.
+        // The verification request failed, timed out, or returned an unusable
+        // response. If the browser is now offline, do not consume the attempt:
+        // wait for the online event and repeat this same verification attempt.
+        // If the browser is online, this was a real failed verification attempt
+        // and it must be consumed before advancing after the fixed 2.5s gap.
         if(!navigator.onLine){
           upsertState({id:x.id,status:"recovering",attempt,phase:"waiting_network",updatedAt:Date.now()});
           renderBar();
           await waitForOnline();
           continue;
         }
+        if(attempt===3){await failRecovery(x);return;}
         upsertState({id:x.id,status:"recovering",attempt,phase:"retry_wait",updatedAt:Date.now()});
         renderBar();
-        scheduleRetry();
-        return;
+        await new Promise(resolve=>setTimeout(resolve,NOT_FOUND_DELAY_MS));
+        if(!getState(x.id)||getState(x.id).status!=="recovering")return;
+        attempt+=1;
+        upsertState({id:x.id,status:"recovering",attempt,phase:"verifying",updatedAt:Date.now()});
+        renderBar();
+        continue;
       }
     }finally{
       activeWorkers.delete(x.id);
@@ -271,7 +272,9 @@
     if(!window.IDB?.pending)return;
     reconcilePromise=(async()=>{
       try{
-        const items=await window.IDB.pending().catch(()=>[]);
+        // IDB.pending() intentionally includes both live pending requests and
+        // uncertain requests. Recovery is allowed only for uncertain requests.
+        const items=(await window.IDB.pending().catch(()=>[])).filter(x=>x?.status==="uncertain");
         const pendingIds=new Set(items.map(x=>x?.id).filter(Boolean));
         readState().filter(x=>x.status==="recovering"&&!pendingIds.has(x.id)&&!activeWorkers.has(x.id)).forEach(x=>removeState(x.id));
         for(const x of items){
