@@ -112,7 +112,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     $('load').className='btn btn-primary';
     $('loadMessage').hidden=false;
     try{
-      const r=await IDB.getTodayPatientsByWhatsApp_({whatsapp:U.phone($('wa').value),city:$('city').value});r.patients=(r.patients||[]).filter(p=>p.eegCharges===null||p.eegCharges===undefined||p.eegCharges==='');
+      const r=await IDB.getTodayPatientsByWhatsApp_({whatsapp:U.phone($('wa').value),city:$('city').value});r.patients=(r.patients||[]).filter(p=>p.eegCharges===null||p.eegCharges===undefined||p.eegCharges==='');r.patients.sort((a,b)=>{const sa=Number(String(a?.appointmentId||"").match(/-(\d+)$/)?.[1]),sb=Number(String(b?.appointmentId||"").match(/-(\d+)$/)?.[1]);if(Number.isFinite(sa)&&Number.isFinite(sb)&&sa!==sb)return sb-sa;const at=String(a?.date||"")+String(a?.time||"");const bt=String(b?.date||"")+String(b?.time||"");if(bt!==at)return bt.localeCompare(at);return (Number(b?.rowNumber)||0)-(Number(a?.rowNumber)||0);});
       $('patients').innerHTML='';
       if(!r.patients.length){
         $('status').textContent = r.todayAppointmentFound===false
