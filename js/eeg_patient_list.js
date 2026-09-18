@@ -11,8 +11,7 @@
   const cacheKey = (date, city) => `${CACHE_PREFIX}${date}|${city}`;
 
   function currentCity() {
-    try { DailyCity.init(); } catch (_) {}
-    return String(DailyCity?.get?.() || "").trim();
+    return String(window.TodayCity?.resolve?.() || "").trim();
   }
 
   function ageText(p) {
@@ -144,20 +143,24 @@
   }
 
   async function openPopup() {
-    const city = currentCity();
-    const date = todayKey();
-    if (!city) {
-      alert("Today's EEG city is not selected.");
-      return;
-    }
     const m = $("eegTodayPopup");
     if (!m) return;
+    const city = currentCity();
+    const date = todayKey();
+
     popupState.open = true;
     popupState.city = city;
-    popupState.key = cacheKey(date, city);
+    popupState.key = city ? cacheKey(date, city) : "";
     m.hidden = false;
     document.body.classList.add("eeg-today-modal-open");
     setStatus("", "");
+    setLastUpdated(null);
+
+    if (!city) {
+      $("eegTodayList").innerHTML = `<div class="eeg-today-empty">Today's EEG city is not selected.</div>`;
+      return;
+    }
+
     $("eegTodayList").innerHTML = '<div class="eeg-today-loading">Loading…</div>';
     await cleanupOldCaches(date);
 

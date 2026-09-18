@@ -55,6 +55,29 @@ window.DailyCity=window.DailyCity||(()=>{
   };
   return {init,get,getRecord,set,getHistory,isSpecial,dateKey};
 })();
+/* TodayCity: single shared city resolver for Today OPD and Today EEG.
+   DailyCity is authoritative when set; otherwise use the schedule-aware city. */
+window.TodayCity=window.TodayCity||(()=>{
+  const validCity=(city)=>{
+    const c=String(city||"").trim();
+    const cities=Array.isArray(window.NEURON_CONFIG?.cities)?window.NEURON_CONFIG.cities:[];
+    return c&&(!cities.length||cities.includes(c))?c:"";
+  };
+  const resolve=()=>{
+    try { window.DailyCity?.init?.(); } catch (_) {}
+    const daily=validCity(window.DailyCity?.get?.());
+    if(daily)return daily;
+    try {
+      const schedule=window.Schedule;
+      const cities=Array.isArray(window.NEURON_CONFIG?.cities)?window.NEURON_CONFIG.cities:[];
+      if(schedule&&typeof schedule.cityAtNow==="function") {
+        return validCity(schedule.cityAtNow(cities));
+      }
+    } catch (_) {}
+    return "";
+  };
+  return {resolve};
+})();
 window.$=window.U?.$||((id)=>document.getElementById(id));
 if("serviceWorker"in navigator)window.addEventListener("load",()=>{const v=encodeURIComponent(window.NEURON_CONFIG.appVersion);navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!sessionStorage.getItem("neuron-sw-reloaded-"+v)){sessionStorage.setItem("neuron-sw-reloaded-"+v,"1");location.reload();}});navigator.serviceWorker.register("./service-worker.js?v="+v).catch(()=>{});});
 const setFooterCurrentSection_=()=>{

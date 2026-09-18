@@ -11,8 +11,7 @@
   const cacheKey = (date, city) => `${CACHE_PREFIX}${date}|${city}`;
 
   function currentCity() {
-    try { DailyCity.init(); } catch (_) {}
-    return String(DailyCity?.get?.() || "").trim();
+    return String(window.TodayCity?.resolve?.() || "").trim();
   }
 
   function ageText(p) {
@@ -147,20 +146,24 @@
   }
 
   async function openPopup() {
-    const city = currentCity();
-    const date = todayKey();
-    if (!city) {
-      alert("Today's OPD city is not selected.");
-      return;
-    }
     const m = $("opdTodayPopup");
     if (!m) return;
+    const city = currentCity();
+    const date = todayKey();
+
     popupState.open = true;
     popupState.city = city;
-    popupState.key = cacheKey(date, city);
+    popupState.key = city ? cacheKey(date, city) : "";
     m.hidden = false;
     document.body.classList.add("opd-today-modal-open");
     setStatus("", "");
+    setLastUpdated(null);
+
+    if (!city) {
+      $("opdTodayList").innerHTML = `<div class="opd-today-empty">Today's OPD city is not selected.</div>`;
+      return;
+    }
+
     $("opdTodayList").innerHTML = '<div class="opd-today-loading">Loading…</div>';
     await cleanupOldCaches(date);
 
@@ -199,10 +202,7 @@
   document.addEventListener("DOMContentLoaded", () => {
     const section = document.querySelector(".portal-section-opd");
     if (!section) return;
-    section.addEventListener("click", e => {
-      if (e.target.closest("a,button,input,select,textarea")) return;
-      openPopup();
-    });
+    section.querySelector(".opd-patient-list-trigger")?.addEventListener("click", openPopup);
     section.querySelector(".opd-patient-list-trigger")?.addEventListener("keydown", e => { if(e.key === "Enter" || e.key === " "){ e.preventDefault(); openPopup(); } });
     section.querySelectorAll(".portal-action").forEach(a => a.addEventListener("click", e => e.stopPropagation()));
     $("opdTodayUpdate")?.addEventListener("click", handleUpdate);
