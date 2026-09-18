@@ -413,6 +413,8 @@ body[data-title="Home"] .portal-action:active{background:#fff}
 
 
 /* v199.7: Today's OPD patient list popup */
+/* Keep the modal truly hidden until its header is explicitly clicked. */
+.opd-today-modal[hidden]{display:none!important}
 body.opd-today-modal-open{overflow:hidden}
 .opd-patient-list-trigger{cursor:pointer;user-select:none}
 .opd-patient-list-trigger:focus-visible{outline:2px solid var(--p);outline-offset:-2px;border-radius:10px}
@@ -441,7 +443,9 @@ body.opd-today-modal-open{overflow:hidden}
 @media(max-width:520px){.opd-today-modal{padding:9px}.opd-today-dialog{width:95vw;height:86vh;border-radius:14px}.opd-today-heading-row h2{font-size:18px}.opd-today-row{font-size:13.5px;padding:8px 3px}}
 
 
-/* v200: EEG Today patient list + global IDB synchronization */
+/* v200.1: EEG Today patient list + global IDB synchronization */
+/* Keep the modal truly hidden until its header is explicitly clicked. */
+.eeg-today-modal[hidden]{display:none!important}
 body.eeg-today-modal-open{overflow:hidden}
 .eeg-patient-list-trigger{cursor:pointer;user-select:none}
 .eeg-patient-list-trigger:focus-visible{outline:2px solid var(--p);outline-offset:-2px;border-radius:10px}
