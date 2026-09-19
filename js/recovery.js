@@ -89,6 +89,20 @@
     }
     add("City","city");
     add("WhatsApp","whatsapp");
+    const addPaid=(label,totalKey,cashKey,onlineKey)=>{
+      let total=valueFor(totalKey);
+      if(total==null||total===""){
+        const cash=valueFor(cashKey),online=valueFor(onlineKey);
+        if(cash!=null&&cash!==""||online!=null&&online!==""){
+          total=(Number(cash)||0)+(Number(online)||0);
+        }
+      }
+      if(total!=null&&total!==""){
+        rows.push(`<div class="neuron-recovery-detail-row"><span>${esc(label)}</span><b>₹${esc(total)}</b></div>`);
+      }
+    };
+    if(x.type==="OPD_BOOKING")addPaid("OPD Paid","opdTotalPaid","opdCashPaid","opdOnlinePaid");
+    if(x.type==="EEG_BOOKING")addPaid("EEG Paid","eegTotalPaid","eegCashPaid","eegOnlinePaid");
     body.innerHTML=`<h3 id="neuronRecoveryDetailsTitle">${esc(label)} Recovered Successfully</h3><div class="neuron-recovery-detail-list">${rows.join("")}</div>`;
     m.hidden=false;requestAnimationFrame(()=>{body.scrollTop=0;m.querySelector(".neuron-recovery-ok")?.focus()});
   }
