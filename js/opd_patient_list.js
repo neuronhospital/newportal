@@ -1,6 +1,5 @@
 (() => {
   const CACHE_PREFIX = "OPD_TODAY|";
-  const CACHE_TYPE = "OPD_TODAY";
   const popupState = { open: false, city: "", key: "", updating: false };
 
   const esc = v => U.esc(v == null ? "" : v);
@@ -92,48 +91,18 @@
     }
   }
 
-  async function cleanupOldCaches(today) {
-    try { await IDB.deleteCacheByPrefixExcept("cache", CACHE_PREFIX, `${CACHE_PREFIX}${today}|`); } catch (_) {}
-  }
-
-  function baseRecord(date, city, patients, complete, refreshAt) {
-    return {
-      key: cacheKey(date, city),
-      type: CACHE_TYPE,
-      date,
-      city,
-      patients: sortPatients(patients),
-      status: complete ? "CACHED_COMPLETE" : "CACHED_INCOMPLETE",
-      complete: complete === true,
-      lastServerRefreshAt: refreshAt,
-      lastServerCheckAt: refreshAt,
-      cachedAt: refreshAt
-    };
-  }
-
-  async function retrieveFromServer(city) {
-    const r = await NeuronAPI.call("getTodayOPDPatientList", { city }, 25000);
-    if (!r || r.ok !== true) throw Error(r?.error || "Unable to retrieve today's OPD patient list.");
-    return r;
-  }
-
   async function refresh(city, existingRecord = null) {
-    const date = todayKey(), key = cacheKey(date, city);
-    if (popupState.updating) return;
+    if (popupState.updating) return existingRecord || await IDB.get("cache", popupState.key).catch(() => null);
     popupState.updating = true;
     setStatus("Updating from server…", "working");
-    const previous = existingRecord || await IDB.get("cache", key).catch(() => null);
     try {
-      const r = await retrieveFromServer(city);
-      const now = Date.now();
-      const record = baseRecord(date, city, r.patients, r.complete !== false, now);
-      record.status = r.complete === false ? "CACHED_INCOMPLETE" : "REFRESHED";
-      await IDB.replace("cache", key, record);
+      const record = await IDB.getTodayOPDCache_(city, {forceRefresh:true});
       render(record);
       setLastUpdated(record);
       showCacheStatus(record);
       return record;
     } catch (e) {
+      const previous = existingRecord || await IDB.get("cache", popupState.key).catch(() => null);
       if (previous) {
         render(previous);
         setLastUpdated(previous);
@@ -152,7 +121,6 @@
     if (!m) return;
     const city = currentCity();
     const date = todayKey();
-
     popupState.open = true;
     popupState.city = city;
     popupState.key = city ? cacheKey(date, city) : "";
@@ -160,24 +128,16 @@
     document.body.classList.add("opd-today-modal-open");
     setStatus("", "");
     setLastUpdated(null);
-
     if (!city) {
       $("opdTodayList").innerHTML = `<div class="opd-today-empty">Today's OPD city is not selected.</div>`;
       return;
     }
-
     $("opdTodayList").innerHTML = '<div class="opd-today-loading">Loading…</div>';
-    await cleanupOldCaches(date);
-
-    let record = await IDB.get("cache", popupState.key).catch(() => null);
-    if (record) {
+    try {
+      const record = await IDB.getTodayOPDCache_(city);
       render(record);
       setLastUpdated(record);
       showCacheStatus(record);
-      return;
-    }
-    try {
-      record = await refresh(city);
     } catch (_) {
       $("opdTodayList").innerHTML = '<div class="opd-today-empty">Unable to retrieve today’s OPD list.</div>';
     }

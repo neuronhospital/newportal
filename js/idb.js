@@ -48,6 +48,55 @@ window.IDB={
    return {cache:cache||null,patients,todayAppointmentFound:Array.isArray(cache?.patients)&&cache.patients.some(p=>String(p?.city||c).trim()===c)};
   });
  },
+ _legacyEEGCacheCleaned:false,
+ _todayOPDCacheCleanupDate:"",
+ _todayOPDRefreshes:{},
+ async cleanupLegacyEEGCache_(){
+  if(this._legacyEEGCacheCleaned)return;
+  this._legacyEEGCacheCleaned=true;
+  try{await this.deleteCacheByPrefixExcept("cache","EEG_TODAY|","__none__");}catch(_){ }
+ },
+ async cleanupOldTodayOPDCaches_(today){
+  if(this._todayOPDCacheCleanupDate===today)return;
+  try{await this.deleteCacheByPrefixExcept("cache","OPD_TODAY|",`OPD_TODAY|${today}|`);this._todayOPDCacheCleanupDate=today;}catch(_){ }
+ },
+ async getTodayOPDCache_(city,{forceRefresh=false}={}){
+  const c=String(city||"").trim();
+  const date=this.todayKey_();
+  if(!c)throw Error("Today's OPD city is not selected.");
+  await this.cleanupLegacyEEGCache_();
+  await this.cleanupOldTodayOPDCaches_(date);
+  const key=`OPD_TODAY|${date}|${c}`;
+  let record=await this.get("cache",key).catch(()=>null);
+  const ts=Number(record?.lastServerCheckAt||record?.lastServerRefreshAt||record?.lastCheckedAt||0);
+  const stale=record ? (!ts || this.cacheStale_(record,record.patients,"appointmentId") || record.status==="CACHED_INCOMPLETE" || record.status==="STALE") : false;
+  if(record && !forceRefresh && !stale)return record;
+  if(this._todayOPDRefreshes[key])return this._todayOPDRefreshes[key];
+  const request=(async()=>{
+   try{
+    const r=await window.NeuronAPI.call("getTodayOPDPatientList",{city:c},25000);
+    if(!r||r.ok!==true)throw Error(r?.error||"Unable to retrieve today's OPD patient list.");
+    const serverDate=/^\d{8}$/.test(String(r.date||""))?String(r.date):date;
+    const serverCity=String(r.city||c).trim()||c;
+    const patients=Array.isArray(r.patients)?r.patients:[];
+    const now=Date.now();
+    const serverKey=`OPD_TODAY|${serverDate}|${serverCity}`;
+    const fresh={key:serverKey,type:"OPD_TODAY",date:serverDate,city:serverCity,patients,
+      status:r.complete===false?"CACHED_INCOMPLETE":"REFRESHED",complete:r.complete===true,
+      lastServerRefreshAt:now,lastServerCheckAt:now,cachedAt:now};
+    if(r.serialGapDetected===true||this.serialGap_(patients,"appointmentId"))fresh.status="STALE";
+    await this.replace("cache",serverKey,fresh);
+    return fresh;
+   }catch(e){
+    if(record)return record;
+    throw e;
+   }finally{
+    delete this._todayOPDRefreshes[key];
+   }
+  })();
+  this._todayOPDRefreshes[key]=request;
+  return request;
+ },
  getTodayPatientsByWhatsApp_({city,whatsapp}={}){
   const c=String(city||"").trim();
   const phone=this.normalizeWhatsApp_(whatsapp);

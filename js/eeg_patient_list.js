@@ -1,7 +1,5 @@
 (() => {
   const CACHE_PREFIX = "OPD_TODAY|";
-  const CACHE_TYPE = "OPD_TODAY";
-  const LEGACY_EEG_PREFIX = ["EEG", "TODAY"].join("_") + "|";
   const popupState = { open: false, city: "", key: "", updating: false };
 
   const esc = v => U.esc(v == null ? "" : v);
@@ -98,64 +96,11 @@
     }
   }
 
-  async function cleanupLegacyCache() {
-    try { await IDB.deleteCacheByPrefixExcept("cache", LEGACY_EEG_PREFIX, "__none__"); } catch (_) {}
-  }
-
-  async function retrieveFromServer(city) {
-    const r = await NeuronAPI.call("getTodayOPDPatientList", { city }, 25000);
-    if (!r || r.ok !== true) throw Error(r?.error || "Unable to retrieve today's OPD patient list.");
-    return r;
-  }
-
-  async function refresh(city, existingRecord = null) {
-    const date = todayKey(), key = cacheKey(date, city);
-    if (popupState.updating) return;
-    popupState.updating = true;
-    setStatus("Updating from server…", "working");
-    const previous = existingRecord || await IDB.get("cache", key).catch(() => null);
-    try {
-      const r = await retrieveFromServer(city);
-      const now = Date.now();
-      const patients = Array.isArray(r.patients) ? r.patients : [];
-      const record = {
-        key,
-        type: CACHE_TYPE,
-        date: String(r.date || date),
-        city: String(r.city || city).trim() || city,
-        patients,
-        status: r.complete === false ? "CACHED_INCOMPLETE" : "REFRESHED",
-        complete: r.complete === true,
-        lastServerRefreshAt: now,
-        lastServerCheckAt: now,
-        cachedAt: now
-      };
-      if (r.serialGapDetected === true || IDB.serialGap_(patients, "appointmentId")) record.status = "STALE";
-      await IDB.replace("cache", key, record);
-      render(record);
-      setLastUpdated(record);
-      showCacheStatus(record);
-      return record;
-    } catch (e) {
-      if (previous) {
-        render(previous);
-        setLastUpdated(previous);
-        showCacheStatus(previous);
-      } else {
-        setStatus(e?.message || "Unable to update patient list.", "warning");
-      }
-      throw e;
-    } finally {
-      popupState.updating = false;
-    }
-  }
-
   async function openPopup() {
     const m = $("eegTodayPopup");
     if (!m) return;
     const city = currentCity();
     const date = todayKey();
-
     popupState.open = true;
     popupState.city = city;
     popupState.key = city ? cacheKey(date, city) : "";
@@ -163,24 +108,16 @@
     document.body.classList.add("eeg-today-modal-open");
     setStatus("", "");
     setLastUpdated(null);
-
     if (!city) {
       $("eegTodayList").innerHTML = `<div class="eeg-today-empty">Today's EEG city is not selected.</div>`;
       return;
     }
-
     $("eegTodayList").innerHTML = '<div class="eeg-today-loading">Loading…</div>';
-    await cleanupLegacyCache();
-
-    let record = await IDB.get("cache", popupState.key).catch(() => null);
-    if (record) {
+    try {
+      const record = await IDB.getTodayOPDCache_(city);
       render(record);
       setLastUpdated(record);
       showCacheStatus(record);
-      return;
-    }
-    try {
-      record = await refresh(city);
     } catch (_) {
       $("eegTodayList").innerHTML = '<div class="eeg-today-empty">Unable to retrieve today’s EEG list.</div>';
     }
@@ -199,8 +136,26 @@
     if (!city) { setStatus("Today's EEG city is not selected.", "warning"); return; }
     popupState.city = city;
     popupState.key = cacheKey(date, city);
+    if (popupState.updating) return;
+    popupState.updating = true;
+    setStatus("Updating from server…", "working");
     const previous = await IDB.get("cache", popupState.key).catch(() => null);
-    try { await refresh(city, previous); } catch (_) {}
+    try {
+      const record = await IDB.getTodayOPDCache_(city, {forceRefresh:true});
+      render(record);
+      setLastUpdated(record);
+      showCacheStatus(record);
+    } catch (e) {
+      if (previous) {
+        render(previous);
+        setLastUpdated(previous);
+        showCacheStatus(previous);
+      } else {
+        setStatus(e?.message || "Unable to update patient list.", "warning");
+      }
+    } finally {
+      popupState.updating = false;
+    }
   }
 
   document.addEventListener("DOMContentLoaded", () => {
