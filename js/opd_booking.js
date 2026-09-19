@@ -6,6 +6,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   let cityChangeToken=0;
   let bookingInProgress=false;
   let bookingSessionId=0;
+  let followStatusTimer=null;
 
 
   // Show today's India-local date in the appointment field. The field is
@@ -185,9 +186,10 @@ document.addEventListener("DOMContentLoaded",()=>{
     const special=DailyCity.isSpecial();
     if(!special&&!allowed.includes(city)){showRestrictionPopup(city);return;}
     $("city").value=city;
+    syncFollowupNextCityLock();
     const accessGranted=DailyCity.isSpecial();
     DailyCity.set(city,accessGranted||special);
-    if(type==="New"&&!nextFollowupCityManuallyEdited) $("next").value=city;
+    if(!nextFollowupCityManuallyEdited) $("next").value=city;
     syncCityPickerTrigger();
     setTodayDateDisplay();
     $("date").dataset.key=todayKey();
@@ -202,6 +204,21 @@ document.addEventListener("DOMContentLoaded",()=>{
     syncCityPickerTrigger();
   };
 
+  const setFollowupStatus=(text,color="",autoHideMs=0)=>{
+    if(followStatusTimer){clearTimeout(followStatusTimer);followStatusTimer=null;}
+    const el=$("followStatus");
+    if(!el)return;
+    el.textContent=text||"";
+    el.style.color=color||"";
+    if(autoHideMs>0 && text){
+      followStatusTimer=setTimeout(()=>{
+        el.textContent="";
+        el.style.color="";
+        followStatusTimer=null;
+      },autoHideMs);
+    }
+  };
+
   const resetFields=(mode)=>{
     type=mode; verified=false; selected=null;
     nextFollowupCityManuallyEdited=false;
@@ -213,7 +230,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("newFields").hidden=mode!=="New";
     const refField=$("ref")?.closest(".field"), nextField=$("next")?.closest(".field");
     if(refField)refField.hidden=mode!=="New";
-    if(nextField)nextField.hidden=mode!=="New";
+    if(nextField)nextField.hidden=false;
     // In Follow-up mode, show only patient retrieval until a patient is selected.
     $("bookingFields").hidden=mode==="Follow-up";
     // The Follow-up flow uses followWa only for retrieval; the New-patient
@@ -240,7 +257,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     if(editActions) editActions.classList.remove("editing");
     $("waStatus").textContent=""; $("waStatus").style.color="";
     $("verifyTick").style.display="none";
-    $("followStatus").textContent=""; $("patients").innerHTML="";
+    setFollowupStatus(""); $("patients").innerHTML="";
     $("selectedPatientCard").hidden=true;
     $("selectedPatientName").textContent="—";
     $("selectedPatientAge").textContent="—";
@@ -289,6 +306,21 @@ document.addEventListener("DOMContentLoaded",()=>{
     },2200);
   };
 
+  const syncFollowupNextCityLock=()=>{
+    const next=$("next");
+    if(!next)return;
+    // In Follow-up mode, Next Follow-up City is directly editable when the
+    // Visit Location is Latur. For every other Visit Location it stays behind
+    // the existing Edit button until the user enters edit mode.
+    const followupLocked=type==="Follow-up" && !!selected && $("city")?.dataset?.followupLocked==="true";
+    const shouldLock=followupLocked && String($("city")?.value||"")!=="Latur";
+    next.disabled=shouldLock;
+    next.classList.toggle("followup-field-locked",shouldLock);
+    next.dataset.followupLocked=shouldLock?"true":"false";
+    const field=next.closest(".field");
+    if(field)field.dataset.followupLocked=shouldLock?"true":"false";
+  };
+
   const setFollowupFieldsLocked=(locked)=>{
     const ids=["name","age","unit","address","city","date"];
     ids.forEach(id=>{
@@ -307,6 +339,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     if($("cityPickerTrigger")) $("cityPickerTrigger").disabled=locked;
     syncCityPickerTrigger();
     if($("editFollowup")) $("editFollowup").hidden=!locked;
+    syncFollowupNextCityLock();
   };
 
   $("editFollowup").onclick=()=>{
@@ -435,7 +468,8 @@ document.addEventListener("DOMContentLoaded",()=>{
   const restoreDefaultCity=()=>{
     const c=getDefaultDailyCity();
     $("city").value=c;
-    if(type==="New"&&!nextFollowupCityManuallyEdited)$("next").value=c;
+    if(!nextFollowupCityManuallyEdited)$("next").value=c;
+    syncFollowupNextCityLock();
     updateCityOptions();
     syncCityPickerTrigger();
     setTodayDateDisplay();
@@ -478,12 +512,13 @@ document.addEventListener("DOMContentLoaded",()=>{
       const target=pendingRestrictedCity&&cities.includes(pendingRestrictedCity)?pendingRestrictedCity:getDefaultDailyCity();
       DailyCity.set(target,true);
       $("city").value=target;
+      syncFollowupNextCityLock();
       updateCityOptions();
       syncCityPickerTrigger();
       closeSpecialAccessPopup();
       pendingRestrictedCity="";
       setTodayDateDisplay(); $("date").dataset.key=todayKey();
-      if(type==="New"&&!nextFollowupCityManuallyEdited)$("next").value=target;
+      if(!nextFollowupCityManuallyEdited)$("next").value=target;
       return true;
     }catch(_){
       if(status)status.textContent="Unable to verify password. Please try again.";
@@ -536,35 +571,30 @@ document.addEventListener("DOMContentLoaded",()=>{
     if(!city)return;
     const button=$("rebuildFollowupCache");
     button.disabled=true;
-    $("followStatus").textContent="Checking Follow-up cache…";
-    $("followStatus").style.color="#7b1fa2";
+    setFollowupStatus("Checking Follow-up cache…","#7b1fa2");
     try{
       const r=await IDB.rebuildFollowupCityCache_(city);
       if(r?.mode==="INCREMENTAL"){
-        $("followStatus").textContent=`Follow-up cache updated — ${r.rowsReceived||0} rows checked. ${r.rowsInserted||0} new, ${r.rowsUpdated||0} updated.`;
-        $("followStatus").style.color="#168a4a";
+        setFollowupStatus(`Follow-up cache updated — ${r.rowsReceived||0} rows checked. ${r.rowsInserted||0} new, ${r.rowsUpdated||0} updated.`,"#168a4a",3000);
       }else if(r?.mode==="ALREADY_CURRENT"){
-        $("followStatus").textContent="Follow-up cache already up to date.";
-        $("followStatus").style.color="#168a4a";
+        setFollowupStatus("Follow-up cache already up to date.","#168a4a",3000);
       }else if(r?.mode==="FULL_BUILD"){
-        $("followStatus").textContent=`Follow-up cache rebuilt — ${r.rowsLoaded||0} records loaded.`;
-        $("followStatus").style.color="#168a4a";
+        setFollowupStatus(`Follow-up cache rebuilt — ${r.rowsLoaded||0} records loaded.`,"#168a4a",3000);
       }else if(r?.mode==="IN_PROGRESS"){
-        $("followStatus").textContent="Cache synchronization is already in progress.";
-        $("followStatus").style.color="#b54708";
+        setFollowupStatus("Cache synchronization is already in progress.","#b54708",3000);
       }else{
         throw new Error(r?.error||"Follow-up cache synchronization failed.");
       }
 
     }catch(e){
-      $("followStatus").textContent="Follow-up cache synchronization failed. Please try again.";
-      $("followStatus").style.color="#b42318";
+      setFollowupStatus("Follow-up cache synchronization failed. Please try again.","#b42318",3000);
     }finally{
       button.disabled=false;
     }
   });
 
   $("load").onclick=async()=>{
+    if(followStatusTimer){clearTimeout(followStatusTimer);followStatusTimer=null;}
     // Starting a new patient retrieval must clear every previous booking stage.
     selected=null; verified=false;
     $("patients").innerHTML="";
@@ -638,8 +668,9 @@ $("patients").innerHTML="";
           $("city").value=dailyCity;
           syncCityPickerTrigger();
           updateCityOptions();
-          // Follow-up has no Referred By field. Next Follow-up City is always
-          // the current Visit Location, so there is no separate selection.
+          // Follow-up Next Follow-up City defaults to the current Visit Location
+          // but remains independently editable by the user.
+          nextFollowupCityManuallyEdited=false;
           $("next").value=dailyCity;
           // Explicitly reveal the complete Follow-up editing/booking stage.
           $("bookingFields").hidden=false;
@@ -816,7 +847,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       [type==="Follow-up"?"followWa":"wa","Please enter the patient's WhatsApp number."],
       ["city","Please select the visit location."],
       ["date","Please select an available appointment date."],
-      ...(type==="New"?[ ["next","Please select next follow-up city."] ]:[])
+      ["next","Please select next follow-up city."]
     ];
     for(const [field,message] of requiredFields){
       if(!String($(field)?.value||$(field)?.dataset?.key||"").trim()){
@@ -885,7 +916,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       whatsapp:U.phone(type==="Follow-up"?$("followWa").value:$("wa").value),
       city:$("city").value,
       appointmentDate:$("date").dataset.key,
-      nextFollowupCity:type==="Follow-up"?$("city").value:$("next").value,
+      nextFollowupCity:$("next").value,
       patientType:type,
       opdCharges:total,
       opdPaymentMode:payMode,
@@ -923,7 +954,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       try{void window.syncSuccessfulBookingToTodayCaches_?.({kind:"OPD_BOOKING",rowNumber:r.rowNumber,appointmentId:r.appointmentId||"",date:r.date||payload.appointmentDate,time:r.time||"",patientName:r.patientName||payload.childName,age:r.age??payload.age,ageUnit:r.ageUnit||payload.ageUnit,address:r.address??payload.address,patientType:r.patientType||payload.patientType,whatsapp:payload.whatsapp,city:r.city||payload.city,referredBy:r.referredBy??payload.referredBy,nextFollowupCity:r.nextFollowupCity??payload.nextFollowupCity,bookingRequestId:id,opdCharges:r.opdCharges??payload.opdCharges,opdCashPaid:r.opdCashPaid??payload.opdCashPaid,opdOnlinePaid:r.opdOnlinePaid??payload.opdOnlinePaid,opdTotalPaid:r.opdTotalPaid??(Number(payload.opdCashPaid)||0)+(Number(payload.opdOnlinePaid)||0)});}catch(_){ }
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
       $("submitStatus").style.color="#168a4a";
-      const confirmationHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Confirmed</h2><p class="city-confirm">For <b>${U.esc(payload.city||"")}</b> City</p><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(r.patientName)}</b></div><div class="confirm-row"><span>Age</span><b>${r.age} ${r.ageUnit}</b></div><div class="confirm-row"><span>Address</span><b>${U.esc(r.address||payload.address)}</b></div><div class="confirm-row"><span>Date of Booking</span><b>${U.date(r.date)}</b></div><div class="confirm-row"><span>OPD Charges</span><b>${U.money(r.opdCharges)}</b></div><div class="confirm-row"><span>Cash</span><b>${U.money(r.opdCashPaid)}</b></div><div class="confirm-row"><span>Online</span><b>${U.money(r.opdOnlinePaid)}</b></div><div class="confirm-row"><span>Next Follow-up City</span><b>${U.esc(type==="Follow-up"?payload.city:(r.nextFollowupCity||payload.nextFollowupCity))}</b></div></div>`;
+      const confirmationHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Confirmed</h2><p class="city-confirm">For <b>${U.esc(payload.city||"")}</b> City</p><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(r.patientName)}</b></div><div class="confirm-row"><span>Age</span><b>${r.age} ${r.ageUnit}</b></div><div class="confirm-row"><span>Address</span><b>${U.esc(r.address||payload.address)}</b></div><div class="confirm-row"><span>Date of Booking</span><b>${U.date(r.date)}</b></div><div class="confirm-row"><span>OPD Charges</span><b>${U.money(r.opdCharges)}</b></div><div class="confirm-row"><span>Cash</span><b>${U.money(r.opdCashPaid)}</b></div><div class="confirm-row"><span>Online</span><b>${U.money(r.opdOnlinePaid)}</b></div><div class="confirm-row"><span>Next Follow-up City</span><b>${U.esc(r.nextFollowupCity||payload.nextFollowupCity)}</b></div></div>`;
       resetFields("New");
       // resetFields intentionally clears the booking form, so restore the
       // confirmation content AFTER the reset.
