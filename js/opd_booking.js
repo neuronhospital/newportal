@@ -758,13 +758,22 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     return minutes<9*60 || minutes>21*60;
   };
 
+  const AFTER_HOURS_ACK_KEY="NEURON_OPD_AFTER_HOURS_ACK_DATE";
+  const hasTodayAfterHoursAcknowledgement=()=>{
+    try{return localStorage.getItem(AFTER_HOURS_ACK_KEY)===todayKey();}catch(_){return false;}
+  };
+  const storeTodayAfterHoursAcknowledgement=()=>{
+    try{localStorage.setItem(AFTER_HOURS_ACK_KEY,todayKey());}catch(_){}
+  };
+
   const showConsultationHoursNote=()=>new Promise(resolve=>{
     const modal=$("opdHoursNoteModal");
-    if(!modal){resolve(true);return;}
+    if(!modal){storeTodayAfterHoursAcknowledgement();resolve(true);return;}
     const finish=proceed=>{
       modal.hidden=true;
       modal.setAttribute("aria-hidden","true");
       document.body.classList.remove("opd-modal-open");
+      if(proceed)storeTodayAfterHoursAcknowledgement();
       resolve(proceed);
     };
     modal.hidden=false;
@@ -882,7 +891,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     if(total>2000){$("submitStatus").textContent="OPD total cannot exceed ₹2000.";$("submitStatus").style.color="#b42318";resetAfterValidationError();return;}
     if(total<0){$("submitStatus").textContent="Enter a valid OPD amount.";$("submitStatus").style.color="#b42318";resetAfterValidationError();return;}
 
-    if(isOutsideUsualConsultationHours()){
+    if(isOutsideUsualConsultationHours() && !hasTodayAfterHoursAcknowledgement()){
       const proceed=await showConsultationHoursNote();
       if(!proceed){resetAfterValidationError();return;}
     }
