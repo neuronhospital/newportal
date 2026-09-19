@@ -531,6 +531,39 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("cityPickerModal")?.addEventListener("click",e=>{if(e.target===$("cityPickerModal")||e.target.classList.contains("opd-access-backdrop"))closeCityPicker();});
   $("city").onchange=()=>syncCityPickerTrigger();
 
+  $("rebuildFollowupCache")?.addEventListener("click",async()=>{
+    const city=String($("followCity")?.value||"").trim();
+    if(!city)return;
+    const button=$("rebuildFollowupCache");
+    button.disabled=true;
+    $("followStatus").textContent="Checking Follow-up cache…";
+    $("followStatus").style.color="#7b1fa2";
+    try{
+      const r=await IDB.rebuildFollowupCityCache_(city);
+      if(r?.mode==="INCREMENTAL"){
+        $("followStatus").textContent=`Follow-up cache updated — ${r.rowsReceived||0} rows checked. ${r.rowsInserted||0} new, ${r.rowsUpdated||0} updated.`;
+        $("followStatus").style.color="#168a4a";
+      }else if(r?.mode==="ALREADY_CURRENT"){
+        $("followStatus").textContent="Follow-up cache already up to date.";
+        $("followStatus").style.color="#168a4a";
+      }else if(r?.mode==="FULL_BUILD"){
+        $("followStatus").textContent=`Follow-up cache rebuilt — ${r.rowsLoaded||0} records loaded.`;
+        $("followStatus").style.color="#168a4a";
+      }else if(r?.mode==="IN_PROGRESS"){
+        $("followStatus").textContent="Cache synchronization is already in progress.";
+        $("followStatus").style.color="#b54708";
+      }else{
+        throw new Error(r?.error||"Follow-up cache synchronization failed.");
+      }
+
+    }catch(e){
+      $("followStatus").textContent="Follow-up cache synchronization failed. Please try again.";
+      $("followStatus").style.color="#b42318";
+    }finally{
+      button.disabled=false;
+    }
+  });
+
   $("load").onclick=async()=>{
     // Starting a new patient retrieval must clear every previous booking stage.
     selected=null; verified=false;

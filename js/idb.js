@@ -129,70 +129,126 @@ window.IDB={
     const d=await this.open();
     await new Promise((ok,no)=>{const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache"),r=st.get(this.followupSyncLockKey_(c));r.onsuccess=()=>{if(r.result?.owner===owner)st.delete(this.followupSyncLockKey_(c));};r.onerror=()=>no(r.error);t.oncomplete=ok;t.onerror=()=>no(t.error||new Error("Follow-up synchronization lock release failed."));});
   },
-  async reconcileFollowupCityGaps_(city){
-    const c=String(city||"").trim();if(!c)return;
+  followupMetaValid_(meta,city){
+    const c=String(city||"").trim();
+    if(!meta||meta.status!=="READY"||String(meta.city||"").trim()!==c)return false;
+    const known=Number(meta.highestKnownSourceRow),contiguous=Number(meta.highestContiguousSourceRow),count=Number(meta.recordCount);
+    return Number.isInteger(known)&&known>=1&&Number.isInteger(contiguous)&&contiguous>=1&&Number.isInteger(count)&&count>=0&&contiguous<=known;
+  },
+  async buildFollowupCityCache_(city){
+    const c=String(city||"").trim();if(!c)throw new Error("Follow-up city is required.");
+    let owner=null;
+    try{
+      const deadline=Date.now()+130000;
+      while(Date.now()<deadline){
+        const meta=await this.getFollowupMeta(c);
+        if(this.followupMetaValid_(meta,c))return {mode:"ALREADY_READY",city:c,recordCount:Number(meta.recordCount)||0};
+        owner=await this.acquireFollowupBuildLock_(c);
+        if(owner)break;
+        await new Promise(resolve=>setTimeout(resolve,500));
+      }
+      if(!owner)throw new Error("Follow-up cache build is already in progress. Please try again.");
+      await this.beginFollowupCityBuild(c);
+      try{
+        const r=await window.NeuronAPI.call("getFollowupCityHistory",{city:c},100000);
+        if(!r||r.ok!==true)throw new Error(r?.error||"Unable to build Follow-up history.");
+        const records=Array.isArray(r.records)?r.records:[],BATCH=250;
+        for(let i=0;i<records.length;i+=BATCH)await this.putFollowupBuildBatch(c,records.slice(i,i+BATCH));
+        const p=window.U?.parts?.()||{},safeMonth=p.y?`${p.y}-${String(p.m).padStart(2,"0")}`:"";
+        const meta={city:c,boundaryDate:String(r.boundaryDate||""),oldestDate:records[0]?.date||"",newestDate:records[records.length-1]?.date||"",recordCount:records.length,highestKnownSourceRow:Number(r.highestKnownSourceRow)||1,highestContiguousSourceRow:Number(r.highestContiguousSourceRow)||1,createdAt:Date.now(),lastFullBuildAt:Date.now(),lastCleanupMonth:safeMonth};
+        await this.finishFollowupCityBuild(c,meta);
+        return {mode:"FULL_BUILD",city:c,rowsLoaded:records.length,oldestDate:meta.oldestDate,newestDate:meta.newestDate,highestKnownSourceRow:meta.highestKnownSourceRow,highestContiguousSourceRow:meta.highestContiguousSourceRow};
+      }catch(e){
+        await this.setFollowupMeta({city:c,status:"BUILD_FAILED",lastUpdatedAt:Date.now()}).catch(()=>{});
+        throw e;
+      }
+    }finally{
+      if(owner)await this.releaseFollowupBuildLock_(c,owner).catch(()=>{});
+    }
+  },
+  async syncFollowupCityCache_(city){
+    const c=String(city||"").trim();if(!c)return {mode:"FAILED",error:"Follow-up city is required."};
     const lockKey=this.followupSyncLockKey_(c),d=await this.open(),owner=`${Date.now()}-${Math.random().toString(36).slice(2)}`,now=Date.now();
     const locked=await new Promise((ok,no)=>{let acquired=false;const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache"),r=st.get(lockKey);r.onsuccess=()=>{if(r.result&&Number(r.result.expiresAt)>now){acquired=false;return;}st.put({key:lockKey,type:"FOLLOWUP_SYNC_LOCK",city:c,owner,expiresAt:now+120000,updatedAt:now});acquired=true;};r.onerror=()=>no(r.error);t.oncomplete=()=>ok(acquired);t.onerror=()=>no(t.error||new Error("Follow-up synchronization lock failed."));});
-    if(!locked)return;
+    if(!locked)return {mode:"IN_PROGRESS",city:c};
     try{
-      const meta=await this.getFollowupMeta(c);if(!meta||meta.status!=="READY")return;
-      const from=Math.max(2,(Number(meta.highestContiguousSourceRow)||1)+1);
-      const knownAtStart=Number(meta.highestKnownSourceRow)||0;
+      const meta=await this.getFollowupMeta(c);
+      if(!this.followupMetaValid_(meta,c))return {mode:"FAILED",city:c,error:"Follow-up cache metadata is not valid for incremental synchronization."};
+      const previousContiguous=Number(meta.highestContiguousSourceRow)||1;
+      const previousKnown=Number(meta.highestKnownSourceRow)||1;
+      const from=Math.max(2,previousContiguous+1);
       const r=await window.NeuronAPI.call("getFollowupCitySyncRange",{city:c,fromRow:from},100000);
       if(!r||r.ok!==true)throw new Error(r?.error||"Unable to synchronize Follow-up history.");
-      const records=Array.isArray(r.records)?r.records:[];
-      for(let i=0;i<records.length;i+=250)await this.putFollowupBuildBatch(c,records.slice(i,i+250));
-      const scannedTo=Math.max(Number(r.toRow)||0,Number(r.highestKnownSourceRow)||0,from-1);
-      const latest=Math.max(knownAtStart,Number(r.highestKnownSourceRow)||0,scannedTo);
-      const current=await this.getFollowupMeta(c);
-      if(current&&current.status==="READY"){
-        const currentKnown=Number(current.highestKnownSourceRow)||0;
-        const currentContiguous=Number(current.highestContiguousSourceRow)||0;
-        let contiguous=Math.max(currentContiguous,0);
-        const coveredTo=Math.max(scannedTo,from-1);
-        if(from<=coveredTo)contiguous=Math.max(contiguous,coveredTo);
-        await this.setFollowupMeta({...current,city:c,status:"READY",highestKnownSourceRow:Math.max(currentKnown,latest),highestContiguousSourceRow:contiguous,lastUpdatedAt:Date.now()});
+      const toRow=Number(r.toRow)||0;
+      const spreadsheetLastRow=Math.max(toRow,Number(r.highestKnownSourceRow)||0);
+      if(spreadsheetLastRow<from){
+        const current=await this.getFollowupMeta(c);
+        if(current&&current.status==="READY")await this.setFollowupMeta({...current,city:c,lastUpdatedAt:Date.now()});
+        return {mode:"ALREADY_CURRENT",city:c,idbContiguousRow:previousContiguous,spreadsheetLastRow,rowsScanned:0};
       }
+      const records=Array.isArray(r.records)?r.records:[];
+      let inserted=0,updated=0;
+      for(let i=0;i<records.length;i+=250){
+        const batch=records.slice(i,i+250);
+        const counts=await this.putFollowupSyncBatch_(c,batch);
+        inserted+=counts.inserted;updated+=counts.updated;
+      }
+      const current=await this.getFollowupMeta(c);
+      if(!current||current.status!=="READY")throw new Error("Follow-up cache metadata changed during synchronization.");
+      const newContiguous=Math.max(Number(current.highestContiguousSourceRow)||0,toRow);
+      const newKnown=Math.max(Number(current.highestKnownSourceRow)||0,spreadsheetLastRow);
+      const nextCount=Math.max(0,Number(current.recordCount)||0)+inserted;
+      await this.setFollowupMeta({...current,city:c,status:"READY",highestKnownSourceRow:newKnown,highestContiguousSourceRow:newContiguous,recordCount:nextCount,lastUpdatedAt:Date.now(),lastSyncAt:Date.now()});
+      return {mode:"INCREMENTAL",city:c,fromRow:from,toRow,rowsReceived:records.length,rowsInserted:inserted,rowsUpdated:updated,previousContiguousRow:previousContiguous,newContiguousRow:newContiguous,spreadsheetLastRow:spreadsheetLastRow};
+    }catch(e){
+      const meta=await this.getFollowupMeta(c).catch(()=>null);
+      return {mode:"FAILED",city:c,error:e?.message||String(e),previousContiguousRow:Number(meta?.highestContiguousSourceRow)||0};
     }finally{
       await this.releaseFollowupSyncLock_(c,owner).catch(()=>{});
     }
+  },
+  putFollowupSyncBatch_(city,records){
+    const c=String(city||"").trim(),list=Array.isArray(records)?records:[];
+    return this.open().then(d=>new Promise((ok,no)=>{
+      const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache");
+      let inserted=0,updated=0,remaining=list.length;
+      if(!remaining){ok({inserted:0,updated:0});return;}
+      list.forEach(x=>{
+        const row=Number(x?.sourceRow);
+        if(!Number.isInteger(row)||row<2){remaining--;return;}
+        const key=this.followupVisitKey_(c,row),r=st.get(key);
+        r.onsuccess=()=>{
+          const visit={...x,key,type:"FOLLOWUP_VISIT",city:c,normalizedWhatsapp:this.normalizeWhatsApp_(x.whatsapp),sourceRow:row};
+          if(r.result)updated++;else inserted++;
+          st.put(visit);
+          remaining--;
+        };
+        r.onerror=()=>no(r.error);
+      });
+      t.oncomplete=()=>ok({inserted,updated});
+      t.onerror=()=>no(t.error||new Error("Follow-up synchronization batch failed."));
+      t.onabort=()=>no(t.error||new Error("Follow-up synchronization batch aborted."));
+    }));
+  },
+  async reconcileFollowupCityGaps_(city){
+    return this.syncFollowupCityCache_(city);
+  },
+  async rebuildFollowupCityCache_(city){
+    const c=String(city||"").trim();if(!c)return {mode:"FAILED",error:"Follow-up city is required."};
+    const meta=await this.getFollowupMeta(c);
+    if(!this.followupMetaValid_(meta,c)){
+      try{return await this.buildFollowupCityCache_(c);}catch(e){return {mode:"FAILED",city:c,error:e?.message||String(e)};}
+    }
+    return this.syncFollowupCityCache_(c);
   },
 
   async getOrBuildFollowupPatients_(city,whatsapp){
     const c=String(city||"").trim(),phone=this.normalizeWhatsApp_(whatsapp);
     if(!c||!/^[6-9]\d{9}$/.test(phone))return [];
     let meta=await this.getFollowupMeta(c);
-    if(!meta||meta.status!=="READY"){
-      let owner=null,startedBuild=false;
-      try{
-        const deadline=Date.now()+130000;
-        while(Date.now()<deadline){
-          meta=await this.getFollowupMeta(c);
-          if(meta?.status==="READY")break;
-          owner=await this.acquireFollowupBuildLock_(c);
-          if(owner){
-            startedBuild=true;
-            await this.beginFollowupCityBuild(c);
-            try{
-              const r=await window.NeuronAPI.call("getFollowupCityHistory",{city:c},100000);
-              if(!r||r.ok!==true)throw new Error(r?.error||"Unable to build Follow-up history.");
-              const records=Array.isArray(r.records)?r.records:[],BATCH=250;
-              for(let i=0;i<records.length;i+=BATCH)await this.putFollowupBuildBatch(c,records.slice(i,i+BATCH));
-              const p=window.U?.parts?.()||{},month=p.y?`${p.y}-${String(p.m).padStart(2,"0")}`:"";
-              await this.finishFollowupCityBuild(c,{city:c,boundaryDate:String(r.boundaryDate||""),oldestDate:records[0]?.date||"",newestDate:records[records.length-1]?.date||"",recordCount:records.length,highestKnownSourceRow:Number(r.highestKnownSourceRow)||1,highestContiguousSourceRow:Number(r.highestContiguousSourceRow)||1,createdAt:Date.now(),lastFullBuildAt:Date.now(),lastCleanupMonth:month});
-            }catch(e){
-              await this.setFollowupMeta({city:c,status:"BUILD_FAILED",lastUpdatedAt:Date.now()}).catch(()=>{});
-              throw e;
-            }
-            break;
-          }
-          await new Promise(resolve=>setTimeout(resolve,500));
-        }
-        meta=await this.getFollowupMeta(c);
-        if(meta?.status!=="READY")throw new Error("Follow-up city cache is still being built. Please try again.");
-      }finally{
-        if(startedBuild&&owner)await this.releaseFollowupBuildLock_(c,owner).catch(()=>{});
-      }
+    if(!this.followupMetaValid_(meta,c)){
+      const built=await this.buildFollowupCityCache_(c);
+      if(built?.mode==="FAILED")throw new Error(built.error||"Unable to build Follow-up cache.");
     }
     let patients=await this.getFollowupPatients_(c,phone);
     const p=window.U?.parts?.()||{},today=p.y?`${p.y}${String(p.m).padStart(2,"0")}${String(p.d).padStart(2,"0")}`:"";
@@ -273,13 +329,14 @@ window.IDB={
     return String(a?.time||"").localeCompare(String(b?.time||""));
   });
   const applyToday=cache=>{
-    if(!cache||!Array.isArray(cache.patients))return;
-    const patients=cache.patients.slice();
+    if(!cache&&kind!=="OPD_BOOKING")return;
+    const patients=Array.isArray(cache?.patients)?cache.patients.slice():[];
     const i=patients.findIndex(x=>String(x?.appointmentId||"").trim()===appointmentId);
     if(i>=0)patients[i]=makePatient(patients[i]);else patients.push(makePatient(null));
     sortPatients(patients);
-    const next={...cache,patients,cacheUpdatedAt:Date.now()};
-    if(this.cacheStale_(next,patients,"appointmentId"))next.status="STALE";
+    const now=Date.now();
+    const next=cache?{...cache,patients,cacheUpdatedAt:now}:{key:opdKey,type:"OPD_TODAY",date,city,patients,status:"CACHED_INCOMPLETE",complete:false,cacheUpdatedAt:now};
+    if(cache&&this.cacheStale_(next,patients,"appointmentId"))next.status="STALE";
     st.put(next);
     result.todayUpdated=true;
   };
