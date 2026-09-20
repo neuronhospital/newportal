@@ -473,8 +473,16 @@ window.IDB={
     const now=Date.now();
     const bookingSerial=Number(booking.serial)||Number(String(appointmentId).match(/-(\d+)$/)?.[1])||null;
     const bookingRow=Number(booking.rowNumber)||null;
+    const isFirstOPDBookingForNewTodayCache=
+      !cache &&
+      kind==="OPD_BOOKING" &&
+      date===String(booking.date||booking.appointmentDate||"").trim() &&
+      city===String(booking.city||"").trim() &&
+      bookingSerial===1;
     const next=cache?{...cache,patients,cacheUpdatedAt:now}:
-      {key:opdKey,type:"OPD_TODAY",date,city,patients,status:"CACHED_INCOMPLETE",complete:false,cacheUpdatedAt:now};
+      {key:opdKey,type:"OPD_TODAY",date,city,patients,
+       status:isFirstOPDBookingForNewTodayCache?"REFRESHED":"CACHED_INCOMPLETE",
+       complete:isFirstOPDBookingForNewTodayCache,cacheUpdatedAt:now};
     if(kind==="OPD_BOOKING"&&bookingSerial&&bookingRow){
       const oldSerial=Number(next.lastSerial)||0,oldRow=Number(next.lastRowNumber)||1;
       if(bookingSerial>=oldSerial&&bookingRow>=oldRow){
