@@ -509,7 +509,8 @@ body.neuron-embedded .secure-wrap{margin:12px auto!important}
 /* v206.9: global popup scroll containment. */
 html.neuron-popup-guard-active,body.neuron-popup-guard-active{overscroll-behavior-y:none}
 body.neuron-popup-guard-active{overflow:hidden!important}
-html.neuron-popup-embedded,body.neuron-embedded{overscroll-behavior-y:contain}
+html.neuron-popup-embedded{overflow-y:auto!important;overscroll-behavior-y:contain}
+body.neuron-popup-embedded,body.neuron-embedded{overflow-y:auto!important;overscroll-behavior-y:contain}
 [role="dialog"],.footer-update-dialog,.charge-lock-dialog,.opd-access-dialog,.eeg-calls-dialog,.neuron-recovery-dialog{overscroll-behavior:contain}
 .opd-today-list,.eeg-today-list,.patient-action-body,.patient-action-form-body,.neuron-recovery-dialog-body,.city-picker-list{overscroll-behavior:contain;overscroll-behavior-y:contain}
 .opd-today-dialog,.eeg-today-dialog,.patient-action-dialog,.patient-action-form-dialog,.neuron-recovery-dialog,.opd-access-dialog,.eeg-calls-dialog,.footer-update-dialog,.charge-lock-dialog{overscroll-behavior:contain}
