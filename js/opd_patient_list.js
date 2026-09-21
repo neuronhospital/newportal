@@ -50,15 +50,20 @@
     const opdRefund = p?.opdRefundProvided === true ? (nonNegativeAmount(p?.opdRefund) ?? 0) : 0;
     const eegRefund = p?.eegRefundProvided === true ? (nonNegativeAmount(p?.eegRefund) ?? 0) : 0;
     const refundTotal = opdRefund + eegRefund;
+    let refund = "";
     if (refundTotal > 0) {
       const breakdown = [
         opdRefund > 0 ? `O${opdRefund}` : "",
         eegRefund > 0 ? `E${eegRefund}` : ""
       ].filter(Boolean).join("+");
-      items.push(`Refund : ${U.money(refundTotal)} (${breakdown})`);
+      refund = `Refund : ${U.money(refundTotal)} (${breakdown})`;
     }
 
-    return items;
+    const allThree = items.length === 2 && !!refund;
+    return {
+      inline: refund && !allThree ? [...items, refund] : items,
+      mobileThirdLine: allThree ? refund : ""
+    };
   }
 
   function serialOf(id) {
@@ -93,7 +98,15 @@
     list.innerHTML = patients.map((p, i) => {
       const age = ageText(p);
       const meta = paymentMeta(p);
-      return `<button type="button" class="opd-today-row" data-appointment-id="${esc(p?.appointmentId || "")}"><span class="opd-today-card-line1"><span class="opd-today-number">${i + 1}</span><span class="opd-today-name"><b>${esc(p?.name || "")}</b></span>${age ? `<span class="opd-today-age">${esc(age)}</span>` : ""}</span><span class="opd-today-card-line2">${meta.map((item, index) => `${index ? `<span class="opd-today-separator" aria-hidden="true">•</span>` : ""}<span class="opd-today-payment">${esc(item)}</span>`).join("")}</span></button>`;
+      const inline = meta.inline.map((item, index) => {
+        const isRefund = index === meta.inline.length - 1 && String(item).startsWith("Refund :");
+        const thirdLineMobile = isRefund && meta.mobileThirdLine;
+        const cls = thirdLineMobile ? "opd-today-payment opd-today-refund-inline is-third-line-mobile" : "opd-today-payment";
+        const separator = index ? `<span class="opd-today-separator${thirdLineMobile ? " is-third-line-mobile-separator" : ""}" aria-hidden="true">•</span>` : "";
+        return `${separator}<span class="${cls}">${esc(item)}</span>`;
+      }).join("");
+      const thirdLine = meta.mobileThirdLine ? `<span class="opd-today-card-line3"><span class="opd-today-payment">${esc(meta.mobileThirdLine)}</span></span>` : "";
+      return `<button type="button" class="opd-today-row" data-appointment-id="${esc(p?.appointmentId || "")}"><span class="opd-today-card-line1"><span class="opd-today-number">${i + 1}</span><span class="opd-today-name"><b>${esc(p?.name || "")}</b></span>${age ? `<span class="opd-today-age">${esc(age)}</span>` : ""}</span><span class="opd-today-card-line2">${inline}</span>${thirdLine}</button>`;
     }).join("");
     list.querySelectorAll("[data-appointment-id]").forEach(row => row.addEventListener("click", () => {
       const id=String(row.dataset.appointmentId||"");
