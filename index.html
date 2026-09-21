@@ -64,4 +64,21 @@
     <div class="eeg-today-footer"><button type="button" id="eegTodayOk" class="cta">OK</button></div>
   </div>
 </div>
-<div id="footer"></div><script src="js/config.js"></script><script src="js/api.js"></script><script src="js/utils.js"></script><script src="js/idb.js"></script><script src="js/schedule.js"></script><script src="js/common.js"></script><script src="js/recovery.js"></script><script src="js/opd_patient_list.js"></script><script src="js/eeg_patient_list.js"></script></body></html>
+<div id="patientActionPopup" class="patient-action-modal" hidden>
+  <div id="patientActionBackdrop" class="patient-action-backdrop"></div>
+  <div class="patient-action-dialog" role="dialog" aria-modal="true" aria-labelledby="patientActionTitle">
+    <div class="patient-action-header">
+      <div class="patient-action-heading-row"><div><h2 id="patientActionTitle">Patient Name</h2><div id="patientActionAge" class="patient-action-age"></div></div><button type="button" id="patientActionBack" class="patient-action-back" aria-label="Back to Today’s OPD">Back</button></div>
+    </div>
+    <div id="patientActionBody" class="patient-action-body"></div>
+    <div class="patient-action-footer"><button type="button" id="patientActionClose" class="cta">Close</button></div>
+  </div>
+</div>
+<div id="patientActionFormPopup" class="patient-action-form-modal" hidden>
+  <div class="patient-action-form-backdrop"></div>
+  <div class="patient-action-form-dialog" role="dialog" aria-modal="true" aria-labelledby="patientActionFormTitle">
+    <div class="patient-action-form-header"><h2 id="patientActionFormTitle">Patient Action</h2><button type="button" id="patientActionFormBack" class="patient-action-back">Back</button></div>
+    <div class="patient-action-form-body"><iframe id="patientActionFrame" title="Patient action form"></iframe></div>
+  </div>
+</div>
+<div id="footer"></div><script src="js/config.js"></script><script src="js/api.js"></script><script src="js/utils.js"></script><script src="js/idb.js"></script><script src="js/schedule.js"></script><script src="js/common.js"></script><script src="js/recovery.js"></script><script src="js/opd_patient_list.js"></script><script src="js/patient_action.js"></script><script src="js/eeg_patient_list.js"></script></body></html>

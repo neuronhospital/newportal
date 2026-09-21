@@ -52,17 +52,9 @@ function render(list){
  // patients, but this prevents display of fully refunded records if stale data
  // reaches the browser.
  list = (list || []).filter(p=>{
-  const opdPaid = Number(p.opdTotalPaid || 0);
-  const eegPaid = Number(p.eegTotalPaid || 0);
-  // Refund eligibility must follow the backend rule exactly:
-  // U/V empty = refund not yet provided; U/V non-empty = already refunded.
-  // Do not infer refund status from the numeric refund amount.
-  const opdRefundProvided = p.opdRefundProvided === true;
-  const eegRefundProvided = p.eegRefundProvided === true;
-  const opdPending = opdPaid > 0 && !opdRefundProvided;
-  const eegPending = eegPaid > 0 && !eegRefundProvided;
-  p.refundAvailable = {opd:opdPending,eeg:eegPending};
-  return opdPending || eegPending;
+  const refund = window.NeuronPatientActionRules?.refundAvailability?.(p) || {opd:false,eeg:false};
+  p.refundAvailable = refund;
+  return refund.opd || refund.eeg;
  });
  list.sort((a,b)=>{const sa=Number(String(a?.appointmentId||"").match(/-(\d+)$/)?.[1]),sb=Number(String(b?.appointmentId||"").match(/-(\d+)$/)?.[1]);if(Number.isFinite(sa)&&Number.isFinite(sb)&&sa!==sb)return sb-sa;const at=String(a?.date||"")+String(a?.time||"");const bt=String(b?.date||"")+String(b?.time||"");if(bt!==at)return bt.localeCompare(at);return (Number(b?.rowNumber)||0)-(Number(a?.rowNumber)||0);});
  list.forEach((p,i)=>{
@@ -126,10 +118,11 @@ function save(){
   if(!patched?.updated||!patched.patient)throw Error("Refund was saved, but today's OPD cache could not be synchronized. Please reload the patient after synchronization.");
   try{await IDB.put("tx",{...tx,status:"complete",result:x,completedAt:Date.now()});}catch(_){}
   const saved=patched.patient;
+  window.NeuronPatientActionContext?.notify?.("REFUND");
   showRefundConfirmation(saved);
-  const opdPending=Number(saved.opdTotalPaid||0)>0 && saved.opdRefundProvided!==true;
-  const eegPending=Number(saved.eegTotalPaid||0)>0 && saved.eegRefundProvided!==true;
-  if(opdPending||eegPending)render([saved]);
+  const refund = window.NeuronPatientActionRules?.refundAvailability?.(saved) || {opd:false,eeg:false};
+  saved.refundAvailable = refund;
+  if(refund.opd||refund.eeg)render([saved]);
  }).catch(e=>{
   inputs.forEach(i=>i.disabled=false);
   btn.disabled=false;
@@ -168,3 +161,19 @@ function resetRefundView(){
  const c=document.getElementById('confirmation'); if(c)c.innerHTML='';
  const rs=document.getElementById('refundStatus'); if(rs)rs.textContent='';
 }
+
+
+document.addEventListener("DOMContentLoaded",()=>{
+ const ctx=window.NeuronPatientActionContext?.read?.();
+ if(new URLSearchParams(location.search).get("patientAction")!=="1" || !ctx?.patient)return;
+ const p=ctx.patient;
+ const cityEl=document.getElementById('refundCity');
+ if(cityEl && p.city)cityEl.value=String(p.city);
+ const w=document.getElementById('whatsapp'); if(w)w.value=String(p.whatsapp||"").replace(/\D/g,"").slice(-10);
+ const r=window.NeuronPatientActionRules?.refundAvailability?.(p) || {opd:false,eeg:false};
+ p.refundAvailable=r;
+ document.getElementById('patients').innerHTML='';
+ const x=document.createElement('div'); x.className='card patient-card'; x.innerHTML='<h3>'+U.esc(p.name||'')+'</h3>';
+ document.getElementById('patients').appendChild(x);
+ selectPatient(p,x);
+});

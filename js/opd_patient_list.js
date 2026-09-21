@@ -62,8 +62,13 @@
     list.innerHTML = patients.map((p, i) => {
       const age = ageText(p);
       const meta = age ? `${age} • ${paidText(p)}` : paidText(p);
-      return `<div class="opd-today-row"><span class="opd-today-number">${i + 1}.</span><span class="opd-today-patient"><b>${esc(p?.name || "")}</b><span>${esc(meta)}</span></span></div>`;
+      return `<button type="button" class="opd-today-row" data-appointment-id="${esc(p?.appointmentId || "")}"><span class="opd-today-number">${i + 1}.</span><span class="opd-today-patient"><b>${esc(p?.name || "")}</b><span>${esc(meta)}</span></span></button>`;
     }).join("");
+    list.querySelectorAll("[data-appointment-id]").forEach(row => row.addEventListener("click", () => {
+      const id=String(row.dataset.appointmentId||"");
+      const patient=patients.find(x=>String(x?.appointmentId||"")===id);
+      if(patient) window.NeuronPatientAction?.open?.(patient);
+    }));
   }
 
   function setLastUpdated(record) {

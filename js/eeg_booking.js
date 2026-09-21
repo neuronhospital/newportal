@@ -202,6 +202,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       try{await IDB.put('tx',{id,type:'EEG_BOOKING',status:'complete',payload:p,result:r});}catch(_){}
       await window.syncSuccessfulBookingToTodayCaches_?.({kind:'EEG_BOOKING',appointmentId:r.appointmentId||p.appointmentId,date:r.date||sel.date||(()=>{const q=U.parts();return q.y+String(q.m).padStart(2,'0')+String(q.d).padStart(2,'0')})(),time:r.time||sel.time||'',patientName:r.patientName||sel.name,age:r.age??sel.age,ageUnit:r.ageUnit||sel.ageUnit,address:r.address??sel.address,patientType:r.patientType||sel.patientType,whatsapp:p.whatsapp,city:r.city||p.city,referredBy:r.referredBy??sel.referredBy,nextFollowupCity:r.nextFollowupCity??sel.nextFollowupCity,bookingRequestId:p.bookingRequestId,eegCharges:r.eegCharges??p.eegCharges,eegCashPaid:r.eegCashPaid??p.eegCashPaid,eegOnlinePaid:r.eegOnlinePaid??p.eegOnlinePaid,eegTotalPaid:r.eegTotalPaid??p.eegCharges,eegBookingRequestId:r.eegBookingRequestId||id});
       const confirmationPatient=r.patientName||sel.name;
+      window.NeuronPatientActionContext?.notify?.("BOOK_EEG");
       $('confirmation').innerHTML=`<div class="success"><div class="success-icon">✓</div><h2>EEG Appointment Confirmed</h2><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(confirmationPatient)}</b></div><div class="confirm-row"><span>EEG Charges</span><b>${U.money(r.eegCharges)}</b></div></div>`;
       $('patients').innerHTML='';sel=null;$('payment').hidden=true;$('paymentPatientName').textContent='';$('amount').value='';$('cash').value='';$('online').value='';$('total').textContent='₹0';$('status').textContent='';$('confirmation').hidden=false;resetBookButton();
     }catch(e){
@@ -215,5 +216,17 @@ document.addEventListener("DOMContentLoaded",()=>{
       $('book').className='cta';
     }
   };
+
+  const patientActionContext=window.NeuronPatientActionContext?.read?.();
+  if(new URLSearchParams(location.search).get("patientAction")==="1" && patientActionContext?.patient){
+    const cp=patientActionContext.patient;
+    if(cp.city && cities.includes(String(cp.city))) $("city").value=String(cp.city);
+    $("wa").value=String(cp.whatsapp||"").replace(/\D/g,"").slice(-10);
+    clearLoadedState();
+    sel=cp;
+    $('confirmation').hidden=true; $('confirmation').innerHTML=''; $('bookMessage').hidden=true;
+    $('payment').hidden=false; if($('paymentPatientName'))$('paymentPatientName').textContent=cp.name||'';
+    setPaymentDefaults(); updatePayment();
+  }
 
 });

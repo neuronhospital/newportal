@@ -125,3 +125,32 @@ document.addEventListener("DOMContentLoaded",()=>{
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!updatePopup.hidden){closeUpdate();updateTrigger.focus();}});
  }
 });
+/* v206.7: centralized Patient Action eligibility rules.
+   These rules are shared by the Patient Action UI and the standalone Refund flow.
+   Keep the underlying eligibility semantics identical to the existing section rules. */
+window.NeuronPatientActionRules=window.NeuronPatientActionRules||(()=>{
+ const hasBookedEEG=p=>!(p?.eegCharges===null||p?.eegCharges===undefined||String(p.eegCharges).trim()==="");
+ const refundAvailability=p=>({
+  opd:Number(p?.opdTotalPaid||0)>0&&p?.opdRefundProvided!==true,
+  eeg:Number(p?.eegTotalPaid||0)>0&&p?.eegRefundProvided!==true
+ });
+ const availableActions=p=>{
+  const out=[{key:"OPD_UPDATE",label:"OPD Update"}];
+  if(!hasBookedEEG(p))out.push({key:"BOOK_EEG",label:"Book EEG"});
+  else out.push({key:"UPDATE_EEG",label:"Update EEG"});
+  const refund=refundAvailability(p);
+  if(refund.opd||refund.eeg)out.push({key:"REFUND",label:refund.opd&&refund.eeg?"Refund OPD / EEG":refund.opd?"Refund OPD":"Refund EEG",refundAvailable:refund});
+  return out;
+ };
+ return {hasBookedEEG,refundAvailability,availableActions};
+})();
+/* v206.6: reusable Patient Action Context helpers */
+window.NeuronPatientActionContext=window.NeuronPatientActionContext||(()=>{
+ const KEY="neuron_selected_today_patient_v1";
+ const read=()=>{try{return JSON.parse(sessionStorage.getItem(KEY)||"null")}catch(_){return null}};
+ const write=(value)=>{try{sessionStorage.setItem(KEY,JSON.stringify(value));return true}catch(_){return false}};
+ const clear=()=>{try{sessionStorage.removeItem(KEY)}catch(_) {}};
+ const notify=(action)=>{try{window.parent!==window&&window.parent.postMessage({type:"NEURON_PATIENT_ACTION_MUTATION",action},window.location.origin)}catch(_) {}};
+ return {KEY,read,write,clear,notify};
+})();
+if(new URLSearchParams(location.search).get("patientAction")==="1")document.body.classList.add("neuron-embedded");
