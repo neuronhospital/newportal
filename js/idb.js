@@ -106,47 +106,14 @@ window.IDB={
   const date=this.todayKey_();
   if(!c||!/^[0-9]{10}$/.test(phone))return {source:"invalid",patients:[],cache:null};
 
-  // Never trust a matching IDB patient before the OPD_TODAY cache itself has
-  // passed freshness/synchronization validation. The complete cached patient
-  // object is returned only after that validation succeeds.
+  // IDB-first retrieval: read the complete OPD_TODAY cache record, then
+  // apply the required context/WhatsApp filters locally. Do not contact the
+  // server merely because a matching IDB patient is being searched.
   let cache=await this.get("cache",`OPD_TODAY|${date}|${c}`).catch(()=>null);
-  const stale=!cache || this.cacheStale_(cache,cache.patients,"appointmentId") || cache.status==="CACHED_INCOMPLETE" || cache.status==="STALE";
-  if(stale){
+  let source="idb";
+  if(!cache){
     cache=await this.getTodayOPDCache_(c,{forceRefresh:true});
-    if(!cache || cache.status==="STALE" || cache.complete!==true)throw Error("Today's OPD cache could not be synchronized with the server.");
-  }else{
-    const stateResponse=await window.NeuronAPI.call("getTodayOPDSyncState",{city:c,date},10000);
-    if(!stateResponse||stateResponse.ok!==true)throw Error(stateResponse?.error||"Unable to verify today's OPD cache state.");
-    const serverState=stateResponse.syncState;
-    if(!serverState){
-      cache=await this.getTodayOPDCache_(c,{forceRefresh:true});
-    }else if(!Number.isInteger(Number(cache.lastSerial))||!Number.isInteger(Number(cache.lastRowNumber))){
-      cache=await this.getTodayOPDCache_(c,{forceRefresh:true});
-    }else if(Number(cache.lastSerial)===Number(serverState.serial)&&Number(cache.lastRowNumber)===Number(serverState.rowNumber)){
-      cache={...cache,lastServerCheckAt:Date.now(),status:"REFRESHED",complete:true};
-      await this.replace("cache",cache.key,cache);
-    }else{
-      const syncResult=await window.NeuronAPI.call("getTodayOPDIncremental",{city:c,date,lastSerial:Number(cache.lastSerial),lastRowNumber:Number(cache.lastRowNumber)},25000);
-      if(!syncResult||syncResult.ok!==true||syncResult.valid!==true){
-        cache=await this.getTodayOPDCache_(c,{forceRefresh:true});
-      }else if(!syncResult.unchanged&&Array.isArray(syncResult.rows)&&syncResult.rows.length){
-        const patients=Array.isArray(cache.patients)?cache.patients.slice():[];
-        const byId=new Map(patients.map(p=>[String(p?.appointmentId||""),p]));
-        syncResult.rows.forEach(p=>byId.set(String(p?.appointmentId||""),p));
-        const merged=Array.from(byId.values()).sort((a,b)=>{
-          const sa=Number(String(a?.appointmentId||"").match(/-(\d+)$/)?.[1]),sb=Number(String(b?.appointmentId||"").match(/-(\d+)$/)?.[1]);
-          if(Number.isFinite(sa)&&Number.isFinite(sb)&&sa!==sb)return sa-sb;
-          return (Number(a?.rowNumber)||0)-(Number(b?.rowNumber)||0);
-        });
-        const now=Date.now();
-        cache={...cache,patients:merged,status:"REFRESHED",complete:true,lastServerRefreshAt:now,lastServerCheckAt:now,cachedAt:cache.cachedAt||now,lastSerial:Number(serverState.serial),lastRowNumber:Number(serverState.rowNumber)};
-        await this.replace("cache",cache.key,cache);
-      }else{
-        cache={...cache,status:"REFRESHED",complete:true,lastServerCheckAt:Date.now(),lastSerial:Number(serverState.serial),lastRowNumber:Number(serverState.rowNumber)};
-        await this.replace("cache",cache.key,cache);
-      }
-    }
-    if(!cache || cache.status==="STALE" || cache.complete!==true)throw Error("Today's OPD cache could not be synchronized with the server.");
+    source="server";
   }
 
   const patients=Array.isArray(cache?.patients)?cache.patients.filter(p=>{
@@ -154,7 +121,7 @@ window.IDB={
     return sameContext && this.normalizeWhatsApp_(p?.whatsapp)===phone;
   }):[];
   const todayAppointmentFound=Array.isArray(cache?.patients)&&cache.patients.some(p=>String(p?.city||c).trim()===c&&String(p?.date||date).trim()===date);
-  return {source:stale?"server":"idb-validated",patients,cache,todayAppointmentFound};
+  return {source,patients,cache,todayAppointmentFound};
  },
  followupVisitKey_(city,rowNumber){return `VISIT|${String(city||"").trim()}|${Number(rowNumber)}`;},
   followupMetaKey_(city){return `META|${String(city||"").trim()}`;},
