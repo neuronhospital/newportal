@@ -116,10 +116,24 @@ window.IDB={
     source="server";
   }
 
-  const patients=Array.isArray(cache?.patients)?cache.patients.filter(p=>{
+  const findPatients=record=>Array.isArray(record?.patients)?record.patients.filter(p=>{
     const sameContext=String(p?.city||c).trim()===c && String(p?.date||date).trim()===date;
     return sameContext && this.normalizeWhatsApp_(p?.whatsapp)===phone;
   }):[];
+  let patients=findPatients(cache);
+
+  // If the requested city + WhatsApp combination is absent from today's
+  // local cache, perform the existing authoritative spreadsheet scan once,
+  // repopulate OPD_TODAY, and retry the same local lookup. This handles
+  // bookings created by another user/device after this browser's cache was
+  // populated, without adding a server call to the normal IDB-hit path.
+  if(cache&&patients.length===0){
+    const refreshed=await this.getTodayOPDCache_(c,{forceRefresh:true});
+    if(refreshed)cache=refreshed;
+    source="server";
+    patients=findPatients(cache);
+  }
+
   const todayAppointmentFound=Array.isArray(cache?.patients)&&cache.patients.some(p=>String(p?.city||c).trim()===c&&String(p?.date||date).trim()===date);
   return {source,patients,cache,todayAppointmentFound};
  },
