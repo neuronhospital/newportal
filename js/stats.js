@@ -602,9 +602,16 @@ document.addEventListener("DOMContentLoaded",()=>{
  function setStatus(s){statusEl.textContent=s||"";}
  function monthLabel(key){
    const [y,m]=String(key).split("-").map(Number); if(!y||!m)return String(key);
-   return new Intl.DateTimeFormat("en-IN",{month:"short",year:"numeric",timeZone:"Asia/Kolkata"}).format(new Date(Date.UTC(y,m-1,1)));
+   return new Intl.DateTimeFormat("en-IN",{month:"short",timeZone:"Asia/Kolkata"}).format(new Date(Date.UTC(y,m-1,1)));
  }
- function dateLabel(key){const s=String(key);return /^\d{8}$/.test(s)?`${s.slice(6,8)} ${new Intl.DateTimeFormat("en-IN",{month:"short",timeZone:"Asia/Kolkata"}).format(new Date(Date.UTC(Number(s.slice(0,4)),Number(s.slice(4,6))-1,1)))}`:s;}
+ function dateLabel(key){const s=String(key);return /^\d{8}$/.test(s)?s.slice(6,8):s;}
+ function individualYearForPeriod_(period){
+   const q=U.parts();
+   if(/^\d{4}$/.test(String(period||"")))return Number(period);
+   if(period==="currentyear")return q.y;
+   if(period==="lastyear")return q.y-1;
+   return null;
+ }
  function yearLabel(y){return String(y)+(Number(y)===U.parts().y?" *":"");}
  function stats(vals){
    if(!vals.length)return null;
@@ -636,7 +643,8 @@ document.addEventListener("DOMContentLoaded",()=>{
    }
    if(choice==="selectedYear"){
      if(!Array.isArray(td.monthly))return {points:[],type:"month",message:"Monthly trend data is not available in the loaded Statistics response."};
-     const year=Number(String(loadedStatisticsPeriod||"").slice(0,4));
+     const year=individualYearForPeriod_(loadedStatisticsPeriod);
+     if(!year)return {points:[],type:"month",message:"Selected year is not available in the loaded Statistics response."};
      const byMonth=new Map(td.monthly.filter(p=>String(p.month||"").startsWith(`${year}-`)).map(p=>[String(p.month),p]));
      const points=[];
      for(let m=1;m<=12;m++){
@@ -645,11 +653,9 @@ document.addEventListener("DOMContentLoaded",()=>{
      }
      return {points,type:"month"};
    }
-   if(choice==="currentYear"||choice==="lastYear"||/^year:\d{4}$/.test(choice)||choice==="last5"){
+   if(choice==="last5"){
      if(!Array.isArray(td.yearly))return {points:[],type:"year",message:"Yearly trend data is not available in the loaded Statistics response."};
-     if(choice==="last5")return {points:td.yearly.slice().sort((a,b)=>Number(a.year)-Number(b.year)),type:"year"};
-     const year=choice==="currentYear"?q.y:choice==="lastYear"?q.y-1:Number(String(choice).slice(5));
-     return {points:td.yearly.filter(p=>Number(p.year)===year),type:"year"};
+     return {points:td.yearly.slice().sort((a,b)=>Number(a.year)-Number(b.year)),type:"year"};
    }
    return {points:[],type:"year"};
  }
@@ -660,8 +666,9 @@ document.addEventListener("DOMContentLoaded",()=>{
      add("selectedMonth",new Intl.DateTimeFormat("en-IN",{month:"long",year:"numeric",timeZone:"Asia/Kolkata"}).format(new Date(Date.UTC(y,m-1,1))));
      return opts;
    }
-   if(/^\d{4}$/.test(period)){
-     add("selectedYear",period);
+   if(/^\d{4}$/.test(period) || period==="currentyear" || period==="lastyear"){
+     const year=individualYearForPeriod_(period);
+     add("selectedYear",String(year));
      return opts;
    }
    if(Array.isArray(td.daily))add("currentMonth","Current Month");
@@ -673,13 +680,15 @@ document.addEventListener("DOMContentLoaded",()=>{
    }
    if(period==="last5")return opts;
    if(period==="last12")return opts.filter(x=>["currentMonth","last6","last12"].includes(x.value));
-   if(period==="currentyear")return opts.filter(x=>["currentMonth","currentYear"].includes(x.value));
-   if(period==="lastyear")return opts.filter(x=>x.value==="lastYear");
+   if(period==="currentyear" || period==="lastyear")return opts;
    return [];
  }
  function syncTrendOptions_(){
    if(!latestResponse||!latestResponse.trendData){periodEl.innerHTML="";return;}
    const opts=availableTrendOptions_(loadedStatisticsPeriod,latestResponse.trendData),current=periodEl.value;
+   const isIndividualYear=individualYearForPeriod_(loadedStatisticsPeriod)!==null;
+   const controls=periodEl.closest(".performance-controls");
+   if(controls)controls.hidden=isIndividualYear;
    periodEl.innerHTML=opts.map(o=>`<option value="${o.value}">${o.label}</option>`).join("");
    if(opts.some(o=>o.value===current))periodEl.value=current;else if(opts.length)periodEl.value=opts[0].value;
  }
@@ -695,7 +704,7 @@ document.addEventListener("DOMContentLoaded",()=>{
    const t1=document.createElementNS(ns,"text");t1.setAttribute("x",String(left+10));t1.setAttribute("y",String(top+17));t1.setAttribute("class","trend-popup-title");t1.textContent=title;
    const t2=document.createElementNS(ns,"text");t2.setAttribute("x",String(left+10));t2.setAttribute("y",String(top+35));t2.setAttribute("class","trend-popup-value");t2.textContent=`${label}: ${fmt(value)}`;
    g.append(rect,t1,t2);svg.appendChild(g);
-   popupTimer=setTimeout(clearPopup_,700);
+   popupTimer=setTimeout(clearPopup_,1200);
  }
  function graphDimensions_(n){
    const W=900,H=360,L=56,R=18,T=34,B=n>16?64:54;return {W,H,L,R,T,B,cw:W-L-R,ch:H-T-B};
@@ -722,8 +731,8 @@ document.addEventListener("DOMContentLoaded",()=>{
    const groupW=cw/Math.max(1,n),barW=Math.min(58,Math.max(12,groupW*.68)),x0=i=>L+i*groupW+groupW/2,y=v=>T+ch-(v/max)*ch;
    let g="";
    for(let v=0;v<=max;v+=sc.step){const yy=y(v);g+=`<line x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}" class="trend-gridline"/><text x="${L-9}" y="${yy+4}" text-anchor="end" class="trend-axis-label">${fmt(v)}</text>`;}
-   const every=Math.max(1,Math.ceil(n/12));
-   points.forEach((p,i)=>{const center=x0(i),labelText=type==="year"?yearLabel(p.year):monthLabel(p.month);if(i%every===0||i===n-1)g+=`<text x="${center}" y="${H-20}" text-anchor="middle" class="trend-axis-label">${esc(labelText)}</text>`;const v=Number(p[key])||0;g+=`<rect x="${center-barW/2}" y="${y(v)}" width="${barW}" height="${Math.max(0,T+ch-y(v))}" rx="4" class="trend-bar ${metric.toLowerCase()}" data-index="${i}" tabindex="0"/>`;});
+   const every=type==="year"?Math.max(1,Math.ceil(n/12)):1;
+   points.forEach((p,i)=>{const center=x0(i),labelText=type==="year"?yearLabel(p.year):monthLabel(p.month);if(i%every===0||i===n-1){const ty=H-B+18;g+=`<text x="${center}" y="${ty}" text-anchor="start" transform="rotate(90 ${center} ${ty})" class="trend-axis-label">${esc(labelText)}</text>`;}const v=Number(p[key])||0;g+=`<rect x="${center-barW/2}" y="${y(v)}" width="${barW}" height="${Math.max(0,T+ch-y(v))}" rx="4" class="trend-bar ${metric.toLowerCase()}" data-index="${i}" tabindex="0"/>`;});
    const svg=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="trend-svg" role="img" aria-label="${esc(title)}">${g}</svg>`;
    return {html:graphShell_(title,svg,metric,`${n} period${n===1?"":"s"}`)};
  }
