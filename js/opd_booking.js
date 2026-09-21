@@ -734,21 +734,12 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     }
   };
 
-  // Restore the form to the state before WhatsApp verification when a new
-  // appointment is started from the confirmation box. Post-verification locks
-  // remain controlled by setPostVerifyFieldsLocked().
+  // Restore only the fields that are editable before WhatsApp verification.
+  // Post-verification fields remain locked until WhatsApp is successfully verified.
   const unlockBeforeWhatsApp=()=>{
-    document.querySelectorAll("#bookingFields input, #bookingFields select, #bookingFields textarea").forEach(el=>{
-      el.disabled=false;
+    ["name","age","unit","address","ref","wa","verifyWa"].forEach(id=>{
+      if($(id)) $(id).disabled=false;
     });
-    if($("cityPickerTrigger")) $("cityPickerTrigger").disabled=false;
-    $("date").disabled=true;
-    syncCityPickerTrigger();
-    if($("book")){
-      $("book").disabled=false;
-      $("book").textContent="Book Appointment";
-      $("book").className="cta";
-    }
   };
 
   const isOutsideUsualConsultationHours=()=>{
@@ -969,6 +960,11 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       // confirmation content AFTER the reset.
       $("confirmation").innerHTML=confirmationHTML;
       $("confirmation").hidden=false;
+      // Prepare the form for the next New appointment only after the current
+      // booking confirmation is visible. Unlock fields through WhatsApp only;
+      // post-verification fields remain locked until WhatsApp is verified.
+      unlockBeforeWhatsApp();
+      setPostVerifyFieldsLocked(true);
       requestAnimationFrame(()=>$("confirmation").scrollIntoView({behavior:"smooth",block:"center"}));
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
       $("submitStatus").style.color="#168a4a";
