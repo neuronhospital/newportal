@@ -199,7 +199,7 @@ if(new URLSearchParams(location.search).get("patientAction")==="1")document.body
  };
  const nearestScrollable=target=>{
   let node=target?.nodeType===1?target:target?.parentElement;
-  while(node&&node!==document.documentElement){
+  while(node&&node!==document.body&&node!==document.documentElement){
    const cs=getComputedStyle(node);
    if(/(auto|scroll|overlay)/.test(cs.overflowY)&&node.scrollHeight>node.clientHeight)return node;
    node=node.parentElement;
@@ -235,7 +235,15 @@ if(new URLSearchParams(location.search).get("patientAction")==="1")document.body
   const dy=Number(e.deltaY)||0;
   if(!dy)return;
   const sc=nearestScrollable(e.target);
-  if(atBoundary(sc,dy))e.preventDefault();
+  if(!sc){e.preventDefault();return;}
+  const root=document.scrollingElement||document.documentElement;
+  if(sc===document.body||sc===document.documentElement||sc===root){
+   const top=root.scrollTop,max=Math.max(0,root.scrollHeight-root.clientHeight);
+   if((dy<0&&top<=0)||(dy>0&&top>=max-1))e.preventDefault();
+   return;
+  }
+  const top=sc.scrollTop,max=Math.max(0,sc.scrollHeight-sc.clientHeight);
+  if((dy<0&&top<=0)||(dy>0&&top>=max-1))e.preventDefault();
  };
  document.addEventListener("touchstart",onTouchStart,{passive:true,capture:true});
  document.addEventListener("touchmove",onTouchMove,{passive:false,capture:true});
