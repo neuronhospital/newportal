@@ -506,9 +506,13 @@ body.neuron-embedded .secure-wrap{margin:12px auto!important}
 @media(max-width:520px){.patient-action-modal,.patient-action-form-modal{padding:9px}.patient-action-dialog{width:95vw;height:86vh;border-radius:14px}.patient-action-heading-row h2{font-size:18px}.patient-action-card{min-height:54px}.patient-action-form-dialog{width:95vw;height:88vh;border-radius:14px}}
 
 
-/* v206.8: global popup scroll containment. */
-html.neuron-popup-guard-active,body.neuron-popup-guard-active{overscroll-behavior:none}
+/* v206.9: global popup scroll containment. */
+html.neuron-popup-guard-active,body.neuron-popup-guard-active{overscroll-behavior-y:none}
 body.neuron-popup-guard-active{overflow:hidden!important}
+html.neuron-popup-embedded,body.neuron-embedded{overscroll-behavior-y:contain}
 [role="dialog"],.footer-update-dialog,.charge-lock-dialog,.opd-access-dialog,.eeg-calls-dialog,.neuron-recovery-dialog{overscroll-behavior:contain}
-.opd-today-list,.eeg-today-list,.patient-action-body,.patient-action-form-body,.neuron-recovery-dialog-body{overscroll-behavior:contain}
+.opd-today-list,.eeg-today-list,.patient-action-body,.patient-action-form-body,.neuron-recovery-dialog-body,.city-picker-list{overscroll-behavior:contain;overscroll-behavior-y:contain}
+.opd-today-dialog,.eeg-today-dialog,.patient-action-dialog,.patient-action-form-dialog,.neuron-recovery-dialog,.opd-access-dialog,.eeg-calls-dialog,.footer-update-dialog,.charge-lock-dialog{overscroll-behavior:contain}
+body.neuron-embedded{overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch}
+.patient-action-form-body iframe{overscroll-behavior:contain}
 .patient-action-done{display:block;min-height:42px}
