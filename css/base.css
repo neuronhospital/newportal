@@ -440,13 +440,13 @@ body.opd-today-modal-open{overflow:hidden}
 .opd-today-name{min-width:0;flex:0 1 auto;max-width:68%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .opd-today-name b{font-weight:800;color:var(--ink)}
 .opd-today-age{flex:0 0 auto;color:var(--muted);font-size:13px;font-weight:400;white-space:nowrap}
-.opd-today-card-line2{display:flex;align-items:center;gap:6px;min-width:0;margin-top:5px;padding-left:39px;color:var(--muted);font-size:75%;font-weight:400;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.opd-today-card-line2{display:flex;align-items:center;gap:6px;min-width:0;margin-top:5px;padding-left:39px;color:var(--muted);font-size:75%;font-weight:400;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.opd-today-card-line3{display:none;align-items:center;gap:6px;min-width:0;margin-top:2px;padding-left:39px;color:var(--muted);font-size:75%;font-weight:400;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .opd-today-payment{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .opd-today-separator{flex:0 0 auto;color:var(--muted);font-weight:800}
 .opd-today-empty,.opd-today-loading{padding:24px 8px;text-align:center;color:var(--muted);font-size:13px}
 .opd-today-footer{position:relative;z-index:2;background:#fff;border-top:1px solid var(--line);padding:10px 13px}
-.opd-today-footer .cta{width:100%;min-height:42px}
-@media(max-width:520px){.opd-today-modal{padding:9px}.opd-today-dialog{width:95vw;height:86vh;border-radius:14px}.opd-today-heading-row h2{font-size:18px}.opd-today-row{font-size:13.5px;padding:9px 9px 8px}.opd-today-card-line1{gap:7px;padding-left:37px}.opd-today-card-line2{padding-left:37px;font-size:75%;gap:5px}.opd-today-number{left:9px;top:8px;min-width:26px;height:23px}.opd-today-age{font-size:12.5px}}
+.opd-today-footer .cta{width:30%;min-height:46px;display:block;margin:0 auto}
+@media(max-width:520px){.opd-today-modal{padding:9px}.opd-today-dialog{width:95vw;height:86vh;border-radius:14px}.opd-today-heading-row h2{font-size:18px}.opd-today-row{font-size:13.5px;padding:9px 9px 8px}.opd-today-card-line1{gap:7px;padding-left:37px}.opd-today-card-line2{padding-left:37px;font-size:75%;gap:5px}.opd-today-card-line3{padding-left:37px;font-size:75%;gap:5px}.opd-today-number{left:9px;top:8px;min-width:26px;height:23px}.opd-today-age{font-size:12.5px}.opd-today-card-line3{display:flex}.opd-today-card-line2 .is-third-line-mobile,.opd-today-card-line2 .is-third-line-mobile-separator{display:none}}
 
 
 /* v200.1: EEG Today patient list + global IDB synchronization */
