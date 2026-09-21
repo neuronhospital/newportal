@@ -199,7 +199,7 @@ if(new URLSearchParams(location.search).get("patientAction")==="1")document.body
  };
  const nearestScrollable=target=>{
   let node=target?.nodeType===1?target:target?.parentElement;
-  while(node&&node!==document.body&&node!==document.documentElement){
+  while(node&&node!==document.documentElement){
    const cs=getComputedStyle(node);
    if(/(auto|scroll|overlay)/.test(cs.overflowY)&&node.scrollHeight>node.clientHeight)return node;
    node=node.parentElement;
@@ -230,10 +230,18 @@ if(new URLSearchParams(location.search).get("patientAction")==="1")document.body
   if(atBoundary(sc,dy))e.preventDefault();
  };
  const onTouchEnd=()=>{touchState=null;};
+ const onWheel=e=>{
+  if(!popupOpen()&&!embedded())return;
+  const dy=Number(e.deltaY)||0;
+  if(!dy)return;
+  const sc=nearestScrollable(e.target);
+  if(atBoundary(sc,dy))e.preventDefault();
+ };
  document.addEventListener("touchstart",onTouchStart,{passive:true,capture:true});
  document.addEventListener("touchmove",onTouchMove,{passive:false,capture:true});
  document.addEventListener("touchend",onTouchEnd,{passive:true,capture:true});
  document.addEventListener("touchcancel",onTouchEnd,{passive:true,capture:true});
+ document.addEventListener("wheel",onWheel,{passive:false,capture:true});
  window.addEventListener("popstate",()=>{
   if(cleaning){cleaning=false;return;}
   if(guardActive||popupOpen()){
