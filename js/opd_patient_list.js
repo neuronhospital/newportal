@@ -30,6 +30,37 @@
     return U.money(amount);
   }
 
+  function eegBooked(p) {
+    return window.NeuronPatientActionRules?.hasBookedEEG?.(p) === true;
+  }
+
+  function nonNegativeAmount(value) {
+    const n = Number(value);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  }
+
+  function paymentMeta(p) {
+    const items = [`OPD : ${paidText(p)}`];
+
+    if (eegBooked(p)) {
+      const eegPaid = nonNegativeAmount(p?.eegTotalPaid);
+      if (eegPaid !== null) items.push(`EEG : ${U.money(eegPaid)}`);
+    }
+
+    const opdRefund = p?.opdRefundProvided === true ? (nonNegativeAmount(p?.opdRefund) ?? 0) : 0;
+    const eegRefund = p?.eegRefundProvided === true ? (nonNegativeAmount(p?.eegRefund) ?? 0) : 0;
+    const refundTotal = opdRefund + eegRefund;
+    if (refundTotal > 0) {
+      const breakdown = [
+        opdRefund > 0 ? `O${opdRefund}` : "",
+        eegRefund > 0 ? `E${eegRefund}` : ""
+      ].filter(Boolean).join("+");
+      items.push(`Refund : ${U.money(refundTotal)} (${breakdown})`);
+    }
+
+    return items;
+  }
+
   function serialOf(id) {
     const m = String(id || "").match(/-(\d+)$/);
     return m ? Number(m[1]) : Number.POSITIVE_INFINITY;
@@ -61,8 +92,8 @@
     }
     list.innerHTML = patients.map((p, i) => {
       const age = ageText(p);
-      const meta = age ? `${age} • ${paidText(p)}` : paidText(p);
-      return `<button type="button" class="opd-today-row" data-appointment-id="${esc(p?.appointmentId || "")}"><span class="opd-today-number">${i + 1}.</span><span class="opd-today-patient"><b>${esc(p?.name || "")}</b><span>${esc(meta)}</span></span></button>`;
+      const meta = paymentMeta(p);
+      return `<button type="button" class="opd-today-row" data-appointment-id="${esc(p?.appointmentId || "")}"><span class="opd-today-card-line1"><span class="opd-today-number">${i + 1}</span><span class="opd-today-name"><b>${esc(p?.name || "")}</b></span>${age ? `<span class="opd-today-age">${esc(age)}</span>` : ""}</span><span class="opd-today-card-line2">${meta.map((item, index) => `${index ? `<span class="opd-today-separator" aria-hidden="true">•</span>` : ""}<span class="opd-today-payment">${esc(item)}</span>`).join("")}</span></button>`;
     }).join("");
     list.querySelectorAll("[data-appointment-id]").forEach(row => row.addEventListener("click", () => {
       const id=String(row.dataset.appointmentId||"");
