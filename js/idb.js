@@ -52,6 +52,7 @@ window.IDB={
  _legacyEEGCacheCleaned:false,
  _todayOPDCacheCleanupDate:"",
  _todayOPDRefreshes:{},
+ _followupBackgroundChecks:{},
  async cleanupLegacyEEGCache_(){
   if(this._legacyEEGCacheCleaned)return;
   this._legacyEEGCacheCleaned=true;
