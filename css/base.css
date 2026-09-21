@@ -504,3 +504,11 @@ body.neuron-embedded main{margin:0!important;padding:0!important}
 body.neuron-embedded main>.container{max-width:none!important;padding:12px!important}
 body.neuron-embedded .secure-wrap{margin:12px auto!important}
 @media(max-width:520px){.patient-action-modal,.patient-action-form-modal{padding:9px}.patient-action-dialog{width:95vw;height:86vh;border-radius:14px}.patient-action-heading-row h2{font-size:18px}.patient-action-card{min-height:54px}.patient-action-form-dialog{width:95vw;height:88vh;border-radius:14px}}
+
+
+/* v206.8: global popup scroll containment. */
+html.neuron-popup-guard-active,body.neuron-popup-guard-active{overscroll-behavior:none}
+body.neuron-popup-guard-active{overflow:hidden!important}
+[role="dialog"],.footer-update-dialog,.charge-lock-dialog,.opd-access-dialog,.eeg-calls-dialog,.neuron-recovery-dialog{overscroll-behavior:contain}
+.opd-today-list,.eeg-today-list,.patient-action-body,.patient-action-form-body,.neuron-recovery-dialog-body{overscroll-behavior:contain}
+.patient-action-done{display:block;min-height:42px}
