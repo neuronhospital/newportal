@@ -724,15 +724,38 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
   };
 
 
+  let bookingFieldLockSnapshot=null;
   const lockBookingFields=(locked)=>{
+    const controls=[...document.querySelectorAll("#bookingFields input, #bookingFields select, #bookingFields textarea")];
     if(locked){
-      document.querySelectorAll("#bookingFields input, #bookingFields select, #bookingFields textarea").forEach(el=>{
-        el.disabled=true;
-      });
+      // Snapshot the pre-submission UI state so an API error/timeout can
+      // restore exactly what the receptionist was allowed to edit before
+      // submission. This is safer than trying to reconstruct the state from
+      // the current verification/follow-up flags after an error.
+      bookingFieldLockSnapshot=new Map(controls.map(el=>[el,{disabled:el.disabled,readOnly:el.readOnly,pointerEvents:el.style.pointerEvents}]));
+      controls.forEach(el=>{el.disabled=true;});
       if($("cityPickerTrigger")) $("cityPickerTrigger").disabled=true;
       syncCityPickerTrigger();
+      return;
     }
+
+    if(bookingFieldLockSnapshot){
+      bookingFieldLockSnapshot.forEach((state,el)=>{
+        el.disabled=state.disabled;
+        el.readOnly=state.readOnly;
+        el.style.pointerEvents=state.pointerEvents;
+      });
+      bookingFieldLockSnapshot=null;
+      syncCityPickerTrigger();
+      return;
+    }
+
+    // No submission snapshot exists (for example after a recovery-prefill
+    // navigation). Fall back to the normal pre-WhatsApp state.
+    unlockBeforeWhatsApp();
+    setPostVerifyFieldsLocked(!verified);
   };
+
 
   // Restore only the fields that are editable before WhatsApp verification.
   // Post-verification fields remain locked until WhatsApp is successfully verified.
@@ -951,7 +974,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       const r=await NeuronAPI.call("bookAppointment",payload,timeoutMs);
       if(currentBookingSession!==bookingSessionId)return;
       try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:r});}catch(_){ }
-      try{void window.syncSuccessfulBookingToTodayCaches_?.({kind:"OPD_BOOKING",rowNumber:r.rowNumber,appointmentId:r.appointmentId||"",date:r.date||payload.appointmentDate,time:r.time||"",patientName:r.patientName||payload.childName,age:r.age??payload.age,ageUnit:r.ageUnit||payload.ageUnit,address:r.address??payload.address,patientType:r.patientType||payload.patientType,whatsapp:payload.whatsapp,city:r.city||payload.city,referredBy:r.referredBy??payload.referredBy,nextFollowupCity:r.nextFollowupCity??payload.nextFollowupCity,bookingRequestId:id,opdCharges:r.opdCharges??payload.opdCharges,opdCashPaid:r.opdCashPaid??payload.opdCashPaid,opdOnlinePaid:r.opdOnlinePaid??payload.opdOnlinePaid,opdTotalPaid:r.opdTotalPaid??(Number(payload.opdCashPaid)||0)+(Number(payload.opdOnlinePaid)||0)});}catch(_){ }
+      try{await window.syncSuccessfulBookingToTodayCaches_?.({kind:"OPD_BOOKING",rowNumber:r.rowNumber,appointmentId:r.appointmentId||"",date:r.date||payload.appointmentDate,time:r.time||"",patientName:r.patientName||payload.childName,age:r.age??payload.age,ageUnit:r.ageUnit||payload.ageUnit,address:r.address??payload.address,patientType:r.patientType||payload.patientType,whatsapp:payload.whatsapp,city:r.city||payload.city,referredBy:r.referredBy??payload.referredBy,nextFollowupCity:r.nextFollowupCity??payload.nextFollowupCity,bookingRequestId:id,opdCharges:r.opdCharges??payload.opdCharges,opdCashPaid:r.opdCashPaid??payload.opdCashPaid,opdOnlinePaid:r.opdOnlinePaid??payload.opdOnlinePaid,opdTotalPaid:r.opdTotalPaid??(Number(payload.opdCashPaid)||0)+(Number(payload.opdOnlinePaid)||0)});}catch(_){ }
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
       $("submitStatus").style.color="#168a4a";
       const confirmationHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Confirmed</h2><p class="city-confirm">For <b>${U.esc(payload.city||"")}</b> City</p><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(r.patientName)}</b></div><div class="confirm-row"><span>Age</span><b>${r.age} ${r.ageUnit}</b></div><div class="confirm-row"><span>Address</span><b>${U.esc(r.address||payload.address)}</b></div><div class="confirm-row"><span>Date of Booking</span><b>${U.date(r.date)}</b></div><div class="confirm-row"><span>OPD Charges</span><b>${U.money(r.opdCharges)}</b></div><div class="confirm-row"><span>Cash</span><b>${U.money(r.opdCashPaid)}</b></div><div class="confirm-row"><span>Online</span><b>${U.money(r.opdOnlinePaid)}</b></div><div class="confirm-row"><span>Next Follow-up City</span><b>${U.esc(r.nextFollowupCity||payload.nextFollowupCity)}</b></div></div>`;
@@ -993,7 +1016,6 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
 
   window.addEventListener("neuron:recovery-result",e=>{
     const d=e.detail||{};
-    if(d.globalHandled)return;
     if(d.type!=="OPD_BOOKING")return;
     const currentName=U.title($("name")?.value||"");
     const currentPhone=U.phone($(type==="Follow-up"?"followWa":"wa")?.value||"");
@@ -1001,14 +1023,17 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     if(!samePatient)return;
     if(d.status==="recovered"){
       const result=d.result||{};
-      const confirmationHTML=`<div class="success"><div class="success-icon">✓</div><h2>Appointment recovered successfully</h2><div class="confirm-row"><span>Patient Name</span><b>${U.esc(d.patientName||currentName)}</b></div><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(result.appointmentId||"")}</b></div></div>`;
+      const recoveryPayload=d.payload||{};
+      const confirmationHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Confirmed</h2><p class="city-confirm">For <b>${U.esc(result.city||recoveryPayload.city||"")}</b> City</p><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(result.appointmentId||"")}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(result.patientName||d.patientName||currentName)}</b></div><div class="confirm-row"><span>Age</span><b>${U.esc(result.age??recoveryPayload.age??"")} ${U.esc(result.ageUnit||recoveryPayload.ageUnit||"")}</b></div><div class="confirm-row"><span>Address</span><b>${U.esc(result.address||recoveryPayload.address||"")}</b></div><div class="confirm-row"><span>Date of Booking</span><b>${U.date(result.date||recoveryPayload.appointmentDate||"")}</b></div><div class="confirm-row"><span>OPD Charges</span><b>${U.money(result.opdCharges??recoveryPayload.opdCharges)}</b></div><div class="confirm-row"><span>Cash</span><b>${U.money(result.opdCashPaid??recoveryPayload.opdCashPaid)}</b></div><div class="confirm-row"><span>Online</span><b>${U.money(result.opdOnlinePaid??recoveryPayload.opdOnlinePaid)}</b></div><div class="confirm-row"><span>Next Follow-up City</span><b>${U.esc(result.nextFollowupCity||recoveryPayload.nextFollowupCity||"")}</b></div></div>`;
       resetFields("New");
       $("confirmation").innerHTML=confirmationHTML;
       $("confirmation").hidden=false;
-      $("submitStatus").textContent="✓ Appointment recovered successfully.";
+      unlockBeforeWhatsApp();
+      setPostVerifyFieldsLocked(true);
+      $("submitStatus").textContent="✓ Appointment submitted successfully.";
       $("submitStatus").style.color="#168a4a";
       bookingInProgress=false;
-      lockBookingFields(false);
+      requestAnimationFrame(()=>$("confirmation").scrollIntoView({behavior:"smooth",block:"center"}));
     }else if(d.status==="failed"){
       $("submitStatus").textContent=`✕ Appointment failed for ${currentName}. You can book the appointment again.`;
       $("submitStatus").style.color="#b42318";

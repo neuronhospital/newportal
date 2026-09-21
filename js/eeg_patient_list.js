@@ -84,7 +84,7 @@
 
   function showCacheStatus(record) {
     const status = String(record?.status || "");
-    const stale = window.IDB?.cacheStale_?.(record, record?.patients, "appointmentId") === true;
+    const stale = window.IDB?.opdTodayCacheStale_?.(record, record?.patients, "appointmentId") === true;
     if (status === "CACHED_INCOMPLETE" || status === "STALE" || stale) {
       setStatus("⚠ This list is not up to date. Please Update.", "warning");
     } else if (status === "REFRESHING") {

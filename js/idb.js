@@ -39,6 +39,10 @@ window.IDB={
   const ts=Number(cache.lastServerCheckAt||cache.lastServerRefreshAt||cache.lastCheckedAt||0);
   return !!ts&&(Date.now()-ts>this.CACHE_FRESHNESS_MS);
  },
+ opdTodayCacheStale_(cache,records,field="appointmentId"){
+  if(!cache)return false;
+  return this.serialGap_(records,field);
+ },
  markCacheStale_(cache,records,field="appointmentId"){
   if(!cache)return cache;
   if(this.cacheStale_(cache,records,field))return {...cache,status:"STALE"};
@@ -114,8 +118,7 @@ window.IDB={
   await this.cleanupOldTodayOPDCaches_(date);
   const key=`OPD_TODAY|${date}|${c}`;
   let record=await this.get("cache",key).catch(()=>null);
-  const ts=Number(record?.lastServerCheckAt||record?.lastServerRefreshAt||record?.lastCheckedAt||0);
-  const stale=record ? (!ts || this.cacheStale_(record,record.patients,"appointmentId") || record.status==="CACHED_INCOMPLETE" || record.status==="STALE") : false;
+  const stale=record ? (this.opdTodayCacheStale_(record,record.patients,"appointmentId") || record.status==="CACHED_INCOMPLETE" || record.status==="STALE") : false;
   if(record && !forceRefresh && !stale)return record;
   if(this._todayOPDRefreshes[key])return this._todayOPDRefreshes[key];
   const request=(async()=>{
@@ -453,7 +456,7 @@ window.IDB={
   if(kind==="EEG_BOOKING"&&appointmentId&&city&&/^\d{8}$/.test(date)){
     const key=`OPD_TODAY|${date}|${city}`;
     const existing=await this.get("cache",key).catch(()=>null);
-    const stale=!existing||!Array.isArray(existing.patients)||this.cacheStale_(existing,existing.patients,"appointmentId")||existing.status==="CACHED_INCOMPLETE"||existing.status==="STALE";
+    const stale=!existing||!Array.isArray(existing.patients)||this.opdTodayCacheStale_(existing,existing.patients,"appointmentId")||existing.status==="CACHED_INCOMPLETE"||existing.status==="STALE";
     if(stale){
       const refreshed=await this.getTodayOPDCache_(city,{forceRefresh:true});
       if(!refreshed||refreshed.status==="STALE"||refreshed.complete!==true)throw Error("Today's OPD cache could not be synchronized before EEG booking.");
@@ -550,7 +553,7 @@ window.IDB={
         next.lastServerRefreshAt=now;
       }
     }
-    if(cache&&this.cacheStale_(next,patients,"appointmentId"))next.status="STALE";
+    if(cache&&this.opdTodayCacheStale_(next,patients,"appointmentId"))next.status="STALE";
     st.put(next);
     result.todayUpdated=true;
   };

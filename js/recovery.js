@@ -187,7 +187,31 @@
     }
   }
   async function syncSuccessfulBookingToTodayCaches_(booking){
-    return IDB.syncBookingCaches_(booking);
+    // Make the exact successful booking visible in IDB before the caller shows
+    // confirmation. This is intentionally best-effort and must never turn a
+    // successful server booking into a UI failure if IndexedDB is unavailable.
+    let result={todayUpdated:false};
+    try{result=await IDB.syncBookingCaches_(booking)||result;}catch(_){ }
+
+    // Reconcile the authoritative Today cache in the background. The exact
+    // patient patch above removes the normal consistency window; this refresh
+    // repairs an incomplete/stale cache without delaying confirmation.
+    if(String(booking?.kind||"")==="OPD_BOOKING"&&booking?.city){
+      void (async()=>{
+        try{
+          const refreshed=await IDB.getTodayOPDCache_(booking.city,{forceRefresh:true});
+          const appointmentId=String(booking.appointmentId||"").trim();
+          const present=appointmentId&&Array.isArray(refreshed?.patients)
+            ?refreshed.patients.some(p=>String(p?.appointmentId||"").trim()===appointmentId)
+            :false;
+          // If the authoritative refresh raced the just-completed Sheet write,
+          // restore the exact successful booking so the background refresh
+          // can never erase the immediate IDB patch.
+          if(!present)await IDB.syncBookingCaches_(booking);
+        }catch(_){ }
+      })();
+    }
+    return result;
   }
   async function syncRecoveredBookingToTodayCaches_(recoveredBooking){
     return syncWithOneRetry_(()=>IDB.syncBookingCaches_(recoveredBooking));
@@ -232,7 +256,7 @@
       try{await IDB.put("tx",{...x,status:"complete",result,recoveredAt:Date.now()});}catch(_){ }
       upsertState({id:x.id,type:x.type,status:"recovered",payload:x.payload||{},result,phase:"recovered",updatedAt:Date.now()});
       renderBar();
-      window.dispatchEvent(new CustomEvent("neuron:recovery-result",{detail:{status:"recovered",type:x.type,patientName:nameOf(x),result,payload:x.payload,globalHandled:true}}));
+      window.dispatchEvent(new CustomEvent("neuron:recovery-result",{detail:{status:"recovered",type:x.type,patientName:nameOf(x),result,payload:x.payload,globalHandled:x.type!=="OPD_BOOKING"}}));
       return;
     }
     const booking={
@@ -267,7 +291,7 @@
     try{void syncRecoveredBookingToTodayCaches_(booking);}catch(_){ }
     upsertState({id:x.id,type:x.type,status:"recovered",payload:x.payload||{},result,phase:"recovered",updatedAt:Date.now()});
     renderBar();
-    window.dispatchEvent(new CustomEvent("neuron:recovery-result",{detail:{status:"recovered",type:x.type,patientName:nameOf(x),result,payload:x.payload,globalHandled:true}}));
+    window.dispatchEvent(new CustomEvent("neuron:recovery-result",{detail:{status:"recovered",type:x.type,patientName:nameOf(x),result,payload:x.payload,globalHandled:x.type!=="OPD_BOOKING"}}));
   }
 
   async function failRecovery(x){
@@ -277,7 +301,7 @@
     try{await IDB.put("tx",{...x,status:"failed",failedAt:Date.now(),failureReason:"Request not found after recovery verification"});}catch(_){ }
     upsertState({id:x.id,type:x.type,status:"failed",payload:x.payload||{},result:null,phase:"failed",failedAt:Date.now(),updatedAt:Date.now()});
     renderBar();
-    window.dispatchEvent(new CustomEvent("neuron:recovery-result",{detail:{status:"failed",type:x.type,patientName:nameOf(x),result:null,payload:x.payload,globalHandled:true}}));
+    window.dispatchEvent(new CustomEvent("neuron:recovery-result",{detail:{status:"failed",type:x.type,patientName:nameOf(x),result:null,payload:x.payload,globalHandled:x.type!=="OPD_BOOKING"}}));
   }
 
   async function runRecovery(x){
