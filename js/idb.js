@@ -1,6 +1,31 @@
 window.IDB={
  db:null,
+ _dbGeneration:0,
  CACHE_FRESHNESS_MS:30*60*1000,
+ _isConnectionLifecycleError_(e){
+  const name=String(e?.name||"").toLowerCase();
+  const msg=String(e?.message||e||"").toLowerCase();
+  return name==="invalidstateerror"&&/(closing|closed|close|connection|database)/.test(msg) || /(database|connection).*(closing|closed|close)/.test(msg);
+ },
+ _invalidateDb_(connection){
+  const current=this.db;
+  this.db=null;
+  this._dbGeneration++;
+  try{if(connection&&connection.close)connection.close();}catch(_){}
+  return current;
+ },
+ async withConnectionRetry_(work){
+  let generation=this._dbGeneration;
+  let d=await this.open();
+  try{return await work(d);}
+  catch(e){
+   if(!this._isConnectionLifecycleError_(e))throw e;
+   if(this._dbGeneration===generation)this._invalidateDb_(d);
+   generation=this._dbGeneration;
+   d=await this.open();
+   return await work(d);
+  }
+ },
  serialGap_(records,field="appointmentId"){
   const serials=(Array.isArray(records)?records:[]).map(x=>{const m=String(x?.[field]||"").match(/-(\d+)$/);return m?Number(m[1]):null}).filter(n=>Number.isInteger(n)&&n>=0);
   if(serials.length<2)return false;
@@ -19,15 +44,34 @@ window.IDB={
   if(this.cacheStale_(cache,records,field))return {...cache,status:"STALE"};
   return cache;
  },
- open(){if(this.db)return this.db;return this.db=new Promise((ok,no)=>{const r=indexedDB.open("NEURON_V2",7);r.onupgradeneeded=e=>{const d=r.result;let fst;if(!d.objectStoreNames.contains("followupCache")){fst=d.createObjectStore("followupCache",{keyPath:"key"});}else{fst=e.transaction.objectStore("followupCache");}if(fst&&!fst.indexNames.contains("cityWhatsapp"))fst.createIndex("cityWhatsapp",["city","normalizedWhatsapp"],{unique:false});if(fst&&!fst.indexNames.contains("citySourceRow"))fst.createIndex("citySourceRow",["city","sourceRow"],{unique:false});if(fst&&!fst.indexNames.contains("cityDate"))fst.createIndex("cityDate",["city","date"],{unique:false});if(!d.objectStoreNames.contains("tx")){const st=d.createObjectStore("tx",{keyPath:"id"});st.createIndex("status","status");st.createIndex("type","type")}if(!d.objectStoreNames.contains("cache"))d.createObjectStore("cache",{keyPath:"key"});if(!d.objectStoreNames.contains("meta"))d.createObjectStore("meta",{keyPath:"key"});if(!d.objectStoreNames.contains("statisticsRetrieval")){const st=d.createObjectStore("statisticsRetrieval",{keyPath:"retrievalKey"});st.createIndex("status","status");st.createIndex("updatedAt","updatedAt")}};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})},
- put(s,v){return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction(s,"readwrite");t.objectStore(s).put({...v,updatedAt:Date.now()});t.oncomplete=ok;t.onerror=()=>no(t.error)}))},
- get(s,k){return this.open().then(d=>new Promise((ok,no)=>{const r=d.transaction(s).objectStore(s).get(k);r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)}))},
- delete(s,k){return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction(s,"readwrite");t.objectStore(s).delete(k);t.oncomplete=ok;t.onerror=()=>no(t.error)}))},
- replace(s,k,v){return this.open().then(d=>new Promise((ok,no)=>{let settled=false;const done=fn=>x=>{if(settled)return;settled=true;fn(x)};const t=d.transaction(s,"readwrite"),st=t.objectStore(s);t.oncomplete=done(ok);t.onerror=done(()=>no(t.error||new Error("IndexedDB replacement failed.")));t.onabort=done(()=>no(t.error||new Error("IndexedDB replacement aborted.")));st.delete(k);st.put({...v,key:k,updatedAt:Date.now()});}))},
- all(s){return this.open().then(d=>new Promise((ok,no)=>{const r=d.transaction(s).objectStore(s).getAll();r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)}))},
- pending(){return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction("tx"),idx=t.objectStore("tx").index("status");let pending=[],uncertain=[],done=0,settled=false;const finish=()=>{if(++done!==2||settled)return;settled=true;ok([...pending,...uncertain])};const fail=e=>{if(settled)return;settled=true;no(e)};const rp=idx.getAll("pending"),ru=idx.getAll("uncertain");rp.onsuccess=()=>{pending=rp.result||[];finish()};ru.onsuccess=()=>{uncertain=ru.result||[];finish()};rp.onerror=()=>fail(rp.error);ru.onerror=()=>fail(ru.error);t.onerror=()=>fail(t.error);t.onabort=()=>fail(t.error||new Error("Pending transaction lookup aborted."));}))},
-  promotePendingToUncertain(id,now=Date.now()){return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction("tx","readwrite"),st=t.objectStore("tx");let result=null,settled=false;const r=st.get(id);r.onsuccess=()=>{const x=r.result;if(!x){result=null;return}if(x.status!=="pending"){result=x;return}result={...x,status:"uncertain",uncertainAt:now};st.put({...result,updatedAt:Date.now()})};r.onerror=()=>{if(!settled){settled=true;no(r.error)}};t.oncomplete=()=>{if(!settled){settled=true;ok(result)}};t.onerror=()=>{if(!settled){settled=true;no(t.error||new Error("Pending transaction promotion failed."))}};t.onabort=()=>{if(!settled){settled=true;no(t.error||new Error("Pending transaction promotion aborted."))}};}))},
- deleteCacheByPrefixExcept(s,prefix,keepPrefix){return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction(s,"readwrite"),st=t.objectStore(s),r=st.openCursor();r.onsuccess=()=>{const c=r.result;if(!c)return;const k=String(c.key||"");if(k.startsWith(prefix)&&(!keepPrefix||!k.startsWith(keepPrefix)))c.delete();c.continue()};r.onerror=()=>no(r.error);t.oncomplete=ok;t.onerror=()=>no(t.error)}))},
+ open(){
+  if(this.db)return this.db;
+  const generation=++this._dbGeneration;
+  const promise=new Promise((ok,no)=>{
+   const r=indexedDB.open("NEURON_V2",7);
+   r.onupgradeneeded=e=>{const d=r.result;let fst;if(!d.objectStoreNames.contains("followupCache")){fst=d.createObjectStore("followupCache",{keyPath:"key"});}else{fst=e.transaction.objectStore("followupCache");}if(fst&&!fst.indexNames.contains("cityWhatsapp"))fst.createIndex("cityWhatsapp",["city","normalizedWhatsapp"],{unique:false});if(fst&&!fst.indexNames.contains("citySourceRow"))fst.createIndex("citySourceRow",["city","sourceRow"],{unique:false});if(fst&&!fst.indexNames.contains("cityDate"))fst.createIndex("cityDate",["city","date"],{unique:false});if(!d.objectStoreNames.contains("tx")){const st=d.createObjectStore("tx",{keyPath:"id"});st.createIndex("status","status");st.createIndex("type","type")}if(!d.objectStoreNames.contains("cache"))d.createObjectStore("cache",{keyPath:"key"});if(!d.objectStoreNames.contains("meta"))d.createObjectStore("meta",{keyPath:"key"});if(!d.objectStoreNames.contains("statisticsRetrieval")){const st=d.createObjectStore("statisticsRetrieval",{keyPath:"retrievalKey"});st.createIndex("status","status");st.createIndex("updatedAt","updatedAt")}};
+   r.onsuccess=()=>{
+    const d=r.result;
+    const invalidate=()=>{if(this.db===promise)this.db=null;this._dbGeneration++;};
+    d.onclose=invalidate;
+    d.onversionchange=()=>{try{d.close();}catch(_){}invalidate();};
+    ok(d);
+   };
+   r.onerror=()=>no(r.error);
+  });
+  this.db=promise;
+  promise.catch(()=>{if(this.db===promise)this.db=null;});
+  if(generation!==this._dbGeneration&&this.db===promise)this.db=null;
+  return promise;
+ },
+ put(s,v){return this.withConnectionRetry_(d=>new Promise((ok,no)=>{const t=d.transaction(s,"readwrite");t.objectStore(s).put({...v,updatedAt:Date.now()});t.oncomplete=ok;t.onerror=()=>no(t.error)}))},
+ get(s,k){return this.withConnectionRetry_(d=>new Promise((ok,no)=>{const r=d.transaction(s).objectStore(s).get(k);r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)}))},
+ delete(s,k){return this.withConnectionRetry_(d=>new Promise((ok,no)=>{const t=d.transaction(s,"readwrite");t.objectStore(s).delete(k);t.oncomplete=ok;t.onerror=()=>no(t.error)}))},
+ replace(s,k,v){return this.withConnectionRetry_(d=>new Promise((ok,no)=>{let settled=false;const done=fn=>x=>{if(settled)return;settled=true;fn(x)};const t=d.transaction(s,"readwrite"),st=t.objectStore(s);t.oncomplete=done(ok);t.onerror=done(()=>no(t.error||new Error("IndexedDB replacement failed.")));t.onabort=done(()=>no(t.error||new Error("IndexedDB replacement aborted.")));st.delete(k);st.put({...v,key:k,updatedAt:Date.now()});}))},
+ all(s){return this.withConnectionRetry_(d=>new Promise((ok,no)=>{const r=d.transaction(s).objectStore(s).getAll();r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)}))},
+ pending(){return this.withConnectionRetry_(d=>new Promise((ok,no)=>{const t=d.transaction("tx"),idx=t.objectStore("tx").index("status");let pending=[],uncertain=[],done=0,settled=false;const finish=()=>{if(++done!==2||settled)return;settled=true;ok([...pending,...uncertain])};const fail=e=>{if(settled)return;settled=true;no(e)};const rp=idx.getAll("pending"),ru=idx.getAll("uncertain");rp.onsuccess=()=>{pending=rp.result||[];finish()};ru.onsuccess=()=>{uncertain=ru.result||[];finish()};rp.onerror=()=>fail(rp.error);ru.onerror=()=>fail(ru.error);t.onerror=()=>fail(t.error);t.onabort=()=>fail(t.error||new Error("Pending transaction lookup aborted."));}))},
+  promotePendingToUncertain(id,now=Date.now()){return this.withConnectionRetry_(d=>new Promise((ok,no)=>{const t=d.transaction("tx","readwrite"),st=t.objectStore("tx");let result=null,settled=false;const r=st.get(id);r.onsuccess=()=>{const x=r.result;if(!x){result=null;return}if(x.status!=="pending"){result=x;return}result={...x,status:"uncertain",uncertainAt:now};st.put({...result,updatedAt:Date.now()})};r.onerror=()=>{if(!settled){settled=true;no(r.error)}};t.oncomplete=()=>{if(!settled){settled=true;ok(result)}};t.onerror=()=>{if(!settled){settled=true;no(t.error||new Error("Pending transaction promotion failed."))}};t.onabort=()=>{if(!settled){settled=true;no(t.error||new Error("Pending transaction promotion aborted."))}};}))},
+ deleteCacheByPrefixExcept(s,prefix,keepPrefix){return this.withConnectionRetry_(d=>new Promise((ok,no)=>{const t=d.transaction(s,"readwrite"),st=t.objectStore(s),r=st.openCursor();r.onsuccess=()=>{const c=r.result;if(!c)return;const k=String(c.key||"");if(k.startsWith(prefix)&&(!keepPrefix||!k.startsWith(keepPrefix)))c.delete();c.continue()};r.onerror=()=>no(r.error);t.oncomplete=ok;t.onerror=()=>no(t.error)}))},
  todayKey_(){
   const p=window.U?.parts?.()||(()=>{const d=new Date();return {y:d.getFullYear(),m:d.getMonth()+1,d:d.getDate()};})();
   return `${p.y}${String(p.m).padStart(2,"0")}${String(p.d).padStart(2,"0")}`;
@@ -142,7 +186,7 @@ window.IDB={
   getFollowupMeta(city){return this.get("followupCache",this.followupMetaKey_(city));},
   getFollowupPatients_(city,whatsapp){
     const c=String(city||"").trim(),phone=this.normalizeWhatsApp_(whatsapp);if(!c||!/^[6-9]\d{9}$/.test(phone))return Promise.resolve([]);
-    return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction("followupCache"),r=t.objectStore("followupCache").index("cityWhatsapp").getAll(IDBKeyRange.only([c,phone]));r.onsuccess=()=>ok((r.result||[]).filter(x=>x.type==="FOLLOWUP_VISIT"));r.onerror=()=>no(r.error);}));
+    return this.withConnectionRetry_(d=>new Promise((ok,no)=>{const t=d.transaction("followupCache"),r=t.objectStore("followupCache").index("cityWhatsapp").getAll(IDBKeyRange.only([c,phone]));r.onsuccess=()=>ok((r.result||[]).filter(x=>x.type==="FOLLOWUP_VISIT"));r.onerror=()=>no(r.error);}));
   },
   followupBuildLockKey_(city){return `LOCK|${String(city||"").trim()}`;},
   async acquireFollowupBuildLock_(city,ttlMs=120000){
@@ -172,17 +216,17 @@ window.IDB={
     }
   },
   putFollowupBuildBatch(city,records){
-    const c=String(city||"").trim(),list=Array.isArray(records)?records:[];return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache");list.forEach(x=>{const row=Number(x?.sourceRow);if(!Number.isInteger(row)||row<2)return;st.put({...x,key:this.followupVisitKey_(c,row),type:"FOLLOWUP_VISIT",city:c,normalizedWhatsapp:this.normalizeWhatsApp_(x.whatsapp),sourceRow:row});});t.oncomplete=ok;t.onerror=()=>no(t.error||new Error("Follow-up cache batch write failed."));t.onabort=()=>no(t.error||new Error("Follow-up cache batch write aborted."));}));
+    const c=String(city||"").trim(),list=Array.isArray(records)?records:[];return this.withConnectionRetry_(d=>new Promise((ok,no)=>{const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache");list.forEach(x=>{const row=Number(x?.sourceRow);if(!Number.isInteger(row)||row<2)return;st.put({...x,key:this.followupVisitKey_(c,row),type:"FOLLOWUP_VISIT",city:c,normalizedWhatsapp:this.normalizeWhatsApp_(x.whatsapp),sourceRow:row});});t.oncomplete=ok;t.onerror=()=>no(t.error||new Error("Follow-up cache batch write failed."));t.onabort=()=>no(t.error||new Error("Follow-up cache batch write aborted."));}));
   },
   countFollowupVisits_(city){
     const c=String(city||"").trim();if(!c)return Promise.resolve(0);
-    return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction("followupCache"),idx=t.objectStore("followupCache").index("citySourceRow"),r=idx.getAllKeys(IDBKeyRange.bound([c,2],[c,Number.MAX_SAFE_INTEGER]));r.onsuccess=()=>ok((r.result||[]).length);r.onerror=()=>no(r.error);}));
+    return this.withConnectionRetry_(d=>new Promise((ok,no)=>{const t=d.transaction("followupCache"),idx=t.objectStore("followupCache").index("citySourceRow"),r=idx.getAllKeys(IDBKeyRange.bound([c,2],[c,Number.MAX_SAFE_INTEGER]));r.onsuccess=()=>ok((r.result||[]).length);r.onerror=()=>no(r.error);}));
   },
   setFollowupMeta(meta){const c=String(meta?.city||"").trim();return this.put("followupCache",{...meta,key:this.followupMetaKey_(c),type:"FOLLOWUP_META",city:c});},
   finishFollowupCityBuild(city,meta){const c=String(city||"").trim();return this.setFollowupMeta({...meta,city:c,status:"READY",lastUpdatedAt:Date.now()});},
   appendFollowupVisitAndMeta(visit,meta){
     const c=String(visit?.city||meta?.city||"").trim(),row=Number(visit?.sourceRow);if(!c||!Number.isInteger(row)||row<2)return Promise.resolve({updated:false});
-    return this.open().then(d=>new Promise((ok,no)=>{const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache");st.put({...visit,key:this.followupVisitKey_(c,row),type:"FOLLOWUP_VISIT",city:c,normalizedWhatsapp:this.normalizeWhatsApp_(visit.whatsapp),sourceRow:row});if(meta)st.put({...meta,key:this.followupMetaKey_(c),type:"FOLLOWUP_META",city:c,status:"READY",updatedAt:Date.now()});t.oncomplete=()=>ok({updated:true});t.onerror=()=>no(t.error||new Error("Follow-up booking cache update failed."));t.onabort=()=>no(t.error||new Error("Follow-up booking cache update aborted."));}));
+    return this.withConnectionRetry_(d=>new Promise((ok,no)=>{const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache");st.put({...visit,key:this.followupVisitKey_(c,row),type:"FOLLOWUP_VISIT",city:c,normalizedWhatsapp:this.normalizeWhatsApp_(visit.whatsapp),sourceRow:row});if(meta)st.put({...meta,key:this.followupMetaKey_(c),type:"FOLLOWUP_META",city:c,status:"READY",updatedAt:Date.now()});t.oncomplete=()=>ok({updated:true});t.onerror=()=>no(t.error||new Error("Follow-up booking cache update failed."));t.onabort=()=>no(t.error||new Error("Follow-up booking cache update aborted."));}));
   },
   async pruneFollowupCity(city,boundaryDate,lastCleanupMonth){
     const c=String(city||"").trim(),boundary=String(boundaryDate||"");if(!c||!/^[0-9]{8}$/.test(boundary))return;
@@ -293,7 +337,7 @@ window.IDB={
   },
   putFollowupSyncBatch_(city,records){
     const c=String(city||"").trim(),list=Array.isArray(records)?records:[];
-    return this.open().then(d=>new Promise((ok,no)=>{
+    return this.withConnectionRetry_(d=>new Promise((ok,no)=>{
       const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache");
       let inserted=0,updated=0,remaining=list.length;
       if(!remaining){ok({inserted:0,updated:0});return;}
@@ -415,7 +459,7 @@ window.IDB={
       if(!refreshed||refreshed.status==="STALE"||refreshed.complete!==true)throw Error("Today's OPD cache could not be synchronized before EEG booking.");
     }
   }
-  return this.open().then(d=>new Promise((ok,no)=>{
+  return this.withConnectionRetry_(d=>new Promise((ok,no)=>{
   const kind=String(booking?.kind||"").trim();
   const appointmentId=String(booking?.appointmentId||"").trim();
   const city=String(booking?.city||"").trim();

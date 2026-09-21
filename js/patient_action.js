@@ -48,8 +48,10 @@
   }
   function closePatient() {
     const m = modal(); if (m) m.hidden = true;
+    const fm = formModal(); if (fm) fm.hidden = true;
+    const f = $("patientActionFrame"); if (f) f.src = "about:blank";
+    currentAction = "";
     document.body.classList.remove("patient-action-open");
-    closeForm();
     clearContext();
   }
   function closeForm() {
@@ -72,6 +74,17 @@
     fm.hidden=false;
     requestAnimationFrame(()=>$("patientActionFormBack")?.focus());
   }
+  async function doneToTodayList() {
+    await refreshSelectedAfterMutation("DONE");
+    const fm = formModal(); if (fm) fm.hidden = true;
+    const f = $("patientActionFrame"); if (f) f.src = "about:blank";
+    const m = modal(); if (m) m.hidden = true;
+    currentAction = "";
+    document.body.classList.remove("patient-action-open");
+    clearContext();
+    window.dispatchEvent(new CustomEvent("neuron:refresh-opd-today"));
+  }
+
   async function refreshSelectedAfterMutation(message) {
     if (!selectedTodayPatient) return;
     try {
@@ -96,8 +109,14 @@
       else if (!modal()?.hidden) closePatient();
     });
     window.addEventListener("message", e => {
-      if (e.origin !== location.origin || e.data?.type !== "NEURON_PATIENT_ACTION_MUTATION") return;
-      refreshSelectedAfterMutation(e.data.action||currentAction);
+      if (e.origin !== location.origin) return;
+      if (e.data?.type === "NEURON_PATIENT_ACTION_MUTATION") {
+        refreshSelectedAfterMutation(e.data.action||currentAction);
+        return;
+      }
+      if (e.data?.type === "NEURON_PATIENT_ACTION_DONE") {
+        doneToTodayList();
+      }
     });
   });
 })();

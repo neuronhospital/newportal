@@ -154,3 +154,68 @@ window.NeuronPatientActionContext=window.NeuronPatientActionContext||(()=>{
  return {KEY,read,write,clear,notify};
 })();
 if(new URLSearchParams(location.search).get("patientAction")==="1")document.body.classList.add("neuron-embedded");
+
+/* v206.8: global popup navigation and scroll containment. */
+(() => {
+ const GUARD_STATE="__NEURON_POPUP_GUARD__";
+ let guardActive=false, cleaning=false, observer=null;
+ const visible=el=>{
+  if(!el||el.hidden)return false;
+  const cs=getComputedStyle(el);
+  return cs.display!=="none"&&cs.visibility!=="hidden";
+ };
+ const popupOpen=()=>Array.from(document.querySelectorAll('[role="dialog"]')).some(visible);
+ const arm=()=>{
+  if(guardActive||!popupOpen())return;
+  guardActive=true;
+  document.documentElement.classList.add("neuron-popup-guard-active");
+  document.body?.classList.add("neuron-popup-guard-active");
+  try{history.pushState({neuronPopupGuard:GUARD_STATE},"",location.href);}catch(_){}
+ };
+ const disarm=()=>{
+  if(!guardActive)return;
+  guardActive=false;
+  document.documentElement.classList.remove("neuron-popup-guard-active");
+  document.body?.classList.remove("neuron-popup-guard-active");
+  cleaning=true;
+  try{
+   if(history.state?.neuronPopupGuard===GUARD_STATE)history.back();
+   else cleaning=false;
+  }catch(_){cleaning=false;}
+ };
+ const sync=()=>{ if(popupOpen())arm(); else disarm(); };
+ const init=()=>{
+  if(!document.body)return;
+  observer=new MutationObserver(()=>sync());
+  observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:["hidden","style","class"]});
+  sync();
+ };
+ window.addEventListener("popstate",()=>{
+  if(cleaning)return;
+  if(guardActive||popupOpen()){
+   guardActive=true;
+   try{history.pushState({neuronPopupGuard:GUARD_STATE},"",location.href);}catch(_){}
+   document.documentElement.classList.add("neuron-popup-guard-active");
+   document.body?.classList.add("neuron-popup-guard-active");
+  }
+ });
+ if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init,{once:true});else init();
+
+ const addDone=()=>{
+  if(new URLSearchParams(location.search).get("patientAction")!=="1"||window.parent===window)return;
+  const c=document.getElementById("confirmation");
+  if(!c||c.hidden||!c.textContent.trim()||c.querySelector(".patient-action-done"))return;
+  if(!c.querySelector(".success")&&!/successfully|confirmed|details updated/i.test(c.textContent))return;
+  const b=document.createElement("button");
+  b.type="button"; b.className="cta patient-action-done"; b.textContent="Done";
+  b.style.cssText="width:100%;margin-top:16px";
+  b.addEventListener("click",()=>{try{window.parent.postMessage({type:"NEURON_PATIENT_ACTION_DONE"},window.location.origin);}catch(_){} });
+  c.appendChild(b);
+ };
+ const initDone=()=>{
+  if(new URLSearchParams(location.search).get("patientAction")!=="1"||window.parent===window)return;
+  const mo=new MutationObserver(addDone); mo.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:["hidden"]});
+  addDone();
+ };
+ if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",initDone,{once:true});else initDone();
+})();

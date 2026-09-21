@@ -155,6 +155,19 @@
     document.body.classList.remove("opd-today-modal-open");
   }
 
+  async function refreshFromCurrentCache() {
+    const city = currentCity();
+    const date = todayKey();
+    if (!city) return;
+    popupState.city = city;
+    popupState.key = cacheKey(date, city);
+    const record = await IDB.get("cache", popupState.key).catch(() => null);
+    if (!record) return;
+    render(record);
+    setLastUpdated(record);
+    showCacheStatus(record);
+  }
+
   async function handleUpdate() {
     const city = currentCity();
     const date = todayKey();
@@ -175,6 +188,7 @@
     $("opdTodayUpdate")?.addEventListener("click", handleUpdate);
     $("opdTodayOk")?.addEventListener("click", closePopup);
     $("opdTodayBackdrop")?.addEventListener("click", closePopup);
+    window.addEventListener("neuron:refresh-opd-today", () => { if (popupState.open) refreshFromCurrentCache().catch(() => {}); });
     document.addEventListener("keydown", e => { if (e.key === "Escape" && popupState.open) closePopup(); });
   });
 })();
