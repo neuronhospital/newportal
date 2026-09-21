@@ -155,22 +155,31 @@ window.NeuronPatientActionContext=window.NeuronPatientActionContext||(()=>{
 })();
 if(new URLSearchParams(location.search).get("patientAction")==="1")document.body.classList.add("neuron-embedded");
 
-/* v206.8: global popup navigation and scroll containment. */
+/* v206.9: global popup navigation + scroll containment. */
 (() => {
  const GUARD_STATE="__NEURON_POPUP_GUARD__";
- let guardActive=false, cleaning=false, observer=null;
- const visible=el=>{
-  if(!el||el.hidden)return false;
-  const cs=getComputedStyle(el);
-  return cs.display!=="none"&&cs.visibility!=="hidden";
+ let guardActive=false, cleaning=false, observer=null, touchState=null;
+ const isEffectivelyVisible=el=>{
+  if(!el)return false;
+  let node=el;
+  while(node&&node.nodeType===1){
+   if(node.hidden||node.getAttribute?.("aria-hidden")==="true")return false;
+   const cs=getComputedStyle(node);
+   if(cs.display==="none"||cs.visibility==="hidden")return false;
+   if(node===document.documentElement)break;
+   node=node.parentElement;
+  }
+  return el.getClientRects().length>0;
  };
- const popupOpen=()=>Array.from(document.querySelectorAll('[role="dialog"]')).some(visible);
+ const activeDialogs=()=>Array.from(document.querySelectorAll('[role="dialog"]')).filter(isEffectivelyVisible);
+ const popupOpen=()=>activeDialogs().length>0;
+ const embedded=()=>document.body?.classList.contains("neuron-embedded")||window.parent!==window;
  const arm=()=>{
   if(guardActive||!popupOpen())return;
   guardActive=true;
   document.documentElement.classList.add("neuron-popup-guard-active");
   document.body?.classList.add("neuron-popup-guard-active");
-  try{history.pushState({neuronPopupGuard:GUARD_STATE},"",location.href);}catch(_){}
+  try{if(history.state?.neuronPopupGuard!==GUARD_STATE)history.pushState({...(history.state||{}),neuronPopupGuard:GUARD_STATE},"",location.href);}catch(_){}
  };
  const disarm=()=>{
   if(!guardActive)return;
@@ -178,25 +187,60 @@ if(new URLSearchParams(location.search).get("patientAction")==="1")document.body
   document.documentElement.classList.remove("neuron-popup-guard-active");
   document.body?.classList.remove("neuron-popup-guard-active");
   cleaning=true;
-  try{
-   if(history.state?.neuronPopupGuard===GUARD_STATE)history.back();
-   else cleaning=false;
-  }catch(_){cleaning=false;}
+  try{if(history.state?.neuronPopupGuard===GUARD_STATE)history.back();else cleaning=false;}catch(_){cleaning=false;}
  };
- const sync=()=>{ if(popupOpen())arm(); else disarm(); };
+ const sync=()=>{if(popupOpen())arm();else disarm();};
  const init=()=>{
   if(!document.body)return;
-  observer=new MutationObserver(()=>sync());
-  observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:["hidden","style","class"]});
+  observer=new MutationObserver(sync);
+  observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:["hidden","aria-hidden","style","class"]});
+  if(embedded())document.documentElement.classList.add("neuron-popup-embedded");
   sync();
  };
+ const nearestScrollable=target=>{
+  let node=target?.nodeType===1?target:target?.parentElement;
+  while(node&&node!==document.body&&node!==document.documentElement){
+   const cs=getComputedStyle(node);
+   if(/(auto|scroll|overlay)/.test(cs.overflowY)&&node.scrollHeight>node.clientHeight)return node;
+   node=node.parentElement;
+  }
+  const root=document.scrollingElement||document.documentElement;
+  return root&&root.scrollHeight>root.clientHeight?root:null;
+ };
+ const atBoundary=(el,dy)=>{
+  if(!el)return false;
+  const root=document.scrollingElement||document.documentElement;
+  if(el===document.body||el===document.documentElement||el===root){
+   const top=root.scrollTop,max=root.scrollHeight-root.clientHeight;
+   return (dy>0&&top<=0)||(dy<0&&top>=max-1);
+  }
+  return (dy>0&&el.scrollTop<=0)||(dy<0&&el.scrollTop>=el.scrollHeight-el.clientHeight-1);
+ };
+ const onTouchStart=e=>{
+  if(!popupOpen()&&!embedded())return;
+  const t=e.touches?.[0]; if(!t)return;
+  touchState={x:t.clientX,y:t.clientY,scrollable:nearestScrollable(e.target)};
+ };
+ const onTouchMove=e=>{
+  if(!touchState)return;
+  const t=e.touches?.[0]; if(!t)return;
+  const dy=t.clientY-touchState.y;
+  if(Math.abs(dy)<2)return;
+  const sc=touchState.scrollable||nearestScrollable(e.target);
+  if(atBoundary(sc,dy))e.preventDefault();
+ };
+ const onTouchEnd=()=>{touchState=null;};
+ document.addEventListener("touchstart",onTouchStart,{passive:true,capture:true});
+ document.addEventListener("touchmove",onTouchMove,{passive:false,capture:true});
+ document.addEventListener("touchend",onTouchEnd,{passive:true,capture:true});
+ document.addEventListener("touchcancel",onTouchEnd,{passive:true,capture:true});
  window.addEventListener("popstate",()=>{
-  if(cleaning)return;
+  if(cleaning){cleaning=false;return;}
   if(guardActive||popupOpen()){
    guardActive=true;
-   try{history.pushState({neuronPopupGuard:GUARD_STATE},"",location.href);}catch(_){}
    document.documentElement.classList.add("neuron-popup-guard-active");
    document.body?.classList.add("neuron-popup-guard-active");
+   try{history.pushState({...(history.state||{}),neuronPopupGuard:GUARD_STATE},"",location.href);}catch(_){ }
   }
  });
  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init,{once:true});else init();
