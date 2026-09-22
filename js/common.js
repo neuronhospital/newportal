@@ -81,9 +81,8 @@ window.TodayCity=window.TodayCity||(()=>{
 window.$=window.U?.$||((id)=>document.getElementById(id));
 window.NeuronBackgroundStatus=window.NeuronBackgroundStatus||(()=>{
  const DISPLAY_DELAY_MS=500,FINAL_DISPLAY_MS=5000;
- let container=null,bar=null,displayTimer=null,hideTimer=null,visible=false;
+ let container=null,bar=null,displayTimer=null,hideTimer=null,visible=false,lastState=null;
  const state={OPD:null,Followup:null};
- const active={OPD:0,Followup:0};
  const ensureContainer=()=>{
   if(container&&document.body.contains(container))return container;
   container=document.getElementById("neuronTopStatusContainer");
@@ -95,52 +94,66 @@ window.NeuronBackgroundStatus=window.NeuronBackgroundStatus||(()=>{
   if(bar&&container.contains(bar))return bar;
   bar=document.createElement("div");bar.id="neuronBackgroundSyncBar";bar.className="neuron-background-sync-bar";bar.hidden=true;container.insertBefore(bar,container.firstChild);return bar;
  };
- const labelFor=(key)=>key==="Followup"?"Follow-up":"OPD";
- const iconFor=(value)=>value==="running"?"⟳":value==="success"?"✅":value==="failed"?"❌":"";
+ const labelFor=key=>key==="Followup"?"Follow-up":"OPD";
+ const iconFor=value=>value==="running"?"⟳":value==="success"?"✅":value==="failed"?"❌":"";
  const activeStates=()=>Object.keys(state).filter(k=>state[k]);
+ const clearTimers=()=>{if(displayTimer){clearTimeout(displayTimer);displayTimer=null;}if(hideTimer){clearTimeout(hideTimer);hideTimer=null;}};
  const render=()=>{
   if(!visible)return;
-  const b=ensureBar();
-  const keys=activeStates();
+  const b=ensureBar(),keys=activeStates();
   if(!keys.length){b.hidden=true;visible=false;return;}
   b.innerHTML=keys.map(k=>`<span class="neuron-background-status-item"><span class="neuron-background-status-icon" aria-hidden="true">${iconFor(state[k])}</span><span>${labelFor(k)}</span></span>`).join('<span class="neuron-background-status-separator" aria-hidden="true">•</span>');
-  const running=keys.some(k=>state[k]==="running");
-  const failed=!running&&keys.some(k=>state[k]==="failed");
-  b.className="neuron-background-sync-bar "+(running?"is-working":failed?"is-failed":"is-success");
-  b.hidden=false;
+  const running=keys.some(k=>state[k]==="running"),failed=!running&&keys.some(k=>state[k]==="failed");
+  b.className="neuron-background-sync-bar "+(running?"is-working":failed?"is-failed":"is-success");b.hidden=false;
  };
- const scheduleDisplay=()=>{
-  if(visible||displayTimer)return;
-  displayTimer=setTimeout(()=>{
-   displayTimer=null;
-   if(Object.values(active).some(n=>n>0)){visible=true;render();}
-  },DISPLAY_DELAY_MS);
- };
- const scheduleHide=()=>{
-  if(hideTimer)clearTimeout(hideTimer);
-  hideTimer=setTimeout(()=>{hideTimer=null;if(Object.values(active).some(n=>n>0))return;visible=false;Object.keys(state).forEach(k=>state[k]=null);if(bar)bar.hidden=true;},FINAL_DISPLAY_MS);
- };
- const begin=(key)=>{
-  if(!(key in active))return;
-  active[key]++;
-  if(hideTimer){clearTimeout(hideTimer);hideTimer=null;}
-  state[key]="running";
-  scheduleDisplay();
-  if(visible)render();
- };
- const end=(key,ok=true)=>{
-  if(!(key in active)||active[key]<=0)return;
-  active[key]--;
-  if(active[key]===0)state[key]=ok?"success":"failed";
-  if(visible)render();
-  if(Object.values(active).every(n=>n===0)){
-   if(visible)scheduleHide();
-   else if(displayTimer){clearTimeout(displayTimer);displayTimer=null;Object.keys(state).forEach(k=>state[k]=null);}
+ const scheduleHide=ms=>{if(hideTimer)clearTimeout(hideTimer);hideTimer=setTimeout(()=>{hideTimer=null;visible=false;Object.keys(state).forEach(k=>state[k]=null);if(bar)bar.hidden=true;},Math.max(0,ms));};
+ const applyState=next=>{
+  clearTimers();
+  lastState=next||null;
+  const now=Date.now();
+  Object.keys(state).forEach(k=>state[k]=null);
+  Object.keys(state).forEach(k=>{
+   const x=next?.[k];
+   if(!x||x.status==="idle")return;
+   state[k]=x.status;
+  });
+  const running=Object.values(state).some(v=>v==="running");
+  const terminal=Object.values(state).some(v=>v==="success"||v==="failed");
+  if(running){
+   const starts=Object.values(next||{}).map(x=>x?.status==="running"?Number(x.startedAt)||now:0).filter(Boolean);
+   const oldest=starts.length?Math.min(...starts):now;
+   const elapsed=now-oldest;
+   visible=elapsed>=DISPLAY_DELAY_MS;
+   if(!visible)displayTimer=setTimeout(()=>{displayTimer=null;visible=true;render();},Math.max(0,DISPLAY_DELAY_MS-elapsed));
+   if(visible)render();
+   return;
   }
+  if(terminal){
+   const until=Math.max(...Object.values(next||{}).map(x=>Number(x?.terminalUntil)||0));
+   if(until>now){visible=true;render();scheduleHide(until-now);}else{visible=false;if(bar)bar.hidden=true;}
+  }else{visible=false;if(bar)bar.hidden=true;}
  };
- return {begin,end,ensureContainer};
+ const requestState=async()=>{
+  if(!( "serviceWorker" in navigator))return;
+  try{
+   const reg=await navigator.serviceWorker.ready;
+   const target=reg.active||navigator.serviceWorker.controller;
+   target?.postMessage({type:"NEURON_BACKGROUND_SYNC_CONNECT"});
+  }catch(_){ }
+ };
+ const connect=()=>{void requestState();};
+ if("serviceWorker"in navigator)navigator.serviceWorker.addEventListener("message",e=>{if(e.data?.type==="NEURON_BACKGROUND_SYNC_STATE")applyState(e.data.state);});
+ return {ensureContainer,connect,applyState};
 })();
-if("serviceWorker"in navigator)window.addEventListener("load",()=>{const v=encodeURIComponent(window.NEURON_CONFIG.appVersion);navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!sessionStorage.getItem("neuron-sw-reloaded-"+v)){sessionStorage.setItem("neuron-sw-reloaded-"+v,"1");location.reload();}});navigator.serviceWorker.register("./service-worker.js?v="+v).catch(()=>{});});
+if("serviceWorker"in navigator)window.addEventListener("load",()=>{
+ const v=encodeURIComponent(window.NEURON_CONFIG.appVersion);
+ setInterval(()=>{try{const c=navigator.serviceWorker.controller;c?.postMessage({type:"NEURON_BACKGROUND_SYNC_PING"});}catch(_){ }},60*1000);
+ navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!sessionStorage.getItem("neuron-sw-reloaded-"+v)){sessionStorage.setItem("neuron-sw-reloaded-"+v,"1");location.reload();}});
+ navigator.serviceWorker.register("./service-worker.js?v="+v).then(reg=>{
+  const target=reg.active||navigator.serviceWorker.controller;
+  target?.postMessage({type:"NEURON_BACKGROUND_SYNC_CONNECT"});
+ }).catch(()=>{});
+});
 const setFooterCurrentSection_=()=>{
  const f=document.getElementById("footer");
  if(!f)return;
@@ -177,10 +190,9 @@ document.addEventListener("DOMContentLoaded",()=>{
 <a class="footer-desktop-update footer-eeg-update-link" href="eeg_update.html"><img class="nav-icon" src="assets/icons/eeg-update.svg" alt=""><span>EEG Update</span></a>
 </nav><div class="footer-update-popup" hidden><div class="footer-update-backdrop" data-close-update></div><div class="footer-update-dialog" role="dialog" aria-modal="true" aria-labelledby="footer-update-title"><button type="button" class="footer-update-close" aria-label="Close Update menu" data-close-update>×</button><div id="footer-update-title" class="footer-update-title">Select Update</div><div class="footer-update-options"><a href="opd_update.html"><img src="assets/icons/opd-update.svg" alt=""><span>Update OPD</span></a><a href="eeg_update.html"><img src="assets/icons/eeg-update.svg" alt=""><span>Update EEG</span></a></div></div></div><div class="footer-contact"><b>NEURON Hospital, Latur</b><br>Near Patil Plaza, Infront of Ashwini Hospital • Ausa Road, Latur • <b><a href="tel:02382242581">02382 242581</a></b><br></div></div></footer>`;
  setFooterCurrentSection_();
- // Start cache maintenance after the page has opened. It is intentionally
- // fire-and-forget: critical operations are checked inside IDB and background
- // work never blocks the UI or acquires a critical-operation lock.
- try{window.IDB?.startBackgroundCacheSync_?.();}catch(_){}
+ // Attach this page to the page-independent background synchronization engine.
+ // The page only observes/reconstructs state; it does not own synchronization.
+ try{window.NeuronBackgroundStatus?.connect?.();}catch(_){}
  const updateTrigger=f?.querySelector('.footer-update-trigger'),updatePopup=f?.querySelector('.footer-update-popup');
  if(updateTrigger&&updatePopup){
   const closeUpdate=()=>{updatePopup.hidden=true;updateTrigger.setAttribute('aria-expanded','false');};
