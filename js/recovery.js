@@ -101,7 +101,7 @@
 
   function dismissState(id){
     stateCache=stateCache.filter(x=>x.id!==id);renderBar();
-    try{navigator.serviceWorker?.controller?.postMessage({type:"NEURON_RECOVERY_DISMISS",id});}catch(_){}
+    void requestWorker("NEURON_RECOVERY_DISMISS").catch(()=>{});
   }
   function bookAgain(x){
     const prefill={type:x.type,payload:x.payload||{},failedRecoveryId:x.id,createdAt:Date.now()};
@@ -115,8 +115,8 @@
     try{
       if(!("serviceWorker" in navigator))return;
       const reg=await navigator.serviceWorker.ready;
-      const c=navigator.serviceWorker.controller||reg.active;
-      c?.postMessage({type});
+      const c=navigator.serviceWorker.controller||reg.active||reg.waiting||reg.installing;
+      if(c)c.postMessage({type});
     }catch(_){}
   }
   function handleState(state){stateCache=Array.isArray(state)?state:[];renderBar();}
@@ -141,5 +141,6 @@
     if(e.data?.type==="NEURON_RECOVERY_STATE")handleState(e.data.state);
     if(e.data?.type==="NEURON_RECOVERY_RESULT")window.dispatchEvent(new CustomEvent("neuron:recovery-result",{detail:e.data.detail||{}}));
   });
+  navigator.serviceWorker?.addEventListener("controllerchange",()=>{void requestWorker("NEURON_RECOVERY_CONNECT");});
   document.addEventListener("DOMContentLoaded",start);
 })();

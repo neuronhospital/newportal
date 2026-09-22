@@ -137,8 +137,8 @@ window.NeuronBackgroundStatus=window.NeuronBackgroundStatus||(()=>{
   if(!( "serviceWorker" in navigator))return;
   try{
    const reg=await navigator.serviceWorker.ready;
-   const target=reg.active||navigator.serviceWorker.controller;
-   target?.postMessage({type:"NEURON_BACKGROUND_SYNC_CONNECT"});
+   const target=navigator.serviceWorker.controller||reg.active||reg.waiting||reg.installing;
+   if(target)target.postMessage({type:"NEURON_BACKGROUND_SYNC_CONNECT"});
   }catch(_){ }
  };
  const connect=()=>{void requestState();};
@@ -148,10 +148,14 @@ window.NeuronBackgroundStatus=window.NeuronBackgroundStatus||(()=>{
 if("serviceWorker"in navigator)window.addEventListener("load",()=>{
  const v=encodeURIComponent(window.NEURON_CONFIG.appVersion);
  setInterval(()=>{try{const c=navigator.serviceWorker.controller;c?.postMessage({type:"NEURON_BACKGROUND_SYNC_PING"});}catch(_){ }},60*1000);
- navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!sessionStorage.getItem("neuron-sw-reloaded-"+v)){sessionStorage.setItem("neuron-sw-reloaded-"+v,"1");location.reload();}});
- navigator.serviceWorker.register("./service-worker.js?v="+v).then(reg=>{
-  const target=reg.active||navigator.serviceWorker.controller;
-  target?.postMessage({type:"NEURON_BACKGROUND_SYNC_CONNECT"});
+ navigator.serviceWorker.addEventListener("controllerchange",()=>{
+  void window.NeuronBackgroundStatus?.connect?.();
+  if(!sessionStorage.getItem("neuron-sw-reloaded-"+v)){sessionStorage.setItem("neuron-sw-reloaded-"+v,"1");location.reload();}
+ });
+ navigator.serviceWorker.register("./service-worker.js?v="+v,{updateViaCache:"none"}).then(reg=>{
+  const target=navigator.serviceWorker.controller||reg.active||reg.waiting||reg.installing;
+  if(target)target.postMessage({type:"NEURON_BACKGROUND_SYNC_CONNECT"});
+  void reg.update().catch(()=>{});
  }).catch(()=>{});
 });
 const setFooterCurrentSection_=()=>{
