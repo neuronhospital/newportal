@@ -96,9 +96,11 @@ document.addEventListener("DOMContentLoaded",()=>{
    return window.DailyCity?.getHistory?.(dateKeyForDate_(date))||null;
  }
  function sourceCitiesForDailyPeriod_(period){
+   const date=selectedDateForDailyPeriod_(period);
+   if(period==="today") return scheduledCitiesForDate_(date);
    const actual=actualCityForDailyPeriod_(period);
    if(actual&&NEURON_CONFIG.cities.includes(actual))return [actual];
-   return scheduledCitiesForDate_(selectedDateForDailyPeriod_(period));
+   return scheduledCitiesForDate_(date);
  }
 
  const HISTORY_KEY="neuron_statistics_history_access";
@@ -295,6 +297,57 @@ document.addEventListener("DOMContentLoaded",()=>{
    if(activeRetrieval) pollStatisticsRetrieval_(activeRetrieval);
  });
 
+ async function retrieveTodayStatisticsFromCache_(request){
+   if(String(request.period||"").toLowerCase()!=="today") return null;
+   const requested=String(request.city||"").trim();
+   const scheduled=scheduledCitiesForDate_(selectedDateForDailyPeriod_("today"));
+   const sourceCities=requested.toLowerCase()==="all" ? scheduled : [requested];
+   if(!sourceCities.length || sourceCities.some(c=>!scheduled.includes(c))) return null;
+
+   const todayParts=U.parts();
+   const todayKey=`${todayParts.y}${String(todayParts.m).padStart(2,"0")}${String(todayParts.d).padStart(2,"0")}`;
+   const caches=[];
+   for(const city of sourceCities){
+     try{
+       if(typeof IDB.syncTodayOPDCacheBackground_==="function") await IDB.syncTodayOPDCacheBackground_(city);
+       let cache=await IDB.get("cache",`OPD_TODAY|${todayKey}|${city}`).catch(()=>null);
+       if(!cache || cache.date!==todayKey || String(cache.city||"").trim()!==city || cache.complete!==true || cache.status==="STALE" || cache.status==="CACHED_INCOMPLETE" || IDB.opdTodayCacheStale_(cache,cache.patients,"appointmentId")){
+         cache=await IDB.getTodayOPDCache_(city,{forceRefresh:true});
+       }
+       if(!cache || cache.date!==todayKey || String(cache.city||"").trim()!==city || cache.complete!==true || cache.status==="STALE" || cache.status==="CACHED_INCOMPLETE" || IDB.opdTodayCacheStale_(cache,cache.patients,"appointmentId")) return null;
+       caches.push(cache);
+     }catch(_){
+       return null;
+     }
+   }
+
+   const totals={patientCount:0,freeOPD:0,eegCount:0,freeEEG:0,opdTotal:0,opdCash:0,opdOnline:0,opdPaid:0,opdRefund:0,eegTotal:0,eegCash:0,eegOnline:0,eegPaid:0,eegRefund:0,totalCash:0,totalOnline:0,totalCollection:0,totalRefund:0,netCash:0,netOnline:0,netTotal:0};
+   const rows=[];
+   const daily={};
+   const add=(city,p)=>{
+     if(!p || String(p.date||"").trim()!==todayKey || String(p.city||city).trim()!==city)return;
+     const opdCharge=Number(p.opdCharges); const opd=Number.isFinite(opdCharge)?opdCharge:0;
+     const opdCash=Number(p.opdCashPaid); const opdOnline=Number(p.opdOnlinePaid);
+     const opdCashValue=Number.isFinite(opdCash)?opdCash:0, opdOnlineValue=Number.isFinite(opdOnline)?opdOnline:0;
+     const opdPaid=Number.isFinite(Number(p.opdTotalPaid))?Number(p.opdTotalPaid):opdCashValue+opdOnlineValue;
+     const opdRefund=Number(p.opdRefund); const opdRefundValue=Number.isFinite(opdRefund)?opdRefund:0;
+     const eegPresent=p.eegCharges!==null&&p.eegCharges!==undefined&&String(p.eegCharges)!=="";
+     const eegCharge=Number(p.eegCharges); const eeg=eegPresent&&Number.isFinite(eegCharge)?eegCharge:0;
+     const eegCash=Number(p.eegCashPaid),eegOnline=Number(p.eegOnlinePaid);
+     const eegCashValue=eegPresent&&Number.isFinite(eegCash)?eegCash:0,eegOnlineValue=eegPresent&&Number.isFinite(eegOnline)?eegOnline:0;
+     const eegPaid=eegPresent?(Number.isFinite(Number(p.eegTotalPaid))?Number(p.eegTotalPaid):eegCashValue+eegOnlineValue):0;
+     const eegRefund=Number(p.eegRefund); const eegRefundValue=eegPresent&&Number.isFinite(eegRefund)?eegRefund:0;
+     totals.patientCount++; totals.opdTotal+=opd; totals.opdCash+=opdCashValue; totals.opdOnline+=opdOnlineValue; totals.opdPaid+=opdPaid; totals.opdRefund+=opdRefundValue;
+     if(opd===0 || (opd>0&&opdRefundValue===opd))totals.freeOPD++;
+     if(eegPresent){totals.eegCount++; totals.eegTotal+=eeg; totals.eegCash+=eegCashValue; totals.eegOnline+=eegOnlineValue; totals.eegPaid+=eegPaid; totals.eegRefund+=eegRefundValue; if(eeg===0 || (eeg>0&&eegRefundValue===eeg))totals.freeEEG++;}
+     rows.push({patientName:p.name,age:p.age,ageUnit:p.ageUnit||"",opdCharges:p.opdCharges,opdCashPaid:opdCashValue,opdOnlinePaid:opdOnlineValue,opdTotalPaid:opdPaid,eegCharges:eegPresent?p.eegCharges:null,eegCashPaid:eegCashValue,eegOnlinePaid:eegOnlineValue,eegTotalPaid:eegPaid,mobileNumber:p.whatsapp||"",opdRefund:opdRefundValue,eegRefund:eegRefundValue,date:p.date,appointmentId:p.appointmentId||"",city:city,followupCity:p.nextFollowupCity||""});
+     const day=daily[todayKey]||(daily[todayKey]={opd:0,eeg:0}); day.opd++; if(eegPresent)day.eeg++;
+   };
+   caches.forEach(cache=>(Array.isArray(cache.patients)?cache.patients:[]).forEach(p=>add(cache.city,p)));
+   totals.totalCash=totals.opdCash+totals.eegCash; totals.totalOnline=totals.opdOnline+totals.eegOnline; totals.totalCollection=totals.opdPaid+totals.eegPaid; totals.totalRefund=totals.opdRefund+totals.eegRefund; totals.netCash=totals.totalCash-totals.totalRefund; totals.netOnline=totals.totalOnline; totals.netTotal=totals.netCash+totals.netOnline;
+   return {ok:true,city:requested,period:"today",periodLabel:retrievalPeriodLabel("today"),hasDetail:true,rows,totals,trendData:{daily:Object.keys(daily).map(date=>({date,opd:daily[date].opd,eeg:daily[date].eeg})),monthly:null,yearly:null},statisticsSourceCities:sourceCities,statisticsScheduledCities:sourceCities,statisticsSource:"OPD_TODAY_IDB"};
+ }
+
  async function retrieveSelectedRecords(){
    const btn=$("get");
    const citySelect=$("city");
@@ -312,6 +365,15 @@ document.addEventListener("DOMContentLoaded",()=>{
    $("results").innerHTML=`<div class="status">Connecting to Statistics retrieval…</div>`;
 
    try{
+     const todayCacheResult=await retrieveTodayStatisticsFromCache_(request);
+     if(todayCacheResult){
+       const state={retrievalKey:retrievalKey,requestId:"",city:request.city,period:request.period,showMode:request.showMode,selectedCities:request.selectedCities,createdAt:Date.now(),updatedAt:Date.now(),localCache:true};
+       activeRetrieval=state;
+       await saveStatisticsRetrievalState_(state,"COMPLETED",{localCache:true,source:"OPD_TODAY_IDB"});
+       await applyStatisticsResult_(state,todayCacheResult);
+       return;
+     }
+
      const start=await NeuronAPI.call("startStatisticsRetrieval",request,10000);
      const state={
        retrievalKey:start.retrievalKey||retrievalKey,
