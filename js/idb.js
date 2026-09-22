@@ -142,6 +142,32 @@ window.IDB={
  backgroundSyncStatusKey_(kind,city,date){
   return `CACHE_SYNC_STATUS|${String(kind||"").trim()}|${String(date||"").trim()}|${String(city||"").trim()}`;
  },
+ backgroundSyncBarStateKey_(){
+  return "neuron_background_sync_bar_state";
+ },
+ getBackgroundSyncBarState_(){
+  try{const raw=localStorage.getItem(this.backgroundSyncBarStateKey_());return raw?JSON.parse(raw):null;}catch(_){return null;}
+ },
+ setBackgroundSyncBarState_(state){
+  try{localStorage.setItem(this.backgroundSyncBarStateKey_(),JSON.stringify(state||{}));return true;}catch(_){return false;}
+ },
+ backgroundSyncBarRunning_(cycleId){
+  if(!cycleId)return;
+  const current=this.getBackgroundSyncBarState_();
+  if(current?.cycleId===cycleId&&current.status==="RUNNING"&&Number(current.dismissAt)===0)return;
+  this.setBackgroundSyncBarState_({cycleId,status:"RUNNING",dismissAt:0,updatedAt:Date.now()});
+ },
+ backgroundSyncBarTerminal_(cycleId){
+  if(!cycleId)return;
+  const current=this.getBackgroundSyncBarState_();
+  if(current?.cycleId===cycleId&&current.status==="TERMINAL"&&Number(current.dismissAt)>Date.now())return;
+  this.setBackgroundSyncBarState_({cycleId,status:"TERMINAL",dismissAt:Date.now()+5000,updatedAt:Date.now()});
+ },
+ backgroundSyncBarDismiss_(cycleId){
+  if(!cycleId)return;
+  const current=this.getBackgroundSyncBarState_();
+  if(current?.cycleId===cycleId)this.setBackgroundSyncBarState_({...current,status:"DISMISSED",dismissAt:0,updatedAt:Date.now()});
+ },
  followupBackgroundMarkerKey_(city,date){
   return `neuron_followup_background_${String(date||"")}_${String(city||"").trim()}`;
  },
@@ -183,7 +209,8 @@ window.IDB={
       }
       const owner=`${now}-${Math.random().toString(36).slice(2)}`;
       const resumedAttempt=running?Math.min(this.BACKGROUND_SYNC_MAX_ATTEMPTS,previousAttempts+1):1;
-      next={key,cacheType:k,city:c,date:d,status:"RUNNING",mode,owner,startedAt:running?Number(current.startedAt)||now:now,completedAt:null,durationMs:null,attemptCount:previousAttempts,maxAttempts:this.BACKGROUND_SYNC_MAX_ATTEMPTS,rowsProcessed:running?Number(current.rowsProcessed)||0:0,rowsAdded:running?Number(current.rowsAdded)||0:0,lastHeartbeatAt:now,leaseExpiresAt:now+this.BACKGROUND_SYNC_LEASE_MS,error:running?current.error||null:null,retryAt:running?Number(current.retryAt)||0:0,resumeAttempt:resumedAttempt,updatedAt:now};
+      const cycleId=running?String(current.cycleId||`${k}:${d}:${c}:${Number(current.startedAt)||now}`):`${k}:${d}:${c}:${now}`;
+      next={key,cacheType:k,city:c,date:d,status:"RUNNING",mode,owner,cycleId,startedAt:running?Number(current.startedAt)||now:now,completedAt:null,durationMs:null,attemptCount:previousAttempts,maxAttempts:this.BACKGROUND_SYNC_MAX_ATTEMPTS,rowsProcessed:running?Number(current.rowsProcessed)||0:0,rowsAdded:running?Number(current.rowsAdded)||0:0,lastHeartbeatAt:now,leaseExpiresAt:now+this.BACKGROUND_SYNC_LEASE_MS,error:running?current.error||null:null,retryAt:running?Number(current.retryAt)||0:0,resumeAttempt:resumedAttempt,updatedAt:now};
       st.put(next);result={claimed:true,status:next};
     };
     r.onerror=()=>no(r.error);
@@ -229,6 +256,7 @@ window.IDB={
   if(!claim.claimed)return {mode:"SKIPPED",reason:claim.reason,status:claim.status};
   void this.renderBackgroundSyncBar_().catch(()=>{});
   const state=claim.status, key=state.key, owner=state.owner;
+  this.backgroundSyncBarRunning_(state.cycleId);
   let heartbeatTimer=null;
   try{
     heartbeatTimer=setInterval(()=>{void this.heartbeatBackgroundSync_(key,owner);},this.BACKGROUND_SYNC_HEARTBEAT_MS);
@@ -334,17 +362,33 @@ window.IDB={
   if(!city){bar.hidden=true;return;}
   let [opd,follow]=await Promise.all([this.getBackgroundSyncStatus_("OPD_TODAY",city,date).catch(()=>null),this.getBackgroundSyncStatus_("FOLLOWUP",city,date).catch(()=>null)]);
   let followMarker=false;try{followMarker=localStorage.getItem(this.followupBackgroundMarkerKey_(city,date))==="1";}catch(_){}
-  if(!follow&&followMarker)follow={cacheType:"FOLLOWUP",status:"SUCCESS",completedAt:Date.now(),durationMs:0};
+  if(!follow&&followMarker)follow={cacheType:"FOLLOWUP",status:"SUCCESS",completedAt:Date.now(),durationMs:0,cycleId:`FOLLOWUP:${date}:${city}:marker`};
   const terminal=x=>x&&["SUCCESS","FAILED","INCOMPLETE"].includes(x.status),active=x=>x?.status==="RUNNING";
   const relevant=active(opd)||active(follow)||terminal(opd)||terminal(follow);
   if(!relevant){bar.hidden=true;return;}
+  const cycleCandidates=[opd,follow].filter(x=>x?.cycleId).sort((a,b)=>(Number(b?.startedAt)||0)-(Number(a?.startedAt)||0));
+  const cycleId=cycleCandidates[0]?.cycleId||null;
+  if(!cycleId){bar.hidden=true;return;}
+  if(active(opd)||active(follow))this.backgroundSyncBarRunning_(cycleId);
+  let ui=this.getBackgroundSyncBarState_();
+  if(ui?.cycleId===cycleId&&ui.status==="DISMISSED"){bar.hidden=true;bar.dataset.hideAt="";return;}
+  if(terminal(opd)&&terminal(follow)&&!active(opd)&&!active(follow)){
+   if(ui?.cycleId===cycleId&&ui.status==="TERMINAL"&&Number(ui.dismissAt)<=Date.now()){
+    this.backgroundSyncBarDismiss_(cycleId);bar.hidden=true;bar.dataset.hideAt="";return;
+   }
+   this.backgroundSyncBarTerminal_(cycleId);
+  }
+  ui=this.getBackgroundSyncBarState_();
+  if(ui?.cycleId===cycleId&&ui.status==="DISMISSED"){bar.hidden=true;bar.dataset.hideAt="";return;}
   const fmt=x=>{if(!x)return "";const icon=x.status==="SUCCESS"?"✅":x.status==="RUNNING"?"⟳":"⚠";const name=x.cacheType==="FOLLOWUP"?"Follow-up":"OPD";const sec=Number.isFinite(Number(x.durationMs))&&Number(x.durationMs)>0?` (${Math.round(Number(x.durationMs)/1000)} Sec)`:"";return `${icon} ${name}${sec}`;};
   bar.className=`neuron-background-sync-bar ${active(opd)||active(follow)?"is-running":"is-terminal"}`;
   bar.innerHTML=`<span>${fmt(opd)}${opd&&follow?" • ":""}${fmt(follow)}</span>`;
   bar.hidden=false;
-  if(terminal(opd)&&terminal(follow)&&!active(opd)&&!active(follow)){
-    const stamp=Number(bar.dataset.hideAt)||0;
-    if(!stamp){const hideAt=Date.now()+5000;bar.dataset.hideAt=String(hideAt);setTimeout(()=>{if(Number(bar.dataset.hideAt)===hideAt){bar.hidden=true;bar.dataset.hideAt="";}},5000);}
+  if(ui?.cycleId===cycleId&&ui.status==="TERMINAL"){
+   const dismissAt=Number(ui.dismissAt)||0,remaining=dismissAt-Date.now();
+   if(remaining<=0){this.backgroundSyncBarDismiss_(cycleId);bar.hidden=true;bar.dataset.hideAt="";return;}
+   const hideAt=dismissAt;bar.dataset.hideAt=String(hideAt);
+   setTimeout(()=>{if(Number(bar.dataset.hideAt)===hideAt){this.backgroundSyncBarDismiss_(cycleId);bar.hidden=true;bar.dataset.hideAt="";}},remaining);
   }else bar.dataset.hideAt="";
  },
  startBackgroundCacheSync_(){
