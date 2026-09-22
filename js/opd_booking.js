@@ -230,7 +230,14 @@ document.addEventListener("DOMContentLoaded",()=>{
     delete $("date").dataset.key;
     $("unit").value="years";
     const todayCity=getDefaultDailyCity();
-    $("city").value=todayCity; $("next").value=todayCity;
+    $("city").value=todayCity;
+    $("next").value=todayCity;
+
+    if(mode==="New"){
+      setTodayDateDisplay();
+      $("date").dataset.key=todayKey();
+    }
+
     updateCityOptions();
     syncCityPickerTrigger();
     // Follow-up locking is scoped to Follow-up mode only. When switching
@@ -252,7 +259,6 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("selectedPatientCity").textContent="—";
     $("selectedPatientBookingDate").textContent="—";
     $("submitStatus").textContent="";
-    $("confirmation").hidden=true; $("confirmation").innerHTML="";
     $("payMode").value="Cash"; $("amount").value="500"; $("cash").value=""; $("online").value="";
     updatePaymentUI();
   };
@@ -426,8 +432,6 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("new").onclick=async()=>{
     resetFields("New");
     unlockBeforeWhatsApp();
-    setTodayDateDisplay();
-    $("date").dataset.key=todayKey();
   };
 
   $("wa").oninput=e=>{e.target.value=U.phone(e.target.value);checkWhatsAppMatch();};
@@ -810,6 +814,10 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
 
   $("book").onclick=async()=>{
     if($("book").disabled || bookingInProgress)return;
+
+    $("confirmation").hidden=true;
+    $("confirmation").innerHTML="";
+
     bookingInProgress=true;
 
     const resetAfterValidationError=()=>{
