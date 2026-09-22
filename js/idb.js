@@ -234,21 +234,29 @@ window.IDB={
   this._backgroundTimersStarted=true;
   const run=()=>{
    try{
-    const p=window.U?.parts?.()||(()=>{const d=new Date();return {y:d.getFullYear(),m:d.getMonth()+1,d:d.getDate()};})();
-    const dates=[];
-    for(let i=0;i<3;i++){const d=new Date(Date.UTC(p.y,p.m-1,p.d-i));dates.push(`${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,"0")}${String(d.getUTCDate()).padStart(2,"0")}`);}
-    const opdTasks=[];
-    dates.forEach(date=>{
-      const d=new Date(Date.UTC(Number(date.slice(0,4)),Number(date.slice(4,6))-1,Number(date.slice(6,8))));
-      const cities=window.NEURON_CONFIG?.cities||window.Schedule?.cities||[];
-      cities.filter(city=>{try{return window.Schedule&&typeof Schedule.hours==="function"&&Schedule.hours(city,d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate())!==null;}catch(_){return false;}}).forEach(city=>{opdTasks.push(this.syncTodayOPDCacheBackground_(city,date));});
-    });
-    if(opdTasks.length){
-      window.NeuronBackgroundStatus?.begin?.("OPD");
-      void Promise.allSettled(opdTasks).then(results=>{
-        const ok=results.length>0&&results.every(x=>x.status==="fulfilled"&&x.value?.mode!=="FAILED");
-        window.NeuronBackgroundStatus?.end?.("OPD",ok);
-      }).catch(()=>window.NeuronBackgroundStatus?.end?.("OPD",false));
+    const opdStartMarker="neuron_opd_background_last_start";
+    const now=Date.now();
+    let lastStart=0;
+    try{lastStart=Number(localStorage.getItem(opdStartMarker)||0);}catch(_){}
+    const opdAllowed=!(Number.isFinite(lastStart)&&lastStart>0&&now-lastStart<15*60*1000);
+    if(opdAllowed){
+      try{localStorage.setItem(opdStartMarker,String(now));}catch(_){}
+      const p=window.U?.parts?.()||(()=>{const d=new Date();return {y:d.getFullYear(),m:d.getMonth()+1,d:d.getDate()};})();
+      const dates=[];
+      for(let i=0;i<3;i++){const d=new Date(Date.UTC(p.y,p.m-1,p.d-i));dates.push(`${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,"0")}${String(d.getUTCDate()).padStart(2,"0")}`);}
+      const opdTasks=[];
+      dates.forEach(date=>{
+        const d=new Date(Date.UTC(Number(date.slice(0,4)),Number(date.slice(4,6))-1,Number(date.slice(6,8))));
+        const cities=window.NEURON_CONFIG?.cities||window.Schedule?.cities||[];
+        cities.filter(city=>{try{return window.Schedule&&typeof Schedule.hours==="function"&&Schedule.hours(city,d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate())!==null;}catch(_){return false;}}).forEach(city=>{opdTasks.push(this.syncTodayOPDCacheBackground_(city,date));});
+      });
+      if(opdTasks.length){
+        window.NeuronBackgroundStatus?.begin?.("OPD");
+        void Promise.allSettled(opdTasks).then(results=>{
+          const ok=results.length>0&&results.every(x=>x.status==="fulfilled"&&x.value?.mode!=="FAILED");
+          window.NeuronBackgroundStatus?.end?.("OPD",ok);
+        }).catch(()=>window.NeuronBackgroundStatus?.end?.("OPD",false));
+      }
     }
     const city=window.TodayCity?.resolve?.()||window.Schedule?.cityAtNow?.(window.NEURON_CONFIG?.cities||[])||"";
     if(city){
