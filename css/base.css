@@ -312,13 +312,22 @@ body[data-title="Home"] .portal-action:active{background:#fff}
 @media(max-width:520px){.stats-nav-actions{grid-template-columns:1fr}}
 
 /* v195.1: non-blocking pending-booking recovery status */
-.neuron-recovery-bar{position:sticky;top:0;z-index:1000;display:flex;align-items:flex-start;gap:10px;width:100%;box-sizing:border-box;padding:10px 14px;font-size:14px;line-height:1.4;border-bottom:1px solid var(--border,#ddd);background:#fff;}
+.neuron-top-status-container{position:sticky;top:0;z-index:1000;width:100%;display:flex;flex-direction:column;box-sizing:border-box;}
+.neuron-background-sync-bar{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;box-sizing:border-box;min-height:38px;padding:7px 10px;font-size:13px;line-height:1.2;font-weight:800;border-bottom:1px solid #d0d5dd;background:#eef6ff;color:#175cd3;text-align:center;}
+.neuron-background-sync-bar[hidden]{display:none;}
+.neuron-background-sync-bar.is-working{background:#eef6ff;color:#175cd3;}
+.neuron-background-sync-bar.is-success{background:#ecfdf3;color:#087443;}
+.neuron-background-sync-bar.is-failed{background:#fef2f2;color:#b42318;}
+.neuron-background-status-item{display:inline-flex;align-items:center;gap:3px;white-space:nowrap;}
+.neuron-background-status-icon{font-size:14px;line-height:1;}
+.neuron-background-status-separator{font-weight:700;color:currentColor;}
+.neuron-recovery-bar{position:relative;top:auto;z-index:auto;display:flex;align-items:flex-start;gap:10px;width:100%;box-sizing:border-box;padding:10px 14px;font-size:14px;line-height:1.4;border-bottom:1px solid var(--border,#ddd);background:#fff;}
 .neuron-recovery-bar[hidden]{display:none;}
 .neuron-recovery-bar.is-working{background:#fff7ed;}
 .neuron-recovery-bar.is-success{background:#ecfdf3;}
 .neuron-recovery-bar.is-failed{background:#fef2f2;}
 .neuron-recovery-icon{font-weight:800;min-width:18px;text-align:center;}
-@media(max-width:699px){.neuron-recovery-bar{font-size:13px;padding:9px 11px;}}
+@media(max-width:699px){.neuron-background-sync-bar{font-size:12px;min-height:36px;padding:6px 8px;}.neuron-recovery-bar{font-size:13px;padding:9px 11px;}}
 
 
 /* v197.3: Statistics Performance Trends */
