@@ -26,7 +26,9 @@
   function ensureBar(){
     if(bar&&document.body.contains(bar))return bar;
     bar=document.createElement("div");bar.id="neuronRecoveryBar";bar.className="neuron-recovery-bar";bar.hidden=true;
-    document.body.insertBefore(bar,document.body.firstChild);return bar;
+    const bg=document.getElementById("neuronBackgroundSyncBar");
+    if(bg&&bg.parentNode)bg.parentNode.insertBefore(bar,bg.nextSibling);
+    else document.body.insertBefore(bar,document.body.firstChild);return bar;
   }
   function ensurePopup(){
     if(popup&&document.body.contains(popup))return popup;

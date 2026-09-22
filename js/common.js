@@ -116,10 +116,6 @@ document.addEventListener("DOMContentLoaded",()=>{
 <a class="footer-desktop-update footer-eeg-update-link" href="eeg_update.html"><img class="nav-icon" src="assets/icons/eeg-update.svg" alt=""><span>EEG Update</span></a>
 </nav><div class="footer-update-popup" hidden><div class="footer-update-backdrop" data-close-update></div><div class="footer-update-dialog" role="dialog" aria-modal="true" aria-labelledby="footer-update-title"><button type="button" class="footer-update-close" aria-label="Close Update menu" data-close-update>×</button><div id="footer-update-title" class="footer-update-title">Select Update</div><div class="footer-update-options"><a href="opd_update.html"><img src="assets/icons/opd-update.svg" alt=""><span>Update OPD</span></a><a href="eeg_update.html"><img src="assets/icons/eeg-update.svg" alt=""><span>Update EEG</span></a></div></div></div><div class="footer-contact"><b>NEURON Hospital, Latur</b><br>Near Patil Plaza, Infront of Ashwini Hospital • Ausa Road, Latur • <b><a href="tel:02382242581">02382 242581</a></b><br></div></div></footer>`;
  setFooterCurrentSection_();
- // Start cache maintenance after the page has opened. It is intentionally
- // fire-and-forget: critical operations are checked inside IDB and background
- // work never blocks the UI or acquires a critical-operation lock.
- try{window.IDB?.startBackgroundCacheSync_?.();}catch(_){}
  const updateTrigger=f?.querySelector('.footer-update-trigger'),updatePopup=f?.querySelector('.footer-update-popup');
  if(updateTrigger&&updatePopup){
   const closeUpdate=()=>{updatePopup.hidden=true;updateTrigger.setAttribute('aria-expanded','false');};

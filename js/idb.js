@@ -2,6 +2,11 @@ window.IDB={
  db:null,
  _dbGeneration:0,
  CACHE_FRESHNESS_MS:30*60*1000,
+ BACKGROUND_SYNC_MAX_ATTEMPTS:3,
+ BACKGROUND_SYNC_RETRY_DELAY_MS:3000,
+ OPD_BACKGROUND_SYNC_INTERVAL_MS:15*60*1000,
+ BACKGROUND_SYNC_LEASE_MS:15000,
+ BACKGROUND_SYNC_HEARTBEAT_MS:5000,
  _isConnectionLifecycleError_(e){
   const name=String(e?.name||"").toLowerCase();
   const msg=String(e?.message||e||"").toLowerCase();
@@ -134,92 +139,213 @@ window.IDB={
   const g=x=>p.find(a=>a.type===x)?.value||"";
   return `${g("year")}${g("month")}${g("day")}`===today;
  },
+ backgroundSyncStatusKey_(kind,city,date){
+  return `CACHE_SYNC_STATUS|${String(kind||"").trim()}|${String(date||"").trim()}|${String(city||"").trim()}`;
+ },
+ followupBackgroundMarkerKey_(city,date){
+  return `neuron_followup_background_${String(date||"")}_${String(city||"").trim()}`;
+ },
+ opdBackgroundStartKey_(date){
+  return `neuron_opd_background_start_${String(date||"").trim()}`;
+ },
+ async getBackgroundSyncStatus_(kind,city,date){
+  return this.get("meta",this.backgroundSyncStatusKey_(kind,city,date));
+ },
+ async setBackgroundSyncStatus_(status){
+  return this.put("meta",status);
+ },
+ opdBackgroundStartGate_(date){
+  const key=this.opdBackgroundStartKey_(date),now=Date.now();
+  let previous=0;
+  try{previous=Number(localStorage.getItem(key))||0;}catch(_){return {eligible:false,reason:"STORAGE_UNAVAILABLE"};}
+  if(previous&&now-previous<this.OPD_BACKGROUND_SYNC_INTERVAL_MS)return {eligible:false,reason:"WINDOW_ACTIVE",startedAt:previous};
+  try{localStorage.setItem(key,String(now));}catch(_){return {eligible:false,reason:"STORAGE_UNAVAILABLE"};}
+  return {eligible:true,startedAt:now};
+ },
+ async claimBackgroundSync_(kind,city,date,mode="INCREMENTAL"){
+  const c=String(city||"").trim(),d=String(date||"").trim(),k=String(kind||"").trim();
+  if(!c||!d||!k)return {claimed:false,reason:"INVALID"};
+  const now=Date.now(),key=this.backgroundSyncStatusKey_(k,c,d),db=await this.open();
+  return new Promise((ok,no)=>{
+    const t=db.transaction("meta","readwrite"),st=t.objectStore("meta"),r=st.get(key);
+    let result={claimed:false,reason:"UNKNOWN"},next=null;
+    r.onsuccess=()=>{
+      const current=r.result||null;
+      const terminal=current&&(current.status==="SUCCESS"||current.status==="FAILED"||current.status==="INCOMPLETE");
+      const running=current?.status==="RUNNING";
+      const leaseFresh=running&&Number(current.leaseExpiresAt)>now;
+      if(terminal){result={claimed:false,reason:"TERMINAL",status:current.status};return;}
+      if(leaseFresh){result={claimed:false,reason:"ACTIVE",status:current.status};return;}
+      const previousAttempts=Math.max(0,Number(current?.attemptCount)||0);
+      if(running&&previousAttempts>=this.BACKGROUND_SYNC_MAX_ATTEMPTS){
+       const finished={...current,status:"FAILED",completedAt:now,durationMs:Math.max(0,now-(Number(current.startedAt)||now)),lastHeartbeatAt:now,leaseExpiresAt:0,error:current.error||"Background synchronization attempt limit reached.",updatedAt:now};
+       st.put(finished);result={claimed:false,reason:"ATTEMPTS_EXHAUSTED",status:finished};return;
+      }
+      const owner=`${now}-${Math.random().toString(36).slice(2)}`;
+      const resumedAttempt=running?Math.min(this.BACKGROUND_SYNC_MAX_ATTEMPTS,previousAttempts+1):1;
+      next={key,cacheType:k,city:c,date:d,status:"RUNNING",mode,owner,startedAt:running?Number(current.startedAt)||now:now,completedAt:null,durationMs:null,attemptCount:previousAttempts,maxAttempts:this.BACKGROUND_SYNC_MAX_ATTEMPTS,rowsProcessed:running?Number(current.rowsProcessed)||0:0,rowsAdded:running?Number(current.rowsAdded)||0:0,lastHeartbeatAt:now,leaseExpiresAt:now+this.BACKGROUND_SYNC_LEASE_MS,error:running?current.error||null:null,retryAt:running?Number(current.retryAt)||0:0,resumeAttempt:resumedAttempt,updatedAt:now};
+      st.put(next);result={claimed:true,status:next};
+    };
+    r.onerror=()=>no(r.error);
+    t.oncomplete=()=>ok(result);
+    t.onerror=()=>no(t.error||new Error("Background synchronization claim failed."));
+    t.onabort=()=>no(t.error||new Error("Background synchronization claim aborted."));
+  });
+ },
+ async heartbeatBackgroundSync_(key,owner){
+  if(!key||!owner)return false;
+  try{
+    const db=await this.open(),now=Date.now();
+    return await new Promise((ok,no)=>{
+      const t=db.transaction("meta","readwrite"),st=t.objectStore("meta"),r=st.get(key);let alive=false;
+      r.onsuccess=()=>{const x=r.result;if(x?.status==="RUNNING"&&x.owner===owner){st.put({...x,lastHeartbeatAt:now,leaseExpiresAt:now+this.BACKGROUND_SYNC_LEASE_MS,updatedAt:now});alive=true;}};
+      r.onerror=()=>no(r.error);t.oncomplete=()=>ok(alive);t.onerror=()=>no(t.error||new Error("Background synchronization heartbeat failed."));
+    });
+  }catch(_){return false;}
+ },
+ async updateBackgroundSyncAttempt_(key,owner,attempt,error=null){
+  const db=await this.open(),now=Date.now();
+  return new Promise((ok,no)=>{
+    const t=db.transaction("meta","readwrite"),st=t.objectStore("meta"),r=st.get(key);let updated=null;
+    r.onsuccess=()=>{const x=r.result;if(!x||x.owner!==owner||x.status!=="RUNNING"){updated=null;return;}updated={...x,attemptCount:attempt,lastHeartbeatAt:now,leaseExpiresAt:now+this.BACKGROUND_SYNC_LEASE_MS,error:error?String(error):null,retryAt:error?now+this.BACKGROUND_SYNC_RETRY_DELAY_MS:0,updatedAt:now};st.put(updated);};
+    r.onerror=()=>no(r.error);t.oncomplete=()=>ok(updated);t.onerror=()=>no(t.error||new Error("Background synchronization attempt update failed."));
+  });
+ },
+ async finishBackgroundSync_(key,owner,status,error=null,extra={}){
+  const db=await this.open(),now=Date.now();
+  return new Promise((ok,no)=>{
+    const t=db.transaction("meta","readwrite"),st=t.objectStore("meta"),r=st.get(key);let result=null;
+    r.onsuccess=()=>{const x=r.result;if(!x||x.owner!==owner){result=null;return;}const started=Number(x.startedAt)||now;result={...x,status,completedAt:now,durationMs:Math.max(0,now-started),lastHeartbeatAt:now,leaseExpiresAt:0,error:error?String(error):null,updatedAt:now,...extra};st.put(result);};
+    r.onerror=()=>no(r.error);t.oncomplete=()=>ok(result);t.onerror=()=>no(t.error||new Error("Background synchronization completion update failed."));
+  });
+ },
+ backgroundSyncSuccess_(kind,result){
+  return !!result&&result.mode!=="FAILED"&&result.mode!=="SKIPPED"&&result.mode!=="IN_PROGRESS";
+ },
+ async runBackgroundSyncCycle_(kind,city,date,operation,mode="INCREMENTAL"){
+  const c=String(city||"").trim(),d=String(date||"").trim(),k=String(kind||"").trim();
+  if(!c||!d)return {mode:"SKIPPED",reason:"INVALID"};
+  const claim=await this.claimBackgroundSync_(k,c,d,mode);
+  if(!claim.claimed)return {mode:"SKIPPED",reason:claim.reason,status:claim.status};
+  void this.renderBackgroundSyncBar_().catch(()=>{});
+  const state=claim.status, key=state.key, owner=state.owner;
+  let heartbeatTimer=null;
+  try{
+    heartbeatTimer=setInterval(()=>{void this.heartbeatBackgroundSync_(key,owner);},this.BACKGROUND_SYNC_HEARTBEAT_MS);
+    let attempt=Math.max(1,Math.min(this.BACKGROUND_SYNC_MAX_ATTEMPTS,Number(state.resumeAttempt)||1));
+    let lastResult=null,lastError=null;
+    const retryAt=Number(state.retryAt)||0;
+    if(retryAt>0&&retryAt>Date.now())await new Promise(resolve=>setTimeout(resolve,retryAt-Date.now()));
+    for(;attempt<=this.BACKGROUND_SYNC_MAX_ATTEMPTS;attempt++){
+      await this.updateBackgroundSyncAttempt_(key,owner,attempt,null);
+      try{lastResult=await operation();}catch(e){lastResult={mode:"FAILED",error:e?.message||String(e)};}
+      if(this.backgroundSyncSuccess_(k,lastResult)){
+        const finished=await this.finishBackgroundSync_(key,owner,"SUCCESS",null,{rowsProcessed:Number(lastResult?.rowsReceived||lastResult?.rowsLoaded||lastResult?.rowsScanned||0),rowsAdded:Number(lastResult?.rowsAdded||lastResult?.rowsInserted||0)});
+        if(k==="FOLLOWUP")try{localStorage.setItem(this.followupBackgroundMarkerKey_(c,d),"1");}catch(_){ }
+        return {...lastResult,backgroundStatus:finished||null,mode:lastResult?.mode||"SUCCESS"};
+      }
+      lastError=lastResult?.error||`Background ${k} synchronization attempt ${attempt} failed.`;
+      if(attempt<this.BACKGROUND_SYNC_MAX_ATTEMPTS){
+        await this.updateBackgroundSyncAttempt_(key,owner,attempt,lastError);
+        await new Promise(resolve=>setTimeout(resolve,this.BACKGROUND_SYNC_RETRY_DELAY_MS));
+      }
+    }
+    const finished=await this.finishBackgroundSync_(key,owner,"FAILED",lastError);
+    if(k==="FOLLOWUP")try{localStorage.removeItem(this.followupBackgroundMarkerKey_(c,d));}catch(_){ }
+    return {mode:"FAILED",city:c,error:lastError,backgroundStatus:finished||null};
+  }finally{
+    if(heartbeatTimer)clearInterval(heartbeatTimer);
+  }
+ },
  async syncTodayOPDCacheBackground_(city){
   const c=String(city||"").trim();if(!c)return {mode:"SKIPPED",reason:"CITY_MISSING"};
   if(this._todayOPDBackgroundRuns[c])return this._todayOPDBackgroundRuns[c];
   const task=(async()=>{
+   const date=this.todayKey_();
    try{
-    await this.waitForCriticalOperationsToFinish_(3000);
-    const date=this.todayKey_();
-    const key=`OPD_TODAY|${date}|${c}`;
-    let cache=await this.get("cache",key).catch(()=>null);
-    // First consult server-side ScriptProperties state. The server falls back
-    // to the Spreadsheet only when that metadata is missing/invalid.
-    const stateResult=await window.NeuronAPI.call("getTodayOPDSyncState",{city:c,date},10000);
-    if(!stateResult||stateResult.ok!==true)throw new Error(stateResult?.error||"Unable to check today's OPD synchronization state.");
-    const state=stateResult.syncState;
-    if(!state){
-      const refreshed=await this.getTodayOPDCache_(c,{forceRefresh:true});
-      return {mode:"FULL_REFRESH",city:c,cache:refreshed};
-    }
-    if(!cache||!Array.isArray(cache.patients)||cache.complete!==true||cache.status==="STALE"||cache.status==="CACHED_INCOMPLETE"){
-      const refreshed=await this.getTodayOPDCache_(c,{forceRefresh:true});
-      return {mode:"FULL_REFRESH",city:c,cache:refreshed};
-    }
-    const clientSerial=Number(cache.lastSerial),clientRow=Number(cache.lastRowNumber);
-    if(!Number.isInteger(clientSerial)||!Number.isInteger(clientRow)||clientRow<1){
-      const refreshed=await this.getTodayOPDCache_(c,{forceRefresh:true});
-      return {mode:"FULL_REFRESH",city:c,cache:refreshed};
-    }
-    if(Number(state.serial)<clientSerial||Number(state.rowNumber)<clientRow){
-      const refreshed=await this.getTodayOPDCache_(c,{forceRefresh:true});
-      return {mode:"FULL_REFRESH",city:c,cache:refreshed};
-    }
-    if(Number(state.serial)===clientSerial&&Number(state.rowNumber)===clientRow){
-      const now=Date.now();
-      await this.replace("cache",key,{...cache,lastServerCheckAt:now});
-      return {mode:"UNCHANGED",city:c,cache:{...cache,lastServerCheckAt:now}};
-    }
-    const r=await window.NeuronAPI.call("getTodayOPDIncremental",{city:c,date,lastSerial:clientSerial,lastRowNumber:clientRow},15000);
-    if(!r||r.ok!==true||r.valid!==true||r.unchanged===true&&Number(r.syncState?.serial)!==clientSerial){
-      const refreshed=await this.getTodayOPDCache_(c,{forceRefresh:true});
-      return {mode:"FULL_REFRESH",city:c,cache:refreshed};
-    }
-    if(r.unchanged===true){
-      const now=Date.now();
-      const next={...cache,lastServerCheckAt:now,lastSerial:Number(r.syncState?.serial)||clientSerial,lastRowNumber:Number(r.syncState?.rowNumber)||clientRow};
-      await this.replace("cache",key,next);
-      return {mode:"UNCHANGED",city:c,cache:next};
-    }
-    const rows=Array.isArray(r.rows)?r.rows:[];
-    const existing=Array.isArray(cache.patients)?cache.patients.slice():[];
-    const byId=new Map(existing.map(x=>[String(x?.appointmentId||""),x]));
-    rows.forEach(x=>{const id=String(x?.appointmentId||"");if(id)byId.set(id,x);});
-    const patients=[...byId.values()].sort((a,b)=>{const sa=Number(String(a?.appointmentId||"").match(/-(\d+)$/)?.[1]),sb=Number(String(b?.appointmentId||"").match(/-(\d+)$/)?.[1]);return (Number.isFinite(sa)?sa:0)-(Number.isFinite(sb)?sb:0);});
-    const now=Date.now();
-    const next={...cache,patients,status:"REFRESHED",complete:true,lastServerRefreshAt:now,lastServerCheckAt:now,cachedAt:cache.cachedAt||now,lastSerial:Number(r.syncState?.serial)||Number(state.serial)||null,lastRowNumber:Number(r.syncState?.rowNumber)||Number(state.rowNumber)||null};
-    if(this.serialGap_(patients,"appointmentId"))next.status="STALE";
-    await this.replace("cache",key,next);
-    return {mode:"INCREMENTAL",city:c,rowsAdded:rows.length,cache:next};
+    const gate=this.opdBackgroundStartGate_(date);
+    if(!gate.eligible)return {mode:"SKIPPED",reason:gate.reason};
+    return await this.runBackgroundSyncCycle_("OPD_TODAY",c,date,async()=>{
+      await this.waitForCriticalOperationsToFinish_(3000);
+      const key=`OPD_TODAY|${date}|${c}`;
+      let cache=await this.get("cache",key).catch(()=>null);
+      const stateResult=await window.NeuronAPI.call("getTodayOPDSyncState",{city:c,date},10000);
+      if(!stateResult||stateResult.ok!==true)throw new Error(stateResult?.error||"Unable to check today's OPD synchronization state.");
+      const state=stateResult.syncState;
+      if(!state){const refreshed=await this.getTodayOPDCache_(c,{forceRefresh:true});return {mode:"FULL_REFRESH",city:c,cache:refreshed};}
+      if(!cache||!Array.isArray(cache.patients)||cache.complete!==true||cache.status==="STALE"||cache.status==="CACHED_INCOMPLETE")return {mode:"FULL_REFRESH",city:c,cache:await this.getTodayOPDCache_(c,{forceRefresh:true})};
+      const clientSerial=Number(cache.lastSerial),clientRow=Number(cache.lastRowNumber);
+      if(!Number.isInteger(clientSerial)||!Number.isInteger(clientRow)||clientRow<1)return {mode:"FULL_REFRESH",city:c,cache:await this.getTodayOPDCache_(c,{forceRefresh:true})};
+      if(Number(state.serial)<clientSerial||Number(state.rowNumber)<clientRow)return {mode:"FULL_REFRESH",city:c,cache:await this.getTodayOPDCache_(c,{forceRefresh:true})};
+      if(Number(state.serial)===clientSerial&&Number(state.rowNumber)===clientRow){const now=Date.now();const next={...cache,lastServerCheckAt:now};await this.replace("cache",key,next);return {mode:"UNCHANGED",city:c,cache:next};}
+      const r=await window.NeuronAPI.call("getTodayOPDIncremental",{city:c,date,lastSerial:clientSerial,lastRowNumber:clientRow},15000);
+      if(!r||r.ok!==true||r.valid!==true||r.unchanged===true&&Number(r.syncState?.serial)!==clientSerial)return {mode:"FULL_REFRESH",city:c,cache:await this.getTodayOPDCache_(c,{forceRefresh:true})};
+      if(r.unchanged===true){const now=Date.now();const next={...cache,lastServerCheckAt:now,lastSerial:Number(r.syncState?.serial)||clientSerial,lastRowNumber:Number(r.syncState?.rowNumber)||clientRow};await this.replace("cache",key,next);return {mode:"UNCHANGED",city:c,cache:next};}
+      const rows=Array.isArray(r.rows)?r.rows:[],existing=Array.isArray(cache.patients)?cache.patients.slice():[],byId=new Map(existing.map(x=>[String(x?.appointmentId||""),x]));
+      rows.forEach(x=>{const id=String(x?.appointmentId||"");if(id)byId.set(id,x);});
+      const patients=[...byId.values()].sort((a,b)=>{const sa=Number(String(a?.appointmentId||"").match(/-(\d+)$/)?.[1]),sb=Number(String(b?.appointmentId||"").match(/-(\d+)$/)?.[1]);return (Number.isFinite(sa)?sa:0)-(Number.isFinite(sb)?sb:0);});
+      const now=Date.now(),next={...cache,patients,status:"REFRESHED",complete:true,lastServerRefreshAt:now,lastServerCheckAt:now,cachedAt:cache.cachedAt||now,lastSerial:Number(r.syncState?.serial)||Number(state.serial)||null,lastRowNumber:Number(r.syncState?.rowNumber)||Number(state.rowNumber)||null};
+      if(this.serialGap_(patients,"appointmentId"))next.status="STALE";
+      await this.replace("cache",key,next);return {mode:"INCREMENTAL",city:c,rowsAdded:rows.length,cache:next};
+    });
    }catch(e){return {mode:"FAILED",city:c,error:e?.message||String(e)};}
    finally{delete this._todayOPDBackgroundRuns[c];}
   })();
-  this._todayOPDBackgroundRuns[c]=task;
-  return task;
+  this._todayOPDBackgroundRuns[c]=task;return task;
  },
  async startDailyFollowupBackgroundSync_(city){
   const c=String(city||"").trim();if(!c)return {mode:"SKIPPED",reason:"CITY_MISSING"};
   if(this._followupDailyBackgroundRuns[c])return this._followupDailyBackgroundRuns[c];
   const task=(async()=>{
+   const date=this.todayKey_();
    try{
-    await this.waitForCriticalOperationsToFinish_(3000);
-    const meta=await this.getFollowupMeta(c);
-    if(this.followupMetaValid_(meta,c)&&this.followupCheckedToday_(meta))return {mode:"ALREADY_CHECKED",city:c};
-    let result;
-    if(!this.followupMetaValid_(meta,c))result=await this.buildFollowupCityCache_(c);
-    else result=await this.syncFollowupCityCache_(c);
-    if(result?.mode==="FAILED")return result;
-    const verified=await this.getFollowupMeta(c);
-    if(this.followupMetaValid_(verified,c)){
+    let marker=false;try{marker=localStorage.getItem(this.followupBackgroundMarkerKey_(c,date))==="1";}catch(_){ }
+    if(marker)return {mode:"SKIPPED",reason:"COMPLETE_MARKER"};
+    const existing=await this.getBackgroundSyncStatus_("FOLLOWUP",c,date).catch(()=>null);
+    if(existing&&(existing.status==="SUCCESS"||existing.status==="FAILED"||existing.status==="INCOMPLETE"))return {mode:"SKIPPED",reason:"CYCLE_TERMINAL",status:existing.status};
+    return await this.runBackgroundSyncCycle_("FOLLOWUP",c,date,async()=>{
+      await this.waitForCriticalOperationsToFinish_(3000);
+      const meta=await this.getFollowupMeta(c);
+      if(this.followupMetaValid_(meta,c)&&this.followupCheckedToday_(meta))return {mode:"ALREADY_CHECKED",city:c};
+      let result;
+      if(!this.followupMetaValid_(meta,c))result=await this.buildFollowupCityCache_(c);
+      else result=await this.syncFollowupCityCache_(c);
+      if(result?.mode==="FAILED")return result;
+      const verified=await this.getFollowupMeta(c);
+      if(!this.followupMetaValid_(verified,c))throw new Error("Follow-up synchronization final validation failed.");
       const now=Date.now();
-      await this.setFollowupMeta({...verified,lastServerCheckAt:now,lastServerCheckDate:this.todayKey_(),lastUpdatedAt:now});
-    }
-    return result;
+      await this.setFollowupMeta({...verified,lastServerCheckAt:now,lastServerCheckDate:date,lastUpdatedAt:now});
+      return result;
+    });
    }catch(e){return {mode:"FAILED",city:c,error:e?.message||String(e)};}
    finally{delete this._followupDailyBackgroundRuns[c];}
   })();
-  this._followupDailyBackgroundRuns[c]=task;
-  return task;
+  this._followupDailyBackgroundRuns[c]=task;return task;
+ },
+ ensureBackgroundSyncBar_(){
+  if(!document.body)return null;
+  let bar=document.getElementById("neuronBackgroundSyncBar");
+  if(!bar){bar=document.createElement("div");bar.id="neuronBackgroundSyncBar";bar.className="neuron-background-sync-bar";bar.hidden=true;document.body.insertBefore(bar,document.body.firstChild);}
+  return bar;
+ },
+ async renderBackgroundSyncBar_(){
+  const bar=this.ensureBackgroundSyncBar_();if(!bar)return;
+  const city=window.TodayCity?.resolve?.()||window.Schedule?.cityAtNow?.(window.NEURON_CONFIG?.cities||[])||"",date=this.todayKey_();
+  if(!city){bar.hidden=true;return;}
+  let [opd,follow]=await Promise.all([this.getBackgroundSyncStatus_("OPD_TODAY",city,date).catch(()=>null),this.getBackgroundSyncStatus_("FOLLOWUP",city,date).catch(()=>null)]);
+  let followMarker=false;try{followMarker=localStorage.getItem(this.followupBackgroundMarkerKey_(city,date))==="1";}catch(_){}
+  if(!follow&&followMarker)follow={cacheType:"FOLLOWUP",status:"SUCCESS",completedAt:Date.now(),durationMs:0};
+  const terminal=x=>x&&["SUCCESS","FAILED","INCOMPLETE"].includes(x.status),active=x=>x?.status==="RUNNING";
+  const relevant=active(opd)||active(follow)||terminal(opd)||terminal(follow);
+  if(!relevant){bar.hidden=true;return;}
+  const fmt=x=>{if(!x)return "";const icon=x.status==="SUCCESS"?"✅":x.status==="RUNNING"?"⟳":"⚠";const name=x.cacheType==="FOLLOWUP"?"Follow-up":"OPD";const sec=Number.isFinite(Number(x.durationMs))&&Number(x.durationMs)>0?` (${Math.round(Number(x.durationMs)/1000)} Sec)`:"";return `${icon} ${name}${sec}`;};
+  bar.className=`neuron-background-sync-bar ${active(opd)||active(follow)?"is-running":"is-terminal"}`;
+  bar.innerHTML=`<span>${fmt(opd)}${opd&&follow?" • ":""}${fmt(follow)}</span>`;
+  bar.hidden=false;
+  if(terminal(opd)&&terminal(follow)&&!active(opd)&&!active(follow)){
+    const stamp=Number(bar.dataset.hideAt)||0;
+    if(!stamp){const hideAt=Date.now()+5000;bar.dataset.hideAt=String(hideAt);setTimeout(()=>{if(Number(bar.dataset.hideAt)===hideAt){bar.hidden=true;bar.dataset.hideAt="";}},5000);}
+  }else bar.dataset.hideAt="";
  },
  startBackgroundCacheSync_(){
   if(this._backgroundTimersStarted)return;
@@ -228,18 +354,13 @@ window.IDB={
    try{
     const city=window.TodayCity?.resolve?.()||window.Schedule?.cityAtNow?.(window.NEURON_CONFIG?.cities||[])||"";
     if(!city)return;
-    const today=this.todayKey_();
-    const followMarker=`neuron_followup_background_${today}_${city}`;
-    let followDone=false;
-    try{followDone=localStorage.getItem(followMarker)==="1";}catch(_){}
-    void this.syncTodayOPDCacheBackground_(city).catch(()=>{});
-    if(!followDone){
-      void this.startDailyFollowupBackgroundSync_(city).then(r=>{if(r&&r.mode!=="FAILED"&&r.mode!=="SKIPPED"){try{localStorage.setItem(followMarker,"1");}catch(_){}}}).catch(()=>{});
-    }
-   }catch(_){}
+    void this.syncTodayOPDCacheBackground_(city).then(()=>this.renderBackgroundSyncBar_()).catch(()=>this.renderBackgroundSyncBar_());
+    void this.startDailyFollowupBackgroundSync_(city).then(()=>this.renderBackgroundSyncBar_()).catch(()=>this.renderBackgroundSyncBar_());
+    void this.renderBackgroundSyncBar_();
+   }catch(_){ }
   };
   run();
-  window.setInterval(run,15*60*1000);
+  window.setInterval(run,this.OPD_BACKGROUND_SYNC_INTERVAL_MS);
  },
  async getTodayOPDCache_(city,{forceRefresh=false}={}){
   const c=String(city||"").trim();
@@ -731,3 +852,11 @@ window.IDB={
  }))},
 
 };
+
+
+// Start the persistent Background Sync coordinator once the page is ready.
+// The coordinator itself owns the cross-page/date/lease gates, so navigation
+// or multiple script entry points cannot create duplicate cycles.
+const startNeuronBackgroundSync_=()=>{try{window.IDB?.startBackgroundCacheSync_?.();}catch(_){}};
+if(document.readyState==="loading")window.addEventListener("load",startNeuronBackgroundSync_,{once:true});
+else startNeuronBackgroundSync_();
