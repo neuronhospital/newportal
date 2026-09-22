@@ -231,6 +231,8 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("unit").value="years";
     const todayCity=getDefaultDailyCity();
     $("city").value=todayCity; $("next").value=todayCity;
+    setTodayDateDisplay();
+    $("date").dataset.key=todayKey();
     updateCityOptions();
     syncCityPickerTrigger();
     // Follow-up locking is scoped to Follow-up mode only. When switching
