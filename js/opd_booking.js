@@ -813,6 +813,8 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
 
   $("book").onclick=async()=>{
     if($("book").disabled || bookingInProgress)return;
+    $("confirmation").hidden=true;
+    $("confirmation").innerHTML="";
     bookingInProgress=true;
 
     const resetAfterValidationError=()=>{
