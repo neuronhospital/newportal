@@ -211,18 +211,25 @@ window.IDB={
   const task=(async()=>{
    try{
     await this.waitForCriticalOperationsToFinish_(3000);
-    const meta=await this.getFollowupMeta(c);
-    if(this.followupMetaValid_(meta,c)&&this.followupCheckedToday_(meta))return {mode:"ALREADY_CHECKED",city:c};
-    let result;
-    if(!this.followupMetaValid_(meta,c))result=await this.buildFollowupCityCache_(c);
-    else result=await this.syncFollowupCityCache_(c);
-    if(result?.mode==="FAILED")return result;
-    const verified=await this.getFollowupMeta(c);
-    if(this.followupMetaValid_(verified,c)){
-      const now=Date.now();
-      await this.setFollowupMeta({...verified,lastServerCheckAt:now,lastServerCheckDate:this.todayKey_(),lastUpdatedAt:now});
+    for(let attempt=0;attempt<3;attempt++){
+     let result;
+     try{
+      const meta=await this.getFollowupMeta(c);
+      if(this.followupMetaValid_(meta,c)&&this.followupCheckedToday_(meta))return {mode:"ALREADY_CHECKED",city:c};
+      if(!this.followupMetaValid_(meta,c))result=await this.buildFollowupCityCache_(c);
+      else result=await this.syncFollowupCityCache_(c);
+      if(result?.mode!=="FAILED"){
+       const verified=await this.getFollowupMeta(c);
+       if(this.followupMetaValid_(verified,c)){
+        const now=Date.now();
+        await this.setFollowupMeta({...verified,lastServerCheckAt:now,lastServerCheckDate:this.todayKey_(),lastUpdatedAt:now});
+       }
+       return result;
+      }
+     }catch(e){result={mode:"FAILED",city:c,error:e?.message||String(e)};}
+     if(attempt<2)await new Promise(resolve=>setTimeout(resolve,attempt===0?3000:5000));
+     else return result||{mode:"FAILED",city:c,error:"Follow-up background synchronization failed."};
     }
-    return result;
    }catch(e){return {mode:"FAILED",city:c,error:e?.message||String(e)};}
    finally{delete this._followupDailyBackgroundRuns[c];}
   })();
@@ -234,41 +241,56 @@ window.IDB={
   this._backgroundTimersStarted=true;
   const run=()=>{
    try{
-    const opdStartMarker="neuron_opd_background_last_start";
+    const opdStartMarker="neuron_opd_background_last_start",opdClaimMarker="neuron_opd_background_claim";
     const now=Date.now();
-    let lastStart=0;
-    try{lastStart=Number(localStorage.getItem(opdStartMarker)||0);}catch(_){}
-    const opdAllowed=!(Number.isFinite(lastStart)&&lastStart>0&&now-lastStart<15*60*1000);
+    let lastStart=0,opdClaimed=false;
+    try{lastStart=Number(localStorage.getItem(opdStartMarker)||0);opdClaimed=localStorage.getItem(opdClaimMarker)==="1";}catch(_){ }
+    const opdAllowed=!opdClaimed&&!(Number.isFinite(lastStart)&&lastStart>0&&now-lastStart<15*60*1000);
     if(opdAllowed){
-      try{localStorage.setItem(opdStartMarker,String(now));}catch(_){}
-      const p=window.U?.parts?.()||(()=>{const d=new Date();return {y:d.getFullYear(),m:d.getMonth()+1,d:d.getDate()};})();
-      const dates=[];
-      for(let i=0;i<3;i++){const d=new Date(Date.UTC(p.y,p.m-1,p.d-i));dates.push(`${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,"0")}${String(d.getUTCDate()).padStart(2,"0")}`);}
-      const opdTasks=[];
-      dates.forEach(date=>{
-        const d=new Date(Date.UTC(Number(date.slice(0,4)),Number(date.slice(4,6))-1,Number(date.slice(6,8))));
-        const cities=window.NEURON_CONFIG?.cities||window.Schedule?.cities||[];
-        cities.filter(city=>{try{return window.Schedule&&typeof Schedule.hours==="function"&&Schedule.hours(city,d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate())!==null;}catch(_){return false;}}).forEach(city=>{opdTasks.push(this.syncTodayOPDCacheBackground_(city,date));});
-      });
-      if(opdTasks.length){
-        window.NeuronBackgroundStatus?.begin?.("OPD");
-        void Promise.allSettled(opdTasks).then(results=>{
-          const ok=results.length>0&&results.every(x=>x.status==="fulfilled"&&x.value?.mode!=="FAILED");
-          window.NeuronBackgroundStatus?.end?.("OPD",ok);
-        }).catch(()=>window.NeuronBackgroundStatus?.end?.("OPD",false));
-      }
+      try{localStorage.setItem(opdClaimMarker,"1");localStorage.setItem(opdStartMarker,String(now));}catch(_){ }
+      let claimVerified=false;try{claimVerified=localStorage.getItem(opdClaimMarker)==="1";}catch(_){ }
+      if(claimVerified){
+       const runOpdCycle=async()=>{
+        for(let attempt=0;attempt<3;attempt++){
+         const p=window.U?.parts?.()||(()=>{const d=new Date();return {y:d.getFullYear(),m:d.getMonth()+1,d:d.getDate()};})();
+         const dates=[];
+         for(let i=0;i<3;i++){const d=new Date(Date.UTC(p.y,p.m-1,p.d-i));dates.push(`${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,"0")}${String(d.getUTCDate()).padStart(2,"0")}`);}
+         const opdTasks=[];
+         dates.forEach(date=>{
+          const d=new Date(Date.UTC(Number(date.slice(0,4)),Number(date.slice(4,6))-1,Number(date.slice(6,8))));
+          const cities=window.NEURON_CONFIG?.cities||window.Schedule?.cities||[];
+          cities.filter(city=>{try{return window.Schedule&&typeof Schedule.hours==="function"&&Schedule.hours(city,d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate())!==null;}catch(_){return false;}}).forEach(city=>{opdTasks.push(this.syncTodayOPDCacheBackground_(city,date));});
+         });
+         if(!opdTasks.length)return true;
+         const results=await Promise.allSettled(opdTasks);
+         const ok=results.length>0&&results.every(x=>x.status==="fulfilled"&&x.value?.mode!=="FAILED");
+         if(ok)return true;
+         if(attempt<2)await new Promise(resolve=>setTimeout(resolve,attempt===0?3000:5000));
+        }
+        return false;
+       };
+       window.NeuronBackgroundStatus?.begin?.("OPD");
+       void runOpdCycle().then(ok=>window.NeuronBackgroundStatus?.end?.("OPD",ok)).catch(()=>window.NeuronBackgroundStatus?.end?.("OPD",false)).finally(()=>{try{localStorage.removeItem(opdClaimMarker);}catch(_){ }});
+      }else{try{localStorage.removeItem(opdClaimMarker);}catch(_){ }}
     }
     const city=window.TodayCity?.resolve?.()||window.Schedule?.cityAtNow?.(window.NEURON_CONFIG?.cities||[])||"";
     if(city){
-      const today=this.todayKey_(),followMarker=`neuron_followup_background_${today}_${city}`;
-      let followDone=false;try{followDone=localStorage.getItem(followMarker)==="1";}catch(_){}
-      if(!followDone){
-        window.NeuronBackgroundStatus?.begin?.("Followup");
-        void this.startDailyFollowupBackgroundSync_(city).then(r=>{
-          const ok=!!r&&r.mode!=="FAILED"&&r.mode!=="SKIPPED";
-          if(ok){try{localStorage.setItem(followMarker,"1");}catch(_){}}
-          window.NeuronBackgroundStatus?.end?.("Followup",ok);
-        }).catch(()=>window.NeuronBackgroundStatus?.end?.("Followup",false));
+      const today=this.todayKey_(),followMarker=`neuron_followup_background_${today}_${city}`,followClaimMarker=`neuron_followup_background_claim_${today}_${city}`;
+      let followClaimed=false,followRunning=false;try{followClaimed=localStorage.getItem(followMarker)==="1";followRunning=localStorage.getItem(followClaimMarker)==="1";}catch(_){ }
+      if(!followClaimed&&!followRunning){
+        let claimed=false;
+        try{
+          localStorage.setItem(followMarker,"1");
+          localStorage.setItem(followClaimMarker,"1");
+          claimed=localStorage.getItem(followMarker)==="1"&&localStorage.getItem(followClaimMarker)==="1";
+        }catch(_){ }
+        if(claimed){
+          window.NeuronBackgroundStatus?.begin?.("Followup");
+          void this.startDailyFollowupBackgroundSync_(city).then(r=>{
+            const ok=!!r&&r.mode!=="FAILED"&&r.mode!=="SKIPPED";
+            window.NeuronBackgroundStatus?.end?.("Followup",ok);
+          }).catch(()=>window.NeuronBackgroundStatus?.end?.("Followup",false)).finally(()=>{try{localStorage.removeItem(followClaimMarker);}catch(_){ }});
+        }
       }
     }
    }catch(_){ }
