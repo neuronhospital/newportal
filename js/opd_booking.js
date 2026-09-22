@@ -214,6 +214,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     $("follow").classList.toggle("active",mode==="Follow-up");
     $("new").classList.toggle("active",mode==="New");
     $("followFields").hidden=mode!=="Follow-up";
+    $("followupCacheTools").hidden=mode!=="Follow-up";
     $("newFields").hidden=mode!=="New";
     const refField=$("ref")?.closest(".field"), nextField=$("next")?.closest(".field");
     if(refField)refField.hidden=mode!=="New";
@@ -558,11 +559,20 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("cityPickerModal")?.addEventListener("click",e=>{if(e.target===$("cityPickerModal")||e.target.classList.contains("opd-access-backdrop"))closeCityPicker();});
   $("city").onchange=()=>syncCityPickerTrigger();
 
-  $("rebuildFollowupCache")?.addEventListener("click",async()=>{
+  const setRebuildFollowupConfirmVisible=(visible)=>{
+    const modal=$("rebuildFollowupConfirmModal");
+    if(!modal)return;
+    modal.hidden=!visible;
+    modal.setAttribute("aria-hidden",visible?"false":"true");
+    document.body.classList.toggle("opd-modal-open",visible);
+  };
+
+  const runRebuildFollowupCache=async()=>{
     const city=String($("followCity")?.value||"").trim();
     if(!city)return;
     const button=$("rebuildFollowupCache");
     button.disabled=true;
+    setRebuildFollowupConfirmVisible(false);
     setFollowupStatus("Checking Follow-up cache…","#7b1fa2");
     try{
       const r=await IDB.rebuildFollowupCityCache_(city);
@@ -577,13 +587,19 @@ document.addEventListener("DOMContentLoaded",()=>{
       }else{
         throw new Error(r?.error||"Follow-up cache synchronization failed.");
       }
-
     }catch(e){
       setFollowupStatus("Follow-up cache synchronization failed. Please try again.","#b42318",3000);
     }finally{
       button.disabled=false;
     }
+  };
+
+  $("rebuildFollowupCache")?.addEventListener("click",()=>{
+    // Strictly client-side: do not invoke the rebuild operation until Yes is clicked.
+    setRebuildFollowupConfirmVisible(true);
   });
+  $("rebuildFollowupConfirmYes")?.addEventListener("click",()=>runRebuildFollowupCache());
+  $("rebuildFollowupConfirmNo")?.addEventListener("click",()=>setRebuildFollowupConfirmVisible(false));
 
   $("load").onclick=async()=>{
     if(followStatusTimer){clearTimeout(followStatusTimer);followStatusTimer=null;}
@@ -615,12 +631,12 @@ document.addEventListener("DOMContentLoaded",()=>{
       $("followStatus").style.color="#b42318";
       $("followCity").disabled=false;
       $("load").disabled=false;
-      $("load").textContent="Load";
+      $("load").textContent="Search Patient";
       $("load").className="btn btn-secondary";
       return;
     }
     $("load").disabled=true;
-    $("load").textContent="Loading...";
+    $("load").textContent="Searching...";
     $("load").className="btn btn-primary";
     $("followStatus").textContent="Wait We are Loading Patient details...";
     $("followStatus").style.color="#7b1fa2";
@@ -713,7 +729,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       // user to select a different retrieval city for the next Load.
       $("followCity").disabled=false;
       $("load").disabled=false;
-      $("load").textContent="Load";
+      $("load").textContent="Search Patient";
       $("load").className="btn btn-secondary";
     }
   };
