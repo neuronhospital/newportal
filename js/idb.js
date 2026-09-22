@@ -237,18 +237,33 @@ window.IDB={
     const p=window.U?.parts?.()||(()=>{const d=new Date();return {y:d.getFullYear(),m:d.getMonth()+1,d:d.getDate()};})();
     const dates=[];
     for(let i=0;i<3;i++){const d=new Date(Date.UTC(p.y,p.m-1,p.d-i));dates.push(`${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,"0")}${String(d.getUTCDate()).padStart(2,"0")}`);}
+    const opdTasks=[];
     dates.forEach(date=>{
       const d=new Date(Date.UTC(Number(date.slice(0,4)),Number(date.slice(4,6))-1,Number(date.slice(6,8))));
       const cities=window.NEURON_CONFIG?.cities||window.Schedule?.cities||[];
-      cities.filter(city=>{try{return window.Schedule&&typeof Schedule.hours==="function"&&Schedule.hours(city,d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate())!==null;}catch(_){return false;}}).forEach(city=>{void this.syncTodayOPDCacheBackground_(city,date).catch(()=>{});});
+      cities.filter(city=>{try{return window.Schedule&&typeof Schedule.hours==="function"&&Schedule.hours(city,d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate())!==null;}catch(_){return false;}}).forEach(city=>{opdTasks.push(this.syncTodayOPDCacheBackground_(city,date));});
     });
+    if(opdTasks.length){
+      window.NeuronBackgroundStatus?.begin?.("OPD");
+      void Promise.allSettled(opdTasks).then(results=>{
+        const ok=results.length>0&&results.every(x=>x.status==="fulfilled"&&x.value?.mode!=="FAILED");
+        window.NeuronBackgroundStatus?.end?.("OPD",ok);
+      }).catch(()=>window.NeuronBackgroundStatus?.end?.("OPD",false));
+    }
     const city=window.TodayCity?.resolve?.()||window.Schedule?.cityAtNow?.(window.NEURON_CONFIG?.cities||[])||"";
     if(city){
       const today=this.todayKey_(),followMarker=`neuron_followup_background_${today}_${city}`;
       let followDone=false;try{followDone=localStorage.getItem(followMarker)==="1";}catch(_){}
-      if(!followDone)void this.startDailyFollowupBackgroundSync_(city).then(r=>{if(r&&r.mode!=="FAILED"&&r.mode!=="SKIPPED"){try{localStorage.setItem(followMarker,"1");}catch(_){}}}).catch(()=>{});
+      if(!followDone){
+        window.NeuronBackgroundStatus?.begin?.("Followup");
+        void this.startDailyFollowupBackgroundSync_(city).then(r=>{
+          const ok=!!r&&r.mode!=="FAILED"&&r.mode!=="SKIPPED";
+          if(ok){try{localStorage.setItem(followMarker,"1");}catch(_){}}
+          window.NeuronBackgroundStatus?.end?.("Followup",ok);
+        }).catch(()=>window.NeuronBackgroundStatus?.end?.("Followup",false));
+      }
     }
-   }catch(_){}
+   }catch(_){ }
   };
   run();
   window.setInterval(run,15*60*1000);

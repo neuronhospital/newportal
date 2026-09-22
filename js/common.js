@@ -79,6 +79,67 @@ window.TodayCity=window.TodayCity||(()=>{
   return {resolve};
 })();
 window.$=window.U?.$||((id)=>document.getElementById(id));
+window.NeuronBackgroundStatus=window.NeuronBackgroundStatus||(()=>{
+ const DISPLAY_DELAY_MS=500,FINAL_DISPLAY_MS=5000;
+ let container=null,bar=null,displayTimer=null,hideTimer=null,visible=false;
+ const state={OPD:null,Followup:null};
+ const active={OPD:0,Followup:0};
+ const ensureContainer=()=>{
+  if(container&&document.body.contains(container))return container;
+  container=document.getElementById("neuronTopStatusContainer");
+  if(!container){container=document.createElement("div");container.id="neuronTopStatusContainer";container.className="neuron-top-status-container";document.body.insertBefore(container,document.body.firstChild);}
+  return container;
+ };
+ const ensureBar=()=>{
+  ensureContainer();
+  if(bar&&container.contains(bar))return bar;
+  bar=document.createElement("div");bar.id="neuronBackgroundSyncBar";bar.className="neuron-background-sync-bar";bar.hidden=true;container.insertBefore(bar,container.firstChild);return bar;
+ };
+ const labelFor=(key)=>key==="Followup"?"Follow-up":"OPD";
+ const iconFor=(value)=>value==="running"?"⟳":value==="success"?"✅":value==="failed"?"❌":"";
+ const activeStates=()=>Object.keys(state).filter(k=>state[k]);
+ const render=()=>{
+  if(!visible)return;
+  const b=ensureBar();
+  const keys=activeStates();
+  if(!keys.length){b.hidden=true;visible=false;return;}
+  b.innerHTML=keys.map(k=>`<span class="neuron-background-status-item"><span class="neuron-background-status-icon" aria-hidden="true">${iconFor(state[k])}</span><span>${labelFor(k)}</span></span>`).join('<span class="neuron-background-status-separator" aria-hidden="true">•</span>');
+  const running=keys.some(k=>state[k]==="running");
+  const failed=!running&&keys.some(k=>state[k]==="failed");
+  b.className="neuron-background-sync-bar "+(running?"is-working":failed?"is-failed":"is-success");
+  b.hidden=false;
+ };
+ const scheduleDisplay=()=>{
+  if(visible||displayTimer)return;
+  displayTimer=setTimeout(()=>{
+   displayTimer=null;
+   if(Object.values(active).some(n=>n>0)){visible=true;render();}
+  },DISPLAY_DELAY_MS);
+ };
+ const scheduleHide=()=>{
+  if(hideTimer)clearTimeout(hideTimer);
+  hideTimer=setTimeout(()=>{hideTimer=null;if(Object.values(active).some(n=>n>0))return;visible=false;Object.keys(state).forEach(k=>state[k]=null);if(bar)bar.hidden=true;},FINAL_DISPLAY_MS);
+ };
+ const begin=(key)=>{
+  if(!(key in active))return;
+  active[key]++;
+  if(hideTimer){clearTimeout(hideTimer);hideTimer=null;}
+  state[key]="running";
+  scheduleDisplay();
+  if(visible)render();
+ };
+ const end=(key,ok=true)=>{
+  if(!(key in active)||active[key]<=0)return;
+  active[key]--;
+  if(active[key]===0)state[key]=ok?"success":"failed";
+  if(visible)render();
+  if(Object.values(active).every(n=>n===0)){
+   if(visible)scheduleHide();
+   else if(displayTimer){clearTimeout(displayTimer);displayTimer=null;Object.keys(state).forEach(k=>state[k]=null);}
+  }
+ };
+ return {begin,end,ensureContainer};
+})();
 if("serviceWorker"in navigator)window.addEventListener("load",()=>{const v=encodeURIComponent(window.NEURON_CONFIG.appVersion);navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!sessionStorage.getItem("neuron-sw-reloaded-"+v)){sessionStorage.setItem("neuron-sw-reloaded-"+v,"1");location.reload();}});navigator.serviceWorker.register("./service-worker.js?v="+v).catch(()=>{});});
 const setFooterCurrentSection_=()=>{
  const f=document.getElementById("footer");
