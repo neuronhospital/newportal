@@ -110,7 +110,13 @@ window.IDB={
  },
  async cleanupOldTodayOPDCaches_(today){
   if(this._todayOPDCacheCleanupDate===today)return;
-  try{await this.deleteCacheByPrefixExcept("cache","OPD_TODAY|",`OPD_TODAY|${today}|`);this._todayOPDCacheCleanupDate=today;}catch(_){ }
+  try{
+   const keep=new Set();
+   const p=window.U?.parts?.()||(()=>{const d=new Date();return {y:d.getFullYear(),m:d.getMonth()+1,d:d.getDate()};})();
+   for(let i=0;i<3;i++){const d=new Date(Date.UTC(p.y,p.m-1,p.d-i));keep.add(`OPD_TODAY|${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,"0")}${String(d.getUTCDate()).padStart(2,"0")}|`);}
+   await this.withConnectionRetry_(d=>new Promise((ok,no)=>{const t=d.transaction("cache","readwrite"),st=t.objectStore("cache"),r=st.openCursor();r.onsuccess=()=>{const c=r.result;if(!c)return;const k=String(c.key||"");if(k.startsWith("OPD_TODAY|")&&!Array.from(keep).some(prefix=>k.startsWith(prefix)))c.delete();c.continue();};r.onerror=()=>no(r.error);t.oncomplete=ok;t.onerror=()=>no(t.error||new Error("OPD_TODAY cache cleanup failed."));}));
+   this._todayOPDCacheCleanupDate=today;
+  }catch(_){ }
  },
  async criticalOperationActive_(){
   try{
@@ -134,13 +140,15 @@ window.IDB={
   const g=x=>p.find(a=>a.type===x)?.value||"";
   return `${g("year")}${g("month")}${g("day")}`===today;
  },
- async syncTodayOPDCacheBackground_(city){
+ async syncTodayOPDCacheBackground_(city,date){
   const c=String(city||"").trim();if(!c)return {mode:"SKIPPED",reason:"CITY_MISSING"};
-  if(this._todayOPDBackgroundRuns[c])return this._todayOPDBackgroundRuns[c];
+  const targetDate=/^\d{8}$/.test(String(date||""))?String(date):this.todayKey_();
+  const runKey=`${c}|${targetDate}`;
+  if(this._todayOPDBackgroundRuns[runKey])return this._todayOPDBackgroundRuns[runKey];
   const task=(async()=>{
    try{
     await this.waitForCriticalOperationsToFinish_(3000);
-    const date=this.todayKey_();
+    const date=targetDate;
     const key=`OPD_TODAY|${date}|${c}`;
     let cache=await this.get("cache",key).catch(()=>null);
     // First consult server-side ScriptProperties state. The server falls back
@@ -149,20 +157,20 @@ window.IDB={
     if(!stateResult||stateResult.ok!==true)throw new Error(stateResult?.error||"Unable to check today's OPD synchronization state.");
     const state=stateResult.syncState;
     if(!state){
-      const refreshed=await this.getTodayOPDCache_(c,{forceRefresh:true});
+      const refreshed=await this.getTodayOPDCache_(c,{forceRefresh:true,date});
       return {mode:"FULL_REFRESH",city:c,cache:refreshed};
     }
     if(!cache||!Array.isArray(cache.patients)||cache.complete!==true||cache.status==="STALE"||cache.status==="CACHED_INCOMPLETE"){
-      const refreshed=await this.getTodayOPDCache_(c,{forceRefresh:true});
+      const refreshed=await this.getTodayOPDCache_(c,{forceRefresh:true,date});
       return {mode:"FULL_REFRESH",city:c,cache:refreshed};
     }
     const clientSerial=Number(cache.lastSerial),clientRow=Number(cache.lastRowNumber);
     if(!Number.isInteger(clientSerial)||!Number.isInteger(clientRow)||clientRow<1){
-      const refreshed=await this.getTodayOPDCache_(c,{forceRefresh:true});
+      const refreshed=await this.getTodayOPDCache_(c,{forceRefresh:true,date});
       return {mode:"FULL_REFRESH",city:c,cache:refreshed};
     }
     if(Number(state.serial)<clientSerial||Number(state.rowNumber)<clientRow){
-      const refreshed=await this.getTodayOPDCache_(c,{forceRefresh:true});
+      const refreshed=await this.getTodayOPDCache_(c,{forceRefresh:true,date});
       return {mode:"FULL_REFRESH",city:c,cache:refreshed};
     }
     if(Number(state.serial)===clientSerial&&Number(state.rowNumber)===clientRow){
@@ -172,7 +180,7 @@ window.IDB={
     }
     const r=await window.NeuronAPI.call("getTodayOPDIncremental",{city:c,date,lastSerial:clientSerial,lastRowNumber:clientRow},15000);
     if(!r||r.ok!==true||r.valid!==true||r.unchanged===true&&Number(r.syncState?.serial)!==clientSerial){
-      const refreshed=await this.getTodayOPDCache_(c,{forceRefresh:true});
+      const refreshed=await this.getTodayOPDCache_(c,{forceRefresh:true,date});
       return {mode:"FULL_REFRESH",city:c,cache:refreshed};
     }
     if(r.unchanged===true){
@@ -192,9 +200,9 @@ window.IDB={
     await this.replace("cache",key,next);
     return {mode:"INCREMENTAL",city:c,rowsAdded:rows.length,cache:next};
    }catch(e){return {mode:"FAILED",city:c,error:e?.message||String(e)};}
-   finally{delete this._todayOPDBackgroundRuns[c];}
+   finally{delete this._todayOPDBackgroundRuns[runKey];}
   })();
-  this._todayOPDBackgroundRuns[c]=task;
+  this._todayOPDBackgroundRuns[runKey]=task;
   return task;
  },
  async startDailyFollowupBackgroundSync_(city){
@@ -226,27 +234,31 @@ window.IDB={
   this._backgroundTimersStarted=true;
   const run=()=>{
    try{
+    const p=window.U?.parts?.()||(()=>{const d=new Date();return {y:d.getFullYear(),m:d.getMonth()+1,d:d.getDate()};})();
+    const dates=[];
+    for(let i=0;i<3;i++){const d=new Date(Date.UTC(p.y,p.m-1,p.d-i));dates.push(`${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,"0")}${String(d.getUTCDate()).padStart(2,"0")}`);}
+    dates.forEach(date=>{
+      const d=new Date(Date.UTC(Number(date.slice(0,4)),Number(date.slice(4,6))-1,Number(date.slice(6,8))));
+      const cities=window.NEURON_CONFIG?.cities||window.Schedule?.cities||[];
+      cities.filter(city=>{try{return window.Schedule&&typeof Schedule.hours==="function"&&Schedule.hours(city,d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate())!==null;}catch(_){return false;}}).forEach(city=>{void this.syncTodayOPDCacheBackground_(city,date).catch(()=>{});});
+    });
     const city=window.TodayCity?.resolve?.()||window.Schedule?.cityAtNow?.(window.NEURON_CONFIG?.cities||[])||"";
-    if(!city)return;
-    const today=this.todayKey_();
-    const followMarker=`neuron_followup_background_${today}_${city}`;
-    let followDone=false;
-    try{followDone=localStorage.getItem(followMarker)==="1";}catch(_){}
-    void this.syncTodayOPDCacheBackground_(city).catch(()=>{});
-    if(!followDone){
-      void this.startDailyFollowupBackgroundSync_(city).then(r=>{if(r&&r.mode!=="FAILED"&&r.mode!=="SKIPPED"){try{localStorage.setItem(followMarker,"1");}catch(_){}}}).catch(()=>{});
+    if(city){
+      const today=this.todayKey_(),followMarker=`neuron_followup_background_${today}_${city}`;
+      let followDone=false;try{followDone=localStorage.getItem(followMarker)==="1";}catch(_){}
+      if(!followDone)void this.startDailyFollowupBackgroundSync_(city).then(r=>{if(r&&r.mode!=="FAILED"&&r.mode!=="SKIPPED"){try{localStorage.setItem(followMarker,"1");}catch(_){}}}).catch(()=>{});
     }
    }catch(_){}
   };
   run();
   window.setInterval(run,15*60*1000);
  },
- async getTodayOPDCache_(city,{forceRefresh=false}={}){
+ async getTodayOPDCache_(city,{forceRefresh=false,date:requestedDate=null}={}){
   const c=String(city||"").trim();
-  const date=this.todayKey_();
+  const date=/^\d{8}$/.test(String(requestedDate||""))?String(requestedDate):this.todayKey_();
   if(!c)throw Error("Today's OPD city is not selected.");
   await this.cleanupLegacyEEGCache_();
-  await this.cleanupOldTodayOPDCaches_(date);
+  await this.cleanupOldTodayOPDCaches_(this.todayKey_());
   const key=`OPD_TODAY|${date}|${c}`;
   let record=await this.get("cache",key).catch(()=>null);
   const stale=record ? (this.opdTodayCacheStale_(record,record.patients,"appointmentId") || record.status==="CACHED_INCOMPLETE" || record.status==="STALE") : false;
@@ -254,7 +266,7 @@ window.IDB={
   if(this._todayOPDRefreshes[key])return this._todayOPDRefreshes[key];
   const request=(async()=>{
    try{
-    const r=await window.NeuronAPI.call("getTodayOPDPatientList",{city:c},25000);
+    const r=await window.NeuronAPI.call("getTodayOPDPatientList",{city:c,date:date},25000);
     if(!r||r.ok!==true)throw Error(r?.error||"Unable to retrieve today's OPD patient list.");
     const serverDate=/^\d{8}$/.test(String(r.date||""))?String(r.date):date;
     const serverCity=String(r.city||c).trim()||c;
@@ -322,6 +334,42 @@ window.IDB={
     const c=String(city||"").trim(),phone=this.normalizeWhatsApp_(whatsapp);if(!c||!/^[6-9]\d{9}$/.test(phone))return Promise.resolve([]);
     return this.withConnectionRetry_(d=>new Promise((ok,no)=>{const t=d.transaction("followupCache"),r=t.objectStore("followupCache").index("cityWhatsapp").getAll(IDBKeyRange.only([c,phone]));r.onsuccess=()=>ok((r.result||[]).filter(x=>x.type==="FOLLOWUP_VISIT"));r.onerror=()=>no(r.error);}));
   },
+  async getLowestFollowupSourceRow_(city){
+   const c=String(city||"").trim();if(!c)return 0;
+   return this.withConnectionRetry_(d=>new Promise((ok,no)=>{const t=d.transaction("followupCache"),idx=t.objectStore("followupCache").index("citySourceRow"),r=idx.openCursor(IDBKeyRange.bound([c,2],[c,Number.MAX_SAFE_INTEGER]));r.onsuccess=()=>ok(r.result?.value?.type==="FOLLOWUP_VISIT"?Number(r.result.value.sourceRow)||0:0);r.onerror=()=>no(r.error);}));
+  },
+  followupStatisticsReady_(meta,city){
+   const c=String(city||"").trim();
+   return this.followupMetaValid_(meta,c)&&Number(meta.schemaVersion)>=2&&(Number(meta.lowestSourceRow)>=2||Number(meta.recordCount)===0);
+  },
+  async ensureFollowupStatisticsCache_(city){
+   const c=String(city||"").trim();if(!c)return {mode:"SKIPPED",city:c};
+   await this.waitForCriticalOperationsToFinish_(3000);
+   let meta=await this.getFollowupMeta(c);
+   if(!this.followupStatisticsReady_(meta,c)){
+    const built=await this.buildFollowupCityCache_(c,{forceFull:true});
+    if(built?.mode==="FAILED")throw new Error(built.error||"Unable to build Follow-up Statistics cache.");
+    meta=await this.getFollowupMeta(c);
+   } else if(!this.followupCheckedToday_(meta)) {
+    const synced=await this.syncFollowupCityCache_(c);
+    if(synced?.mode==="FAILED")throw new Error(synced.error||"Unable to synchronize Follow-up Statistics cache.");
+    meta=await this.getFollowupMeta(c);
+   }
+   if(!this.followupStatisticsReady_(meta,c)){
+    const built=await this.buildFollowupCityCache_(c,{forceFull:true});
+    if(built?.mode==="FAILED")throw new Error(built.error||"Unable to complete Follow-up Statistics cache.");
+    meta=await this.getFollowupMeta(c);
+   }
+   const lowest=Number(meta?.lowestSourceRow)||await this.getLowestFollowupSourceRow_(c);
+   if(lowest&&Number(meta?.lowestSourceRow)!==lowest){await this.setFollowupMeta({...meta,lowestSourceRow:lowest,schemaVersion:2});meta=await this.getFollowupMeta(c);}
+   return {mode:"READY",city:c,meta};
+  },
+  async getFollowupStatisticsRecords_(city,startDate,endDate){
+   const c=String(city||"").trim();
+   if(!c||!/^\d{8}$/.test(String(startDate))||!/^\d{8}$/.test(String(endDate)))return [];
+   return this.withConnectionRetry_(d=>new Promise((ok,no)=>{const t=d.transaction("followupCache"),idx=t.objectStore("followupCache").index("cityDate"),r=idx.getAll(IDBKeyRange.bound([c,String(startDate)],[c,String(endDate)]));r.onsuccess=()=>ok((r.result||[]).filter(x=>x.type==="FOLLOWUP_VISIT"&&Number(x.schemaVersion)>=2));r.onerror=()=>no(r.error);}));
+  },
+
   followupBuildLockKey_(city){return `LOCK|${String(city||"").trim()}`;},
   async acquireFollowupBuildLock_(city,ttlMs=120000){
     const c=String(city||"").trim();if(!c)throw new Error("Follow-up city is required.");
@@ -350,7 +398,7 @@ window.IDB={
     }
   },
   putFollowupBuildBatch(city,records){
-    const c=String(city||"").trim(),list=Array.isArray(records)?records:[];return this.withConnectionRetry_(d=>new Promise((ok,no)=>{const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache");list.forEach(x=>{const row=Number(x?.sourceRow);if(!Number.isInteger(row)||row<2)return;st.put({...x,key:this.followupVisitKey_(c,row),type:"FOLLOWUP_VISIT",city:c,normalizedWhatsapp:this.normalizeWhatsApp_(x.whatsapp),sourceRow:row});});t.oncomplete=ok;t.onerror=()=>no(t.error||new Error("Follow-up cache batch write failed."));t.onabort=()=>no(t.error||new Error("Follow-up cache batch write aborted."));}));
+    const c=String(city||"").trim(),list=Array.isArray(records)?records:[];return this.withConnectionRetry_(d=>new Promise((ok,no)=>{const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache");list.forEach(x=>{const row=Number(x?.sourceRow);if(!Number.isInteger(row)||row<2)return;st.put({...x,key:this.followupVisitKey_(c,row),type:"FOLLOWUP_VISIT",city:c,normalizedWhatsapp:this.normalizeWhatsApp_(x.whatsapp),sourceRow:row,schemaVersion:Number(x.schemaVersion)||2});});t.oncomplete=ok;t.onerror=()=>no(t.error||new Error("Follow-up cache batch write failed."));t.onabort=()=>no(t.error||new Error("Follow-up cache batch write aborted."));}));
   },
   countFollowupVisits_(city){
     const c=String(city||"").trim();if(!c)return Promise.resolve(0);
@@ -366,7 +414,7 @@ window.IDB={
       const batch=keys.slice(i,i+250);
       await new Promise((ok,no)=>{const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache");batch.forEach(k=>st.delete(k));t.oncomplete=ok;t.onerror=()=>no(t.error||new Error("Follow-up cache cleanup batch failed."));t.onabort=()=>no(t.error||new Error("Follow-up cache cleanup batch aborted."));});
     }
-    const m=await this.getFollowupMeta(c);if(m)await this.setFollowupMeta({...m,lastCleanupMonth,boundaryDate:boundary,status:"READY",lastUpdatedAt:Date.now()});
+    const m=await this.getFollowupMeta(c);if(m){const lowest=await this.getLowestFollowupSourceRow_(c);await this.setFollowupMeta({...m,lastCleanupMonth,boundaryDate:boundary,status:"READY",lowestSourceRow:lowest||0,lastUpdatedAt:Date.now()});}
   },
   followupSyncLockKey_(city){return `SYNC|${String(city||"").trim()}`;},
   async releaseFollowupSyncLock_(city,owner){
@@ -380,14 +428,14 @@ window.IDB={
     const known=Number(meta.highestKnownSourceRow),contiguous=Number(meta.highestContiguousSourceRow),count=Number(meta.recordCount);
     return Number.isInteger(known)&&known>=1&&Number.isInteger(contiguous)&&contiguous>=1&&Number.isInteger(count)&&count>=0&&contiguous<=known;
   },
-  async buildFollowupCityCache_(city){
+  async buildFollowupCityCache_(city,{forceFull=false}={}){
     const c=String(city||"").trim();if(!c)throw new Error("Follow-up city is required.");
     let owner=null,renewTimer=null,lockLost=false;
     try{
       const deadline=Date.now()+130000;
       while(Date.now()<deadline){
         const meta=await this.getFollowupMeta(c);
-        if(this.followupMetaValid_(meta,c))return {mode:"ALREADY_READY",city:c,recordCount:Number(meta.recordCount)||0};
+        if(this.followupMetaValid_(meta,c)&&(!forceFull||this.followupStatisticsReady_(meta,c)))return {mode:"ALREADY_READY",city:c,recordCount:Number(meta.recordCount)||0};
         owner=await this.acquireFollowupBuildLock_(c,120000);
         if(owner)break;
         await new Promise(resolve=>setTimeout(resolve,500));
@@ -408,7 +456,7 @@ window.IDB={
         if(written!==records.length)throw new Error("Follow-up cache build verification failed.");
         if(lockLost || !(await this.renewFollowupBuildLock_(c,owner,120000)))throw new Error("Follow-up cache build lock was lost before commit.");
         const p=window.U?.parts?.()||{},safeMonth=p.y?`${p.y}-${String(p.m).padStart(2,"0")}`:"",now=Date.now();
-        const meta={city:c,boundaryDate:String(r.boundaryDate||""),oldestDate:records[0]?.date||"",newestDate:records[records.length-1]?.date||"",recordCount:records.length,highestKnownSourceRow:Number(r.highestKnownSourceRow)||1,highestContiguousSourceRow:Number(r.highestContiguousSourceRow)||1,createdAt:now,lastFullBuildAt:now,lastServerCheckAt:now,lastCleanupMonth:safeMonth,lastServerCheckDate:this.todayKey_()};
+        const meta={city:c,boundaryDate:String(r.boundaryDate||""),oldestDate:records[0]?.date||"",newestDate:records[records.length-1]?.date||"",recordCount:records.length,highestKnownSourceRow:Number(r.highestKnownSourceRow)||1,highestContiguousSourceRow:Number(r.highestContiguousSourceRow)||1,lowestSourceRow:Number(r.lowestSourceRow)||Number(records[0]?.sourceRow)||0,schemaVersion:2,createdAt:now,lastFullBuildAt:now,lastServerCheckAt:now,lastCleanupMonth:safeMonth,lastServerCheckDate:this.todayKey_()};
         await this.finishFollowupCityBuild(c,meta);
         return {mode:"FULL_BUILD",city:c,rowsLoaded:records.length,oldestDate:meta.oldestDate,newestDate:meta.newestDate,highestKnownSourceRow:meta.highestKnownSourceRow,highestContiguousSourceRow:meta.highestContiguousSourceRow};
       }catch(e){
@@ -452,7 +500,8 @@ window.IDB={
       const newContiguous=Math.max(Number(current.highestContiguousSourceRow)||0,toRow);
       const newKnown=Math.max(Number(current.highestKnownSourceRow)||0,spreadsheetLastRow);
       const nextCount=Math.max(0,Number(current.recordCount)||0)+inserted;
-      await this.setFollowupMeta({...current,city:c,status:"READY",highestKnownSourceRow:newKnown,highestContiguousSourceRow:newContiguous,recordCount:nextCount,lastUpdatedAt:Date.now(),lastSyncAt:Date.now(),lastServerCheckAt:Date.now(),lastServerCheckDate:this.todayKey_()});
+      const lowest=Number(current.lowestSourceRow)||await this.getLowestFollowupSourceRow_(c);
+      await this.setFollowupMeta({...current,city:c,status:"READY",highestKnownSourceRow:newKnown,highestContiguousSourceRow:newContiguous,recordCount:nextCount,lowestSourceRow:lowest,lastUpdatedAt:Date.now(),lastSyncAt:Date.now(),lastServerCheckAt:Date.now(),lastServerCheckDate:this.todayKey_()});
       return {mode:"INCREMENTAL",city:c,fromRow:from,toRow,rowsReceived:records.length,rowsInserted:inserted,rowsUpdated:updated,previousContiguousRow:previousContiguous,newContiguousRow:newContiguous,spreadsheetLastRow:spreadsheetLastRow};
     }catch(e){
       const meta=await this.getFollowupMeta(c).catch(()=>null);
@@ -492,6 +541,9 @@ window.IDB={
     const meta=await this.getFollowupMeta(c);
     if(!this.followupMetaValid_(meta,c)){
       try{return await this.buildFollowupCityCache_(c);}catch(e){return {mode:"FAILED",city:c,error:e?.message||String(e)};}
+    }
+    if(!this.followupStatisticsReady_(meta,c)){
+      try{return await this.buildFollowupCityCache_(c,{forceFull:true});}catch(e){return {mode:"FAILED",city:c,error:e?.message||String(e)};}
     }
     return this.syncFollowupCityCache_(c);
   },

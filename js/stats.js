@@ -207,6 +207,7 @@ document.addEventListener("DOMContentLoaded",()=>{
      period:state.period||"",
      showMode:state.showMode||"both",
      selectedCities:Array.isArray(state.selectedCities)?state.selectedCities.slice():[],
+     cachedBase:state.cachedBase||null,
      status:status,
      createdAt:Number(state.createdAt||Date.now()),
      updatedAt:Date.now()
@@ -220,13 +221,118 @@ document.addEventListener("DOMContentLoaded",()=>{
    return value;
  }
 
- function statisticsRequest_(city,period,showMode,selectedCities){
-   return {city:city,period:period,showMode:showMode,selectedCities:Array.isArray(selectedCities)?selectedCities.slice():[]};
+ function statisticsRequest_(city,period,showMode,selectedCities,olderOnlyBeforeRows){
+   return {city:city,period:period,showMode:showMode,selectedCities:Array.isArray(selectedCities)?selectedCities.slice():[],olderOnlyBeforeRows:olderOnlyBeforeRows||{}};
+ }
+
+ function statisticsLocalRange_(period){
+   const q=U.parts();
+   const today=new Date(Date.UTC(q.y,q.m-1,q.d));
+   const key=d=>`${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,"0")}${String(d.getUTCDate()).padStart(2,"0")}`;
+   const make=(a,b)=>({start:key(a),end:key(b)});
+   if(period==="today")return make(today,today);
+   if(period==="yesterday"){const d=new Date(today);d.setUTCDate(d.getUTCDate()-1);return make(d,d);}
+   if(period==="daybefore"){const d=new Date(today);d.setUTCDate(d.getUTCDate()-2);return make(d,d);}
+   if(/^\d{4}-\d{2}$/.test(period)){const [y,m]=period.split("-").map(Number);return make(new Date(Date.UTC(y,m-1,1)),new Date(Date.UTC(y,m,0)));}
+   if(/^\d{4}$/.test(period)){const y=Number(period);return make(new Date(Date.UTC(y,0,1)),new Date(Date.UTC(y,11,31)));}
+   if(period==="currentyear")return make(new Date(Date.UTC(q.y,0,1)),new Date(Date.UTC(q.y,11,31)));
+   if(period==="lastyear")return make(new Date(Date.UTC(q.y-1,0,1)),new Date(Date.UTC(q.y-1,11,31)));
+   if(period==="last12"){const first=new Date(Date.UTC(q.y,q.m-1-11,1));return make(first,new Date(Date.UTC(q.y,q.m,0)));}
+   if(period==="last5")return make(new Date(Date.UTC(q.y-5,0,1)),today);
+   return null;
+ }
+ function addLocalTrend_(map,key,opd,eeg){if(!map)return;if(!map[key])map[key]={opd:0,eeg:0};map[key].opd+=opd;map[key].eeg+=eeg;}
+ function localStatisticsPeriodNeedsDaily_(period){return period==="currentyear"||period==="last12"||period==="last5"||/^\d{4}-\d{2}$/.test(period);}
+ function localStatisticsPeriodNeedsMonthly_(period){return period==="currentyear"||period==="last12"||period==="last5"||period==="lastyear"||/^\d{4}$/.test(period);}
+ function localStatisticsPeriodNeedsYearly_(period){return period==="currentyear"||period==="lastyear"||period==="last5"||/^\d{4}$/.test(period);}
+ function localStatisticsAccumulator_(){return {patientCount:0,freeOPD:0,eegCount:0,freeEEG:0,opdTotal:0,opdCash:0,opdOnline:0,opdPaid:0,opdRefund:0,eegTotal:0,eegCash:0,eegOnline:0,eegPaid:0,eegRefund:0,totalCash:0,totalOnline:0,totalCollection:0,totalRefund:0,netCash:0,netOnline:0,netTotal:0};}
+ function localStatisticsAdd_(totals,x){
+   const opdCharges=Number(x?.opdCharges)||0, eegPresent=x?.eegCharges!==null&&x?.eegCharges!==undefined&&String(x?.eegCharges)!=="", eegCharges=eegPresent?(Number(x.eegCharges)||0):0;
+   const opdRefund=Number(x?.opdRefund)||0,eegRefund=Number(x?.eegRefund)||0;
+   totals.patientCount++; totals.opdTotal+=opdCharges; totals.opdCash+=Number(x?.opdCashPaid)||0; totals.opdOnline+=Number(x?.opdOnlinePaid)||0; totals.opdPaid+=Number(x?.opdTotalPaid)||((Number(x?.opdCashPaid)||0)+(Number(x?.opdOnlinePaid)||0)); totals.opdRefund+=opdRefund;
+   if(opdCharges===0||(opdCharges>0&&opdRefund===opdCharges))totals.freeOPD++;
+   if(eegPresent){totals.eegCount++;totals.eegTotal+=eegCharges;totals.eegCash+=Number(x?.eegCashPaid)||0;totals.eegOnline+=Number(x?.eegOnlinePaid)||0;totals.eegPaid+=Number(x?.eegTotalPaid)||((Number(x?.eegCashPaid)||0)+(Number(x?.eegOnlinePaid)||0));totals.eegRefund+=eegRefund;if(eegCharges===0||(eegCharges>0&&eegRefund===eegCharges))totals.freeEEG++;}
+ }
+ function localStatisticsResult_(city,period,recordsByCity){
+   const range=statisticsLocalRange_(period); const totals=localStatisticsAccumulator_(); const rows=[]; const daily={},monthly={},yearly={};
+   const needsDetail=city!=="All"&&(period==="today"||period==="yesterday"||period==="daybefore"||period===`${U.parts().y}-${String(U.parts().m).padStart(2,"0")}`);
+   Object.keys(recordsByCity).forEach(sheetCity=>{
+     (recordsByCity[sheetCity]||[]).forEach(x=>{
+       const date=String(x?.date||"").replace(/\D/g,"").slice(0,8); if(!/^\d{8}$/.test(date)||date<range.start||date>range.end)return;
+       localStatisticsAdd_(totals,x); addLocalTrend_(localStatisticsPeriodNeedsDaily_(period)?daily:null,date,1,x?.eegCharges!==null&&x?.eegCharges!==undefined&&String(x?.eegCharges)!==""?1:0); addLocalTrend_(localStatisticsPeriodNeedsMonthly_(period)?monthly: null,date.slice(0,6),1,x?.eegCharges!==null&&x?.eegCharges!==undefined&&String(x?.eegCharges)!==""?1:0); addLocalTrend_(localStatisticsPeriodNeedsYearly_(period)?yearly:null,date.slice(0,4),1,x?.eegCharges!==null&&x?.eegCharges!==undefined&&String(x?.eegCharges)!==""?1:0);
+       if(needsDetail)rows.push({patientName:x.name||x.patientName||"",age:x.age,ageUnit:x.ageUnit||"",opdCharges:x.opdCharges,opdCashPaid:Number(x.opdCashPaid)||0,opdOnlinePaid:Number(x.opdOnlinePaid)||0,opdTotalPaid:Number(x.opdTotalPaid)||0,eegCharges:x.eegCharges??null,eegCashPaid:Number(x.eegCashPaid)||0,eegOnlinePaid:Number(x.eegOnlinePaid)||0,eegTotalPaid:Number(x.eegTotalPaid)||0,mobileNumber:x.whatsapp||"",opdRefund:x.opdRefund,eegRefund:x.eegRefund,date:date,appointmentId:x.appointmentId||"",city:sheetCity,followupCity:sheetCity==="Latur"?(x.nextFollowupCity||""):""});
+     });
+   });
+   totals.totalCash=totals.opdCash+totals.eegCash; totals.totalOnline=totals.opdOnline+totals.eegOnline; totals.totalCollection=totals.opdPaid+totals.eegPaid; totals.totalRefund=totals.opdRefund+totals.eegRefund; totals.netCash=totals.totalCash-totals.totalRefund; totals.netOnline=totals.totalOnline; totals.netTotal=totals.netCash+totals.netOnline;
+   rows.sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))||String(b.appointmentId||"").localeCompare(String(a.appointmentId||"")));
+   const trendData={}; if(localStatisticsPeriodNeedsDaily_(period))trendData.daily=Object.keys(daily).sort().map(k=>({date:k,opd:daily[k].opd,eeg:daily[k].eeg})); if(localStatisticsPeriodNeedsMonthly_(period))trendData.monthly=Object.keys(monthly).sort().map(k=>({month:`${k.slice(0,4)}-${k.slice(4,6)}`,opd:monthly[k].opd,eeg:monthly[k].eeg})); if(localStatisticsPeriodNeedsYearly_(period))trendData.yearly=Object.keys(yearly).sort().map(k=>({year:Number(k),opd:yearly[k].opd,eeg:yearly[k].eeg}));
+   return {ok:true,city,period,showMode:"both",hasDetail:needsDetail,rows,totals,trendData};
+ }
+ function mergeStatisticsResultParts_(base,extra){
+   if(!base)return extra; if(!extra)return base;
+   const keys=["patientCount","freeOPD","eegCount","freeEEG","opdTotal","opdCash","opdOnline","opdPaid","opdRefund","eegTotal","eegCash","eegOnline","eegPaid","eegRefund","totalCash","totalOnline","totalCollection","totalRefund","netCash","netOnline","netTotal"];
+   keys.forEach(k=>{base.totals[k]=(Number(base.totals?.[k])||0)+(Number(extra.totals?.[k])||0);});
+   if(base.hasDetail||extra.hasDetail){base.hasDetail=!!(base.hasDetail||extra.hasDetail);base.rows=[...(base.rows||[]),...(extra.rows||[])];}
+   const mergeTrend=(a,b,key)=>{const m=new Map();[...(a||[]),...(b||[])].forEach(x=>{const k=String(x[key]??"");if(!k)return;const v=m.get(k)||{[key]:k,opd:0,eeg:0};v.opd+=Number(x.opd)||0;v.eeg+=Number(x.eeg)||0;m.set(k,v);});return [...m.values()].sort((x,y)=>String(x[key]).localeCompare(String(y[key])));};
+   base.trendData=base.trendData||{}; const ex=extra.trendData||{}; if(base.trendData.daily||ex.daily)base.trendData.daily=mergeTrend(base.trendData.daily,ex.daily,"date"); if(base.trendData.monthly||ex.monthly)base.trendData.monthly=mergeTrend(base.trendData.monthly,ex.monthly,"month"); if(base.trendData.yearly||ex.yearly)base.trendData.yearly=mergeTrend(base.trendData.yearly,ex.yearly,"year");
+   return base;
+ }
+ async function scheduledCitiesForStatisticsRange_(startKey,endKey){
+   if(!window.Schedule||typeof Schedule.dates!=="function")return NEURON_CONFIG.cities.slice();
+   const start=new Date(Date.UTC(Number(startKey.slice(0,4)),Number(startKey.slice(4,6))-1,1));
+   const end=new Date(Date.UTC(Number(endKey.slice(0,4)),Number(endKey.slice(4,6))-1,1));
+   const out=[];
+   for(const city of NEURON_CONFIG.cities){
+     let found=false;
+     for(let d=new Date(start);d<=end&&!found;d.setUTCMonth(d.getUTCMonth()+1)){
+       const y=d.getUTCFullYear(),m=d.getUTCMonth()+1;
+       const days=Schedule.dates(city,y,m)||[];
+       found=days.some(v=>{const s=String(v||"");if(!/^\d{8}$/.test(s))return false;const k=s.slice(4,8)+s.slice(2,4)+s.slice(0,2);return k>=startKey&&k<=endKey;});
+     }
+     if(found)out.push(city);
+   }
+   return out;
+ }
+ function getRecentStatisticsCities_(city,period,range){
+   if(String(city).toLowerCase()==="all"){
+     if(period==="today"||period==="yesterday"||period==="daybefore")return sourceCitiesForDailyPeriod_(period);
+     return scheduledCitiesForStatisticsRange_(range.start,range.end);
+   }
+   return [city];
+ }
+ async function tryCachedStatisticsRetrieval_(request){
+   const range=statisticsLocalRange_(request.period); if(!range)return null;
+   const q=U.parts(); const todayKey=`${q.y}${String(q.m).padStart(2,"0")}${String(q.d).padStart(2,"0")}`; const todayDate=new Date(Date.UTC(q.y,q.m-1,q.d)); const boundaryDate=new Date(todayDate); boundaryDate.setUTCFullYear(boundaryDate.getUTCFullYear()-2); const boundaryKey=`${boundaryDate.getUTCFullYear()}${String(boundaryDate.getUTCMonth()+1).padStart(2,"0")}${String(boundaryDate.getUTCDate()).padStart(2,"0")}`; const yesterdayDate=new Date(todayDate);yesterdayDate.setUTCDate(yesterdayDate.getUTCDate()-1); const yesterdayKey=`${yesterdayDate.getUTCFullYear()}${String(yesterdayDate.getUTCMonth()+1).padStart(2,"0")}${String(yesterdayDate.getUTCDate()).padStart(2,"0")}`; const dayBeforeDate=new Date(todayDate);dayBeforeDate.setUTCDate(dayBeforeDate.getUTCDate()-2); const dayBeforeKey=`${dayBeforeDate.getUTCFullYear()}${String(dayBeforeDate.getUTCMonth()+1).padStart(2,"0")}${String(dayBeforeDate.getUTCDate()).padStart(2,"0")}`; const followupEndDate=new Date(todayDate);followupEndDate.setUTCDate(followupEndDate.getUTCDate()-3); const followupEndKey=`${followupEndDate.getUTCFullYear()}${String(followupEndDate.getUTCMonth()+1).padStart(2,"0")}${String(followupEndDate.getUTCDate()).padStart(2,"0")}`;
+   const cities=await getRecentStatisticsCities_(request.city,request.period,range); if(!cities.length){if(String(request.city).toLowerCase()==="all"){const empty=localStatisticsResult_(request.city,request.period,{});empty.statisticsSourceCities=[];return empty;}return null;}
+   const dailyOnly=request.period==="today"||request.period==="yesterday"||request.period==="daybefore";
+   const requiresFollowup=range.end>=boundaryKey&&range.start<=followupEndKey&&!dailyOnly;
+   const requiresOlder=range.start<boundaryKey&&range.end>=boundaryKey;
+   const recordsByCity={}; const boundaries={}; const sourceCities=[];
+   try{
+     for(const city of cities){
+       if(requiresFollowup){const ensured=await IDB.ensureFollowupStatisticsCache_(city); if(!ensured||ensured.mode!=="READY")return null; boundaries[city]=Number(ensured.meta?.lowestSourceRow)||0; const start=range.start>boundaryKey?range.start:boundaryKey; const end=range.end<followupEndKey?range.end:followupEndKey; recordsByCity[city]=await IDB.getFollowupStatisticsRecords_(city,start,end);}
+       if(dailyOnly){const d=selectedDateForDailyPeriod_(request.period);if(!window.Schedule||typeof Schedule.hours!=="function"||Schedule.hours(city,d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate())===null)return null;const dk=`${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,"0")}${String(d.getUTCDate()).padStart(2,"0")}`;const cache=await IDB.get("cache",`OPD_TODAY|${dk}|${city}`).catch(()=>null);if(!cache||cache.complete!==true||cache.status==="STALE"||!Array.isArray(cache.patients))return null;recordsByCity[city]=(cache.patients||[]);}
+       if(!dailyOnly&&range.end>=todayKey){const cache=await IDB.get("cache",`OPD_TODAY|${todayKey}|${city}`).catch(()=>null);if(cache?.complete===true&&cache.status!=="STALE")recordsByCity[city]=[...(recordsByCity[city]||[]),...(cache.patients||[])]; else if(range.end===todayKey)return null;}
+       if(!dailyOnly&&range.end>=yesterdayKey){const dk=yesterdayKey;const cache=await IDB.get("cache",`OPD_TODAY|${dk}|${city}`).catch(()=>null);if(cache?.complete===true&&cache.status!=="STALE"&&range.start<=dk)recordsByCity[city]=[...(recordsByCity[city]||[]),...(cache.patients||[])];}
+       if(!dailyOnly&&range.end>=dayBeforeKey&&range.start<=dayBeforeKey){const cache=await IDB.get("cache",`OPD_TODAY|${dayBeforeKey}|${city}`).catch(()=>null);if(cache?.complete===true&&cache.status!=="STALE")recordsByCity[city]=[...(recordsByCity[city]||[]),...(cache.patients||[])];}
+       sourceCities.push(city);
+     }
+     let local=localStatisticsResult_(request.city,request.period,recordsByCity); local.statisticsSourceCities=sourceCities.slice();
+     local.__selectedCitiesForServer=sourceCities.slice();
+     if(!requiresOlder){delete local.__selectedCitiesForServer;return local;}
+     local.__olderOnlyBeforeRows=boundaries;
+     return local;
+   }catch(_){return null;}
  }
 
  async function applyStatisticsResult_(state,r){
    if(!r)return;
    let result=r;
+   if(state&&state.cachedBase){
+     const cached=JSON.parse(JSON.stringify(state.cachedBase));
+     delete cached.__olderOnlyBeforeRows;
+     result=mergeStatisticsResultParts_(cached,result);
+   }
    if(result.statisticsSourceCities==null && Array.isArray(state.selectedCities)) result.statisticsSourceCities=state.selectedCities.slice();
    if(result && result.trendData && Array.isArray(result.trendData.daily) && state.city!=="all")
      result.trendData=prepareScheduleAwareDailyTrend_(result.trendData,state.city,state.period);
@@ -304,14 +410,27 @@ document.addEventListener("DOMContentLoaded",()=>{
    let sourceCities=null;
    if(citySelect.value==="all" && (selectedPeriod==="today" || selectedPeriod==="yesterday" || selectedPeriod==="daybefore"))
      sourceCities=sourceCitiesForDailyPeriod_(selectedPeriod);
-   const request=statisticsRequest_(citySelect.value,selectedPeriod,"both",sourceCities||[]);
-   const retrievalKey=statisticsCriteriaKey_(request.city,request.period,request.showMode,request.selectedCities);
+   let request=statisticsRequest_(citySelect.value,selectedPeriod,"both",sourceCities||[]);
    setRetrievalControls(true);
    $("historyGate").hidden=true;
    btn.textContent="Retrieving Records…";
-   $("results").innerHTML=`<div class="status">Connecting to Statistics retrieval…</div>`;
+   $("results").innerHTML=`<div class="status">Checking local Statistics cache…</div>`;
 
    try{
+     let cachedBase=null;
+     try{cachedBase=await tryCachedStatisticsRetrieval_(request);}catch(_){cachedBase=null;}
+     if(cachedBase && !cachedBase.__olderOnlyBeforeRows){
+       const state={retrievalKey:statisticsCriteriaKey_(request.city,request.period,request.showMode,request.selectedCities),requestId:"",city:request.city,period:request.period,showMode:request.showMode,selectedCities:request.selectedCities,createdAt:Date.now(),updatedAt:Date.now()};
+       await applyStatisticsResult_(state,cachedBase);
+       return;
+     }
+     if(cachedBase&&cachedBase.__olderOnlyBeforeRows){
+       request.olderOnlyBeforeRows=cachedBase.__olderOnlyBeforeRows;
+       if(Array.isArray(cachedBase.__selectedCitiesForServer))request.selectedCities=cachedBase.__selectedCitiesForServer.slice();
+       delete cachedBase.__olderOnlyBeforeRows;
+       delete cachedBase.__selectedCitiesForServer;
+     }
+     const retrievalKey=statisticsCriteriaKey_(request.city,request.period,request.showMode,request.selectedCities)+"|"+Object.keys(request.olderOnlyBeforeRows||{}).sort().map(k=>k+":"+request.olderOnlyBeforeRows[k]).join(",");
      const start=await NeuronAPI.call("startStatisticsRetrieval",request,10000);
      const state={
        retrievalKey:start.retrievalKey||retrievalKey,
@@ -320,6 +439,7 @@ document.addEventListener("DOMContentLoaded",()=>{
        period:request.period,
        showMode:request.showMode,
        selectedCities:request.selectedCities,
+       cachedBase:cachedBase||null,
        createdAt:Date.now(),
        updatedAt:Date.now()
      };

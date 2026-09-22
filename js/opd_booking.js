@@ -677,10 +677,11 @@ $("patients").innerHTML="";
           $("city").value=dailyCity;
           syncCityPickerTrigger();
           updateCityOptions();
-          // Follow-up Next Follow-up City defaults to the current Visit Location
-          // but remains independently editable by the user.
+          // Follow-up Next Follow-up City defaults to the previous visit's
+          // Column K value when valid; otherwise fall back to today's Visit Location.
           nextFollowupCityManuallyEdited=false;
-          $("next").value=dailyCity;
+          const previousFollowupCity=String(x.nextFollowupCity||"").trim();
+          $("next").value=cities.includes(previousFollowupCity)?previousFollowupCity:dailyCity;
           // Explicitly reveal the complete Follow-up editing/booking stage.
           $("bookingFields").hidden=false;
           $("bookingFields").removeAttribute("hidden");
