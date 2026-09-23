@@ -100,7 +100,7 @@ async function waitForCriticalOperations_(){
 }
 async function getStatus_(kind,city,date){return idbGet_("meta",metaKey_(kind,city,date));}
 async function setStatus_(value){return idbPut_("meta",value);}
-async function claim_(kind,city,date,mode){
+async function claim_(kind,city,date,mode,requestId=null){
  const c=String(city||"").trim(),d=String(date||"").trim(),k=String(kind||"").trim(),key=metaKey_(k,c,d),now=Date.now(),db=await openDb_();
  return new Promise((ok,no)=>{
   const t=db.transaction("meta","readwrite"),st=t.objectStore("meta"),r=st.get(key);let result={claimed:false,reason:"UNKNOWN"};
@@ -113,7 +113,7 @@ async function claim_(kind,city,date,mode){
    const owner=`SW-${now}-${Math.random().toString(36).slice(2)}`;
    const resumeAttempt=running?Math.min(BG.MAX_ATTEMPTS,previous+1):1;
    const cycleId=running?String(current.cycleId||`${k}:${d}:${c}:${Number(current.startedAt)||now}`):`${k}:${d}:${c}:${now}`;
-   const next={key,cacheType:k,city:c,date:d,status:"RUNNING",mode,owner,cycleId,startedAt:running?Number(current.startedAt)||now:now,completedAt:null,durationMs:null,attemptCount:previous,maxAttempts:BG.MAX_ATTEMPTS,rowsProcessed:running?Number(current.rowsProcessed)||0:0,rowsAdded:running?Number(current.rowsAdded)||0:0,lastHeartbeatAt:now,leaseExpiresAt:now+BG.LEASE_MS,error:running?current.error||null:null,retryAt:running?Number(current.retryAt)||0:0,resumeAttempt,updatedAt:now};
+   const next={key,cacheType:k,city:c,date:d,status:"RUNNING",mode,requestId:requestId?String(requestId):String(current?.requestId||""),owner,cycleId,startedAt:running?Number(current.startedAt)||now:now,completedAt:null,durationMs:null,attemptCount:previous,maxAttempts:BG.MAX_ATTEMPTS,rowsProcessed:running?Number(current.rowsProcessed)||0:0,rowsAdded:running?Number(current.rowsAdded)||0:0,lastHeartbeatAt:now,leaseExpiresAt:now+BG.LEASE_MS,error:running?current.error||null:null,retryAt:running?Number(current.retryAt)||0:0,resumeAttempt,updatedAt:now};
    st.put(next);result={claimed:true,status:next};
   };
   r.onerror=()=>no(r.error);t.oncomplete=()=>ok(result);t.onerror=()=>no(t.error||new Error("Background synchronization claim failed."));t.onabort=()=>no(t.error||new Error("Background synchronization claim aborted."));
@@ -125,7 +125,7 @@ async function heartbeat_(key,owner){
 async function updateAttempt_(key,owner,attempt,error=null){const x=await idbGet_("meta",key);if(!x||x.owner!==owner||x.status!=="RUNNING")return null;const now=Date.now();const next={...x,attemptCount:attempt,lastHeartbeatAt:now,leaseExpiresAt:now+BG.LEASE_MS,error:error?String(error):null,retryAt:error?now+BG.RETRY_DELAY_MS:0,updatedAt:now};await setStatus_(next);return next;}
 async function finish_(key,owner,status,error=null,extra={}){const x=await idbGet_("meta",key);if(!x||x.owner!==owner)return null;const now=Date.now(),next={...x,status,completedAt:now,durationMs:Math.max(0,now-(Number(x.startedAt)||now)),lastHeartbeatAt:now,leaseExpiresAt:0,error:error?String(error):null,updatedAt:now,...extra};await setStatus_(next);postUpdate_();return next;}
 
-async function claimNewOPDCycle_(city,date,mode){
+async function claimNewOPDCycle_(city,date,mode,requestId=null){
  const c=String(city||"").trim(),d=String(date||"").trim(),now=Date.now();
  if(!c||!/^\d{8}$/.test(d))return {allowed:false,reason:"INVALID"};
  const db=await openDb_(),statusKey=metaKey_("OPD_TODAY",c,d),gateKey=`OPD_BACKGROUND_START|${d}`;
@@ -136,7 +136,7 @@ async function claimNewOPDCycle_(city,date,mode){
    const running=current?.status==="RUNNING";
    if(running){result={allowed:false,reason:"RUNNING",status:current};return;}
    if(gate?.startedAt&&now-Number(gate.startedAt)<BG.OPD_GATE_MS){result={allowed:false,reason:"WINDOW_ACTIVE",status:current||null};return;}
-   const cycleId=`OPD_TODAY:${d}:${c}:${now}`,next={key:statusKey,cacheType:"OPD_TODAY",city:c,date:d,status:"RUNNING",mode,owner:`SW-${now}-${Math.random().toString(36).slice(2)}`,cycleId,startedAt:now,completedAt:null,durationMs:null,attemptCount:0,maxAttempts:BG.MAX_ATTEMPTS,rowsProcessed:0,rowsAdded:0,lastHeartbeatAt:now,leaseExpiresAt:now+BG.LEASE_MS,error:null,retryAt:0,resumeAttempt:1,updatedAt:now};
+   const cycleId=`OPD_TODAY:${d}:${c}:${now}`,next={key:statusKey,cacheType:"OPD_TODAY",city:c,date:d,status:"RUNNING",mode,requestId:requestId?String(requestId):"",owner:`SW-${now}-${Math.random().toString(36).slice(2)}`,cycleId,startedAt:now,completedAt:null,durationMs:null,attemptCount:0,maxAttempts:BG.MAX_ATTEMPTS,rowsProcessed:0,rowsAdded:0,lastHeartbeatAt:now,leaseExpiresAt:now+BG.LEASE_MS,error:null,retryAt:0,resumeAttempt:1,updatedAt:now};
    st.put({key:gateKey,type:"OPD_BACKGROUND_START",date:d,startedAt:now,cycleId,updatedAt:now});st.put(next);result={allowed:true,claim:{claimed:true,status:next}};
   };
   gr.onsuccess=()=>{gate=gr.result||null;gateDone=true;finish()};
@@ -212,9 +212,9 @@ async function syncFollow_(city){
  const current=await followMeta_(city);if(!current||current.status!=="READY")throw new Error("Follow-up cache metadata changed during synchronization.");const next={...current,highestKnownSourceRow:Math.max(Number(current.highestKnownSourceRow)||0,lastRow),highestContiguousSourceRow:Math.max(Number(current.highestContiguousSourceRow)||0,toRow),recordCount:Math.max(0,Number(current.recordCount)||0)+inserted,lastUpdatedAt:Date.now(),lastSyncAt:Date.now(),lastServerCheckAt:Date.now(),lastServerCheckDate:todayKey_()};await idbPut_("followupCache",next);return {mode:"INCREMENTAL",city,fromRow:from,toRow,rowsReceived:records.length,rowsInserted:inserted,rowsUpdated:updated,previousContiguousRow:previousContiguous,newContiguousRow:next.highestContiguousSourceRow,spreadsheetLastRow:lastRow};
 }
 
-async function runCycle_(kind,city,date,operation,mode,preclaimed=null){
+async function runCycle_(kind,city,date,operation,mode,preclaimed=null,requestId=null){
  let claim=preclaimed||null;
- if(!claim)claim=await claim_(kind,city,date,mode);
+ if(!claim)claim=await claim_(kind,city,date,mode,requestId);
  if(!claim.claimed)return claim;
  try{postUpdate_()}catch(_){}
  const state=claim.status,key=state.key,owner=state.owner;let timer=null;
@@ -244,45 +244,47 @@ async function runCycle_(kind,city,date,operation,mode,preclaimed=null){
  }finally{if(timer)clearInterval(timer)}
 }
 
-async function runBackgroundSync_(city,date=todayKey_()){
+async function runBackgroundSync_(city,date=todayKey_(),requestId=null){
  const c=String(city||"").trim(),d=/^\d{8}$/.test(String(date))?String(date):todayKey_();if(!c)return;
  requestedCity=c;
  const existingOPD=await getStatus_("OPD_TODAY",c,d);
  const opdPromise=(async()=>{
-  if(existingOPD?.status==="RUNNING")return runCycle_("OPD_TODAY",c,d,()=>syncOPD_(c,d),"INCREMENTAL");
-  const initialized=await claimNewOPDCycle_(c,d,"INCREMENTAL");
+  if(existingOPD?.status==="RUNNING")return runCycle_("OPD_TODAY",c,d,()=>syncOPD_(c,d),"INCREMENTAL",null,requestId);
+  const initialized=await claimNewOPDCycle_(c,d,"INCREMENTAL",requestId);
   if(!initialized.allowed)return initialized.status||{status:"SKIPPED",reason:initialized.reason};
-  return runCycle_("OPD_TODAY",c,d,()=>syncOPD_(c,d),"INCREMENTAL",initialized.claim);
+  return runCycle_("OPD_TODAY",c,d,()=>syncOPD_(c,d),"INCREMENTAL",initialized.claim,requestId);
  })();
  const followPromise=runCycle_("FOLLOWUP",c,d,async()=>{
   const meta=await followMeta_(c);if(followMetaValid_(meta,c)&&String(meta.lastServerCheckDate||"")===d)return {mode:"ALREADY_CHECKED",city:c};
   const result=followMetaValid_(meta,c)?await syncFollow_(c):await buildFollow_(c);if(result?.mode==="FAILED")return result;
   const verified=await followMeta_(c);if(!followMetaValid_(verified,c))throw new Error("Follow-up synchronization final validation failed.");const now=Date.now();await idbPut_("followupCache",{...verified,lastServerCheckAt:now,lastServerCheckDate:d,lastUpdatedAt:now});return result;
- },"INCREMENTAL");
+ },"INCREMENTAL",null,requestId);
  const results=await Promise.allSettled([opdPromise,followPromise]);postUpdate_();
  const rejected=results.find(x=>x.status==="rejected");
  if(rejected)throw rejected.reason||new Error("Background synchronization cycle could not be started.");
 }
 
-async function registerBackgroundRequest_(city,date){
+async function registerBackgroundRequest_(city,date,requestId,source){
  requestedCity=String(city||"").trim();if(!requestedCity)return;
- const normalizedDate=/^\d{8}$/.test(String(date||""))?String(date):todayKey_(),requestId=`REQ-${Date.now()}-${Math.random().toString(36).slice(2)}`;
- await idbPut_("meta",{key:"BACKGROUND_SYNC_REQUEST",type:"BACKGROUND_SYNC_REQUEST",requestId,city:requestedCity,date:normalizedDate,createdAt:Date.now(),updatedAt:Date.now()});
+ const normalizedDate=/^\d{8}$/.test(String(date||""))?String(date):todayKey_();
+ const durableRequestId=String(requestId||`REQ-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+ await idbPut_("meta",{key:"BACKGROUND_SYNC_REQUEST",type:"BACKGROUND_SYNC_REQUEST",requestId:durableRequestId,city:requestedCity,date:normalizedDate,createdAt:Date.now(),updatedAt:Date.now()});
+ try{source?.postMessage?.({type:"NEURON_BACKGROUND_SYNC_ACCEPTED",requestId:durableRequestId,city:requestedCity,date:normalizedDate,acceptedAt:Date.now()});}catch(_){}
  try{await self.registration.sync?.register("neuron-background-sync")}catch(_){}
  try{await self.registration.periodicSync?.register("neuron-periodic-background-sync",{minInterval:BG.OPD_GATE_MS})}catch(_){}
- try{await runBackgroundSync_(requestedCity,normalizedDate);}catch(e){postUpdate_();return;}
+ try{await runBackgroundSync_(requestedCity,normalizedDate,durableRequestId)}catch(e){postUpdate_();return;}
  const latest=await idbGet_("meta","BACKGROUND_SYNC_REQUEST").catch(()=>null);
- if(latest?.requestId===requestId)await idbDelete_("meta","BACKGROUND_SYNC_REQUEST").catch(()=>{});
+ if(latest?.requestId===durableRequestId)await idbDelete_("meta","BACKGROUND_SYNC_REQUEST").catch(()=>{});
 }
 async function runStoredRequest_(){
  const q=await idbGet_("meta","BACKGROUND_SYNC_REQUEST");
  if(!q)return;
  const city=String(q?.city||requestedCity||"").trim();if(!city)throw new Error("Persisted Background Sync request has no city.");
- try{await runBackgroundSync_(city,q?.date||todayKey_());}catch(e){postUpdate_();return;}
+ try{await runBackgroundSync_(city,q?.date||todayKey_(),q?.requestId||null);}catch(e){postUpdate_();return;}
  const latest=await idbGet_("meta","BACKGROUND_SYNC_REQUEST").catch(()=>null);
  if(q?.requestId&&latest?.requestId===q.requestId)await idbDelete_("meta","BACKGROUND_SYNC_REQUEST").catch(()=>{});
 }
 
-self.addEventListener("message",e=>{if(e.data?.type!=="NEURON_START_BACKGROUND_SYNC")return;e.waitUntil(registerBackgroundRequest_(e.data.city,e.data.date));});
+self.addEventListener("message",e=>{if(e.data?.type!=="NEURON_START_BACKGROUND_SYNC")return;e.waitUntil(registerBackgroundRequest_(e.data.city,e.data.date,e.data.requestId,e.source));});
 self.addEventListener("sync",e=>{if(e.tag!=="neuron-background-sync")return;e.waitUntil(runStoredRequest_());});
 self.addEventListener("periodicsync",e=>{if(e.tag!=="neuron-periodic-background-sync")return;e.waitUntil(runStoredRequest_());});
