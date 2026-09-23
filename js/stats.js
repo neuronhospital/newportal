@@ -57,6 +57,35 @@ document.addEventListener("DOMContentLoaded",()=>{
    const d=date.getUTCDate();
    return NEURON_CONFIG.cities.filter(city=>Schedule.hours(city,y,m,d)!==null);
  }
+ function prepareScheduleAwareDailyTrend_(trendData, city, period){
+   if(!trendData || !Array.isArray(trendData.daily) || !city || String(city).toLowerCase()==="all") return trendData;
+   if(!window.Schedule || typeof Schedule.dates!=="function") return trendData;
+   const q=U.parts();
+   let y=q.y,m=q.m;
+   if(/^\d{4}-\d{2}$/.test(String(period||""))){
+     const parts=String(period).split("-").map(Number);
+     y=parts[0];m=parts[1];
+   }
+   const todayKey=`${q.y}${String(q.m).padStart(2,"0")}${String(q.d).padStart(2,"0")}`;
+   const isCurrentMonth=(y===q.y&&m===q.m);
+   const counts=new Map();
+   trendData.daily.forEach(item=>{
+     const key=String(item.date||"");
+     if(/^\d{8}$/.test(key)) counts.set(key,{date:key,opd:Number(item.opd)||0,eeg:Number(item.eeg)||0});
+   });
+   const scheduled=Schedule.dates(city,y,m)||[];
+   const out=[];
+   scheduled.forEach(ddmmyyyy=>{
+     const s=String(ddmmyyyy||"");
+     if(!/^\d{8}$/.test(s)) return;
+     const key=s.slice(4,8)+s.slice(2,4)+s.slice(0,2);
+     if(isCurrentMonth && key>todayKey) return;
+     const item=counts.get(key);
+     out.push(item||{date:key,opd:0,eeg:0});
+   });
+   return Object.assign({},trendData,{daily:out});
+ }
+
  function sourceCitiesForDailyPeriod_(period){
    return scheduledCitiesForDate_(selectedDateForDailyPeriod_(period));
  }
