@@ -1,7 +1,7 @@
 const APP_VERSION=new URL(self.location.href).searchParams.get("v")||"unknown";
 const C="neuron-static-"+APP_VERSION;
 const A=["./","./index.html","./assets/doctor_photo.svg","./opd_booking.html","./eeg_booking.html","./opd_update.html","./eeg_update.html","./statistics.html","./eeg_calls_booking.html","./eeg_calls_update_stats.html","./refund.html","./css/base.css","./js/config.js","./js/api.js","./js/utils.js","./js/idb.js","./js/common.js","./js/schedule.js","./js/opd_update.js","./js/opd_booking.js","./js/opd_patient_list.js","./js/eeg_patient_list.js","./assets/icons/home.svg","./assets/icons/opd-booking.svg","./assets/icons/opd-update.svg","./assets/icons/eeg-booking.svg","./assets/icons/eeg_calls.svg","./assets/icons/eeg-update.svg","./assets/icons/statistics.svg","./assets/neuron_logo.svg","./assets/icons/calendar.svg","./js/eeg_booking.js","./js/eeg_update.js","./js/secure.js","./js/stats.js","./js/recovery.js","./js/eeg_calls_booking.js","./js/eeg_calls_update_stats.js","./manifest.webmanifest"];
-const V=u=>{const x=new URL(u,self.location.origin);if(!x.searchParams.has("v"))x.searchParams.set("v",APP_VERSION);return x.href};
+const V=u=>{const x=new URL(u,self.location.href);if(!x.searchParams.has("v"))x.searchParams.set("v",APP_VERSION);return x.href};
 const R=u=>new Request(V(u),u instanceof Request?u:{method:"GET",credentials:"same-origin"});
 
 /* Static-cache service worker + persistent NEURON Background Sync owner. */
