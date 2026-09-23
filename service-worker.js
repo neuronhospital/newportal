@@ -82,11 +82,22 @@ async function apiCall_(action,data={},timeout=25000){
  }catch(e){if(e?.name==="AbortError")throw new Error("Network timeout.");throw e;}finally{clearTimeout(timer)}
 }
 
-async function criticalOperationActive_(){
-  const d=await openDb_();
-  return await new Promise((ok,no)=>{const t=d.transaction("tx"),idx=t.objectStore("tx").index("status");let pending=[],uncertain=[],done=0,settled=false;const finish=()=>{if(++done!==2||settled)return;settled=true;ok(pending.length+uncertain.length>0)};const fail=e=>{if(!settled){settled=true;no(e)}};const a=idx.getAll("pending"),b=idx.getAll("uncertain");a.onsuccess=()=>{pending=a.result||[];finish()};b.onsuccess=()=>{uncertain=b.result||[];finish()};a.onerror=()=>fail(a.error);b.onerror=()=>fail(b.error);t.onerror=()=>fail(t.error);t.onabort=()=>fail(t.error||new Error("Pending transaction lookup aborted."));});
+async function criticalOperationState_(){
+ const d=await openDb_();
+ return await new Promise((ok,no)=>{
+  const t=d.transaction("tx"),idx=t.objectStore("tx").index("status");
+  let pending=[],uncertain=[],done=0,settled=false;
+  const finish=()=>{if(++done!==2||settled)return;settled=true;const now=Date.now();const current=pending.some(x=>{const startedAt=Number(x?.startedAt)||Number(x?.updatedAt)||0;const timeoutMs=Number(x?.timeoutMs)||15000;return startedAt>0&&now<startedAt+timeoutMs;});if(current)ok("CURRENT_PENDING");else if(pending.length)ok("STALE_PENDING");else if(uncertain.length)ok("UNCERTAIN");else ok("NONE")};
+  const fail=e=>{if(!settled){settled=true;no(e)}};
+  const a=idx.getAll("pending"),b=idx.getAll("uncertain");
+  a.onsuccess=()=>{pending=a.result||[];finish()};
+  b.onsuccess=()=>{uncertain=b.result||[];finish()};
+  a.onerror=()=>fail(a.error);b.onerror=()=>fail(b.error);t.onerror=()=>fail(t.error);t.onabort=()=>fail(t.error||new Error("Critical transaction lookup aborted."));
+ });
 }
-async function waitForCriticalOperations_(){while(await criticalOperationActive_())await new Promise(r=>setTimeout(r,3000));}
+async function waitForCriticalOperations_(){
+ while((await criticalOperationState_())==="CURRENT_PENDING")await new Promise(r=>setTimeout(r,3000));
+}
 async function getStatus_(kind,city,date){return idbGet_("meta",metaKey_(kind,city,date));}
 async function setStatus_(value){return idbPut_("meta",value);}
 async function claim_(kind,city,date,mode){
@@ -114,13 +125,26 @@ async function heartbeat_(key,owner){
 async function updateAttempt_(key,owner,attempt,error=null){const x=await idbGet_("meta",key);if(!x||x.owner!==owner||x.status!=="RUNNING")return null;const now=Date.now();const next={...x,attemptCount:attempt,lastHeartbeatAt:now,leaseExpiresAt:now+BG.LEASE_MS,error:error?String(error):null,retryAt:error?now+BG.RETRY_DELAY_MS:0,updatedAt:now};await setStatus_(next);return next;}
 async function finish_(key,owner,status,error=null,extra={}){const x=await idbGet_("meta",key);if(!x||x.owner!==owner)return null;const now=Date.now(),next={...x,status,completedAt:now,durationMs:Math.max(0,now-(Number(x.startedAt)||now)),lastHeartbeatAt:now,leaseExpiresAt:0,error:error?String(error):null,updatedAt:now,...extra};await setStatus_(next);postUpdate_();return next;}
 
-async function opdGate_(date){
- const key=`OPD_BACKGROUND_START|${date}`,now=Date.now();
- const db=await openDb_();
+async function claimNewOPDCycle_(city,date,mode){
+ const c=String(city||"").trim(),d=String(date||"").trim(),now=Date.now();
+ if(!c||!/^\d{8}$/.test(d))return {allowed:false,reason:"INVALID"};
+ const db=await openDb_(),statusKey=metaKey_("OPD_TODAY",c,d),gateKey=`OPD_BACKGROUND_START|${d}`;
  return new Promise((ok,no)=>{
-  const t=db.transaction("meta","readwrite"),st=t.objectStore("meta"),r=st.get(key);let allowed=false;
-  r.onsuccess=()=>{const cur=r.result;if(cur?.startedAt&&now-Number(cur.startedAt)<BG.OPD_GATE_MS){allowed=false;return;}st.put({key,type:"OPD_BACKGROUND_START",date,startedAt:now,updatedAt:now});allowed=true;};
-  r.onerror=()=>no(r.error);t.oncomplete=()=>ok(allowed);t.onerror=()=>no(t.error||new Error("OPD background start gate failed."));t.onabort=()=>no(t.error||new Error("OPD background start gate aborted."));
+  const t=db.transaction("meta","readwrite"),st=t.objectStore("meta"),gr=st.get(gateKey),sr=st.get(statusKey);
+  let gate=null,current=null,gateDone=false,statusDone=false,settled=false,result=null;
+  const finish=()=>{if(settled||!gateDone||!statusDone)return;
+   const running=current?.status==="RUNNING";
+   if(running){result={allowed:false,reason:"RUNNING",status:current};return;}
+   if(gate?.startedAt&&now-Number(gate.startedAt)<BG.OPD_GATE_MS){result={allowed:false,reason:"WINDOW_ACTIVE",status:current||null};return;}
+   const cycleId=`OPD_TODAY:${d}:${c}:${now}`,next={key:statusKey,cacheType:"OPD_TODAY",city:c,date:d,status:"RUNNING",mode,owner:`SW-${now}-${Math.random().toString(36).slice(2)}`,cycleId,startedAt:now,completedAt:null,durationMs:null,attemptCount:0,maxAttempts:BG.MAX_ATTEMPTS,rowsProcessed:0,rowsAdded:0,lastHeartbeatAt:now,leaseExpiresAt:now+BG.LEASE_MS,error:null,retryAt:0,resumeAttempt:1,updatedAt:now};
+   st.put({key:gateKey,type:"OPD_BACKGROUND_START",date:d,startedAt:now,cycleId,updatedAt:now});st.put(next);result={allowed:true,claim:{claimed:true,status:next}};
+  };
+  gr.onsuccess=()=>{gate=gr.result||null;gateDone=true;finish()};
+  sr.onsuccess=()=>{current=sr.result||null;statusDone=true;finish()};
+  gr.onerror=()=>{if(!settled){settled=true;no(gr.error)}};sr.onerror=()=>{if(!settled){settled=true;no(sr.error)}};
+  t.oncomplete=()=>{if(settled)return;settled=true;ok(result||{allowed:false,reason:"UNKNOWN"})};
+  t.onerror=()=>{if(!settled){settled=true;no(t.error||new Error("OPD background cycle initialization failed."))}};
+  t.onabort=()=>{if(!settled){settled=true;no(t.error||new Error("OPD background cycle initialization aborted."))}};
  });
 }
 
@@ -188,8 +212,11 @@ async function syncFollow_(city){
  const current=await followMeta_(city);if(!current||current.status!=="READY")throw new Error("Follow-up cache metadata changed during synchronization.");const next={...current,highestKnownSourceRow:Math.max(Number(current.highestKnownSourceRow)||0,lastRow),highestContiguousSourceRow:Math.max(Number(current.highestContiguousSourceRow)||0,toRow),recordCount:Math.max(0,Number(current.recordCount)||0)+inserted,lastUpdatedAt:Date.now(),lastSyncAt:Date.now(),lastServerCheckAt:Date.now(),lastServerCheckDate:todayKey_()};await idbPut_("followupCache",next);return {mode:"INCREMENTAL",city,fromRow:from,toRow,rowsReceived:records.length,rowsInserted:inserted,rowsUpdated:updated,previousContiguousRow:previousContiguous,newContiguousRow:next.highestContiguousSourceRow,spreadsheetLastRow:lastRow};
 }
 
-async function runCycle_(kind,city,date,operation,mode){
- const claim=await claim_(kind,city,date,mode);if(!claim.claimed)return claim;
+async function runCycle_(kind,city,date,operation,mode,preclaimed=null){
+ let claim=preclaimed||null;
+ if(!claim)claim=await claim_(kind,city,date,mode);
+ if(!claim.claimed)return claim;
+ try{postUpdate_()}catch(_){}
  const state=claim.status,key=state.key,owner=state.owner;let timer=null;
  try{
   timer=setInterval(()=>{void heartbeat_(key,owner).catch(()=>{})},BG.HEARTBEAT_MS);
@@ -200,40 +227,61 @@ async function runCycle_(kind,city,date,operation,mode){
    await updateAttempt_(key,owner,attempt,null);
    try{await waitForCriticalOperations_();lastResult=await operation()}catch(e){lastResult={mode:"FAILED",error:e?.message||String(e)}}
    if(lastResult&&lastResult.mode!=="FAILED"&&lastResult.mode!=="IN_PROGRESS"&&lastResult.mode!=="SKIPPED"){
-    const finished=await finish_(key,owner,"SUCCESS",null,{rowsProcessed:Number(lastResult.rowsReceived||lastResult.rowsLoaded||lastResult.rowsScanned||0),rowsAdded:Number(lastResult.rowsAdded||lastResult.rowsInserted||0)});return {...lastResult,backgroundStatus:finished};
+    const finished=await finish_(key,owner,"SUCCESS",null,{rowsProcessed:Number(lastResult.rowsReceived||lastResult.rowsLoaded||lastResult.rowsScanned||0),rowsAdded:Number(lastResult.rowsAdded||lastResult.rowsInserted||0)});
+    return {...lastResult,backgroundStatus:finished};
    }
    lastError=lastResult?.error||`Background ${kind} synchronization attempt ${attempt} failed.`;
    if(attempt<BG.MAX_ATTEMPTS){await updateAttempt_(key,owner,attempt,lastError);await new Promise(r=>setTimeout(r,BG.RETRY_DELAY_MS));}
   }
   const finished=await finish_(key,owner,"FAILED",lastError);return {mode:"FAILED",city,error:lastError,backgroundStatus:finished};
+ }catch(e){
+  const originalError=String(e?.message||e),now=Date.now(),current=await getStatus_(kind,city,date).catch(()=>null);
+  if(current?.owner===owner&&current.status==="RUNNING"){
+   const failed={...current,status:"FAILED",completedAt:now,durationMs:Math.max(0,now-(Number(current.startedAt)||now)),lastHeartbeatAt:now,leaseExpiresAt:0,error:originalError,updatedAt:now};
+   await setStatus_(failed).catch(()=>{});postUpdate_();
+  }
+  throw e;
  }finally{if(timer)clearInterval(timer)}
 }
 
 async function runBackgroundSync_(city,date=todayKey_()){
  const c=String(city||"").trim(),d=/^\d{8}$/.test(String(date))?String(date):todayKey_();if(!c)return;
  requestedCity=c;
- const existingOPD=await getStatus_("OPD_TODAY",c,d).catch(()=>null);
+ const existingOPD=await getStatus_("OPD_TODAY",c,d);
  const opdPromise=(async()=>{
-  if(existingOPD?.status==="SUCCESS"||existingOPD?.status==="FAILED"||existingOPD?.status==="INCOMPLETE")return existingOPD;
-  if(existingOPD?.status!=="RUNNING"&&!(await opdGate_(d)))return {status:"SKIPPED",reason:"WINDOW_ACTIVE"};
-  return runCycle_("OPD_TODAY",c,d,()=>syncOPD_(c,d),"INCREMENTAL");
+  if(existingOPD?.status==="RUNNING")return runCycle_("OPD_TODAY",c,d,()=>syncOPD_(c,d),"INCREMENTAL");
+  const initialized=await claimNewOPDCycle_(c,d,"INCREMENTAL");
+  if(!initialized.allowed)return initialized.status||{status:"SKIPPED",reason:initialized.reason};
+  return runCycle_("OPD_TODAY",c,d,()=>syncOPD_(c,d),"INCREMENTAL",initialized.claim);
  })();
  const followPromise=runCycle_("FOLLOWUP",c,d,async()=>{
   const meta=await followMeta_(c);if(followMetaValid_(meta,c)&&String(meta.lastServerCheckDate||"")===d)return {mode:"ALREADY_CHECKED",city:c};
   const result=followMetaValid_(meta,c)?await syncFollow_(c):await buildFollow_(c);if(result?.mode==="FAILED")return result;
   const verified=await followMeta_(c);if(!followMetaValid_(verified,c))throw new Error("Follow-up synchronization final validation failed.");const now=Date.now();await idbPut_("followupCache",{...verified,lastServerCheckAt:now,lastServerCheckDate:d,lastUpdatedAt:now});return result;
  },"INCREMENTAL");
- await Promise.allSettled([opdPromise,followPromise]);postUpdate_();
+ const results=await Promise.allSettled([opdPromise,followPromise]);postUpdate_();
+ const rejected=results.find(x=>x.status==="rejected");
+ if(rejected)throw rejected.reason||new Error("Background synchronization cycle could not be started.");
 }
 
 async function registerBackgroundRequest_(city,date){
  requestedCity=String(city||"").trim();if(!requestedCity)return;
- await idbPut_("meta",{key:"BACKGROUND_SYNC_REQUEST",type:"BACKGROUND_SYNC_REQUEST",city:requestedCity,date:/^\d{8}$/.test(String(date||""))?String(date):todayKey_(),updatedAt:Date.now()});
+ const normalizedDate=/^\d{8}$/.test(String(date||""))?String(date):todayKey_(),requestId=`REQ-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+ await idbPut_("meta",{key:"BACKGROUND_SYNC_REQUEST",type:"BACKGROUND_SYNC_REQUEST",requestId,city:requestedCity,date:normalizedDate,createdAt:Date.now(),updatedAt:Date.now()});
  try{await self.registration.sync?.register("neuron-background-sync")}catch(_){}
  try{await self.registration.periodicSync?.register("neuron-periodic-background-sync",{minInterval:BG.OPD_GATE_MS})}catch(_){}
- await runBackgroundSync_(requestedCity,date||todayKey_());
+ try{await runBackgroundSync_(requestedCity,normalizedDate);}catch(e){postUpdate_();return;}
+ const latest=await idbGet_("meta","BACKGROUND_SYNC_REQUEST").catch(()=>null);
+ if(latest?.requestId===requestId)await idbDelete_("meta","BACKGROUND_SYNC_REQUEST").catch(()=>{});
 }
-async function runStoredRequest_(){const q=await idbGet_("meta","BACKGROUND_SYNC_REQUEST").catch(()=>null);const city=String(q?.city||requestedCity||"").trim();if(city)await runBackgroundSync_(city,q?.date||todayKey_());}
+async function runStoredRequest_(){
+ const q=await idbGet_("meta","BACKGROUND_SYNC_REQUEST");
+ if(!q)return;
+ const city=String(q?.city||requestedCity||"").trim();if(!city)throw new Error("Persisted Background Sync request has no city.");
+ try{await runBackgroundSync_(city,q?.date||todayKey_());}catch(e){postUpdate_();return;}
+ const latest=await idbGet_("meta","BACKGROUND_SYNC_REQUEST").catch(()=>null);
+ if(q?.requestId&&latest?.requestId===q.requestId)await idbDelete_("meta","BACKGROUND_SYNC_REQUEST").catch(()=>{});
+}
 
 self.addEventListener("message",e=>{if(e.data?.type!=="NEURON_START_BACKGROUND_SYNC")return;e.waitUntil(registerBackgroundRequest_(e.data.city,e.data.date));});
 self.addEventListener("sync",e=>{if(e.tag!=="neuron-background-sync")return;e.waitUntil(runStoredRequest_());});
