@@ -114,7 +114,22 @@ window.IDB={
  },
  async cleanupOldTodayOPDCaches_(today){
   if(this._todayOPDCacheCleanupDate===today)return;
-  try{await this.deleteCacheByPrefixExcept("cache","OPD_TODAY|",`OPD_TODAY|${today}|`);this._todayOPDCacheCleanupDate=today;}catch(_){ }
+  try{
+   const t=String(today||this.todayKey_());
+   if(!/^\d{8}$/.test(t))return;
+   const base=new Date(Date.UTC(Number(t.slice(0,4)),Number(t.slice(4,6))-1,Number(t.slice(6,8))));
+   const keep=new Set();
+   for(let i=0;i<3;i++){const d=new Date(base);d.setUTCDate(d.getUTCDate()-i);keep.add(`OPD_TODAY|${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,"0")}${String(d.getUTCDate()).padStart(2,"0")}|`);}
+   await this.withConnectionRetry_(db=>new Promise((ok,no)=>{const tx=db.transaction("cache","readwrite"),st=tx.objectStore("cache"),r=st.openCursor();r.onsuccess=()=>{const c=r.result;if(!c)return;const k=String(c.key||"");if(k.startsWith("OPD_TODAY|")&&!Array.from(keep).some(prefix=>k.startsWith(prefix)))c.delete();c.continue();};r.onerror=()=>no(r.error);tx.oncomplete=ok;tx.onerror=()=>no(tx.error);}));
+   this._todayOPDCacheCleanupDate=t;
+  }catch(_){ }
+ },
+ async getOPDTodayCache_(city,date){
+  const c=String(city||"").trim(),d=/^\d{8}$/.test(String(date||""))?String(date):this.todayKey_();
+  if(!c)return null;
+  await this.cleanupLegacyEEGCache_();
+  await this.cleanupOldTodayOPDCaches_(this.todayKey_());
+  return this.get("cache",`OPD_TODAY|${d}|${c}`).catch(()=>null);
  },
  followupCheckedToday_(meta){
   if(!meta||meta.status!=="READY")return false;

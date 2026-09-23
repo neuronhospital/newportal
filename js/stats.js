@@ -57,47 +57,7 @@ document.addEventListener("DOMContentLoaded",()=>{
    const d=date.getUTCDate();
    return NEURON_CONFIG.cities.filter(city=>Schedule.hours(city,y,m,d)!==null);
  }
- function dateKeyForDate_(date){
-   if(!date)return "";
-   return `${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,"0")}-${String(date.getUTCDate()).padStart(2,"0")}`;
- }
- function prepareScheduleAwareDailyTrend_(trendData, city, period){
-   if(!trendData || !Array.isArray(trendData.daily) || !city || String(city).toLowerCase()==="all") return trendData;
-   if(!window.Schedule || typeof Schedule.dates!=="function") return trendData;
-   const q=U.parts();
-   let y=q.y,m=q.m;
-   if(/^\d{4}-\d{2}$/.test(String(period||""))){
-     const parts=String(period).split("-").map(Number);
-     y=parts[0];m=parts[1];
-   }
-   const todayKey=`${q.y}${String(q.m).padStart(2,"0")}${String(q.d).padStart(2,"0")}`;
-   const isCurrentMonth=(y===q.y&&m===q.m);
-   const counts=new Map();
-   trendData.daily.forEach(item=>{
-     const key=String(item.date||"");
-     if(/^\d{8}$/.test(key)) counts.set(key,{date:key,opd:Number(item.opd)||0,eeg:Number(item.eeg)||0});
-   });
-   const scheduled=Schedule.dates(city,y,m)||[];
-   const out=[];
-   scheduled.forEach(ddmmyyyy=>{
-     const s=String(ddmmyyyy||"");
-     if(!/^\d{8}$/.test(s)) return;
-     const key=s.slice(4,8)+s.slice(2,4)+s.slice(0,2);
-     if(isCurrentMonth && key>todayKey) return;
-     const item=counts.get(key);
-     out.push(item||{date:key,opd:0,eeg:0});
-   });
-   return Object.assign({},trendData,{daily:out});
- }
-
- function actualCityForDailyPeriod_(period){
-   if(period==="today")return window.DailyCity?.get?.()||null;
-   const date=selectedDateForDailyPeriod_(period);
-   return window.DailyCity?.getHistory?.(dateKeyForDate_(date))||null;
- }
  function sourceCitiesForDailyPeriod_(period){
-   const actual=actualCityForDailyPeriod_(period);
-   if(actual&&NEURON_CONFIG.cities.includes(actual))return [actual];
    return scheduledCitiesForDate_(selectedDateForDailyPeriod_(period));
  }
 
@@ -139,32 +99,9 @@ document.addEventListener("DOMContentLoaded",()=>{
  }
 
  function setRetrievalControls(active){
-   $("cancelRetrieval").hidden=!active;
    $("get").disabled=active;
    $("city").disabled=active;
    $("period").disabled=active;
- }
-
-
- async function cancelActiveRetrieval_(navigateAfter){
-   const active=activeRetrieval;
-   if(!active||active.cancelling)return false;
-   active.cancelling=true;
-   $("cancelRetrieval").disabled=true;
-   setRetrievalStatus("Cancelling retrieval…");
-   try{
-     const r=await NeuronAPI.call("cancelStatisticsRetrieval",{requestId:active.requestId},10000);
-     if(!r||!r.cancelled)throw Error("Cancellation was not confirmed by the server.");
-     try{active.controller.abort();}catch(_){}
-     await saveStatisticsRetrievalState_(active,"CANCELLED",{});
-     setRetrievalStatus("Retrieval cancelled successfully.");
-     return true;
-   }catch(e){
-     active.cancelling=false;
-     $("cancelRetrieval").disabled=false;
-     setRetrievalStatus(e.message||"Unable to cancel retrieval.");
-     return false;
-   }
  }
 
  const STATS_IDB_STORE="statisticsRetrieval";
@@ -185,8 +122,8 @@ document.addEventListener("DOMContentLoaded",()=>{
      const [y,m]=period.split("-").map(Number);
      periodText=new Intl.DateTimeFormat("en-IN",{month:"short",year:"numeric",timeZone:"Asia/Kolkata"}).format(new Date(Date.UTC(y,m-1,1)));
    }
-   const icon=status==="RUNNING"?"🔄":status==="COMPLETED"?"✓":status==="FAILED"?"⚠":"⏹";
-   const label=status==="RUNNING"?"Running":status==="COMPLETED"?"Completed":status==="FAILED"?"Failed":"Cancelled";
+   const icon=status==="RUNNING"?"🔄":status==="COMPLETED"?"✓":"⚠";
+   const label=status==="RUNNING"?"Running":status==="COMPLETED"?"Completed":"Failed";
    return `${icon} Statistics Retrieval ${label} — ${periodText} • ${cityText}`;
  }
 
@@ -214,7 +151,7 @@ document.addEventListener("DOMContentLoaded",()=>{
    Object.assign(value,extra||{});
    try{
      await IDB.put(STATS_IDB_STORE,value);
-     if(["COMPLETED","FAILED","CANCELLED"].includes(value.status)) await cleanupStatisticsRetrievals_();
+     if(["COMPLETED","FAILED"].includes(value.status)) await cleanupStatisticsRetrievals_();
    }catch(_){}
    setStatisticsTopStatus_(value.status,value.city,value.period);
    return value;
@@ -253,8 +190,8 @@ document.addEventListener("DOMContentLoaded",()=>{
          await applyStatisticsResult_(state,r.result);
          return;
        }
-       if(r.status==="FAILED"||r.status==="CANCELLED"){
-         await saveStatisticsRetrievalState_(state,r.status,{error:r.error||""});
+       if(r.status!=="RUNNING"&&r.status!=="COMPLETED"){
+         await saveStatisticsRetrievalState_(state,"FAILED",{error:r.error||"Statistics retrieval is no longer active."});
          $("results").innerHTML=`<div class="status">${U.esc(r.error||"Statistics retrieval failed.")}</div>`;
          return;
        }
@@ -272,7 +209,7 @@ document.addEventListener("DOMContentLoaded",()=>{
    try{
      const all=await IDB.all(STATS_IDB_STORE);
      const cutoff=Date.now()-5*60*1000;
-     await Promise.all(all.filter(x=>x&&["COMPLETED","FAILED","CANCELLED"].includes(x.status)&&Number(x.updatedAt||0)<cutoff)
+     await Promise.all(all.filter(x=>x&&["COMPLETED","FAILED"].includes(x.status)&&Number(x.updatedAt||0)<cutoff)
        .map(x=>IDB.delete(STATS_IDB_STORE,x.retrievalKey)));
    }catch(_){}
  }
@@ -284,8 +221,9 @@ document.addEventListener("DOMContentLoaded",()=>{
      if(!all.length)return;
      all.sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0));
      const latest=all[0];
-     setStatisticsTopStatus_(latest.status,latest.city,latest.period);
-     if(latest.status==="RUNNING" && navigator.onLine){
+     const normalizedStatus=(latest.status==="RUNNING"||latest.status==="COMPLETED")?latest.status:"FAILED";
+     setStatisticsTopStatus_(normalizedStatus,latest.city,latest.period);
+     if(normalizedStatus==="RUNNING" && navigator.onLine){
        if(latest.period==="today" || hasHistoricalAccess()) await pollStatisticsRetrieval_(latest);
      }
    }catch(_){}
@@ -295,6 +233,60 @@ document.addEventListener("DOMContentLoaded",()=>{
    if(activeRetrieval) pollStatisticsRetrieval_(activeRetrieval);
  });
 
+ function dailyDateKey_(period){
+   const d=selectedDateForDailyPeriod_(period);
+   if(!d)return "";
+   return `${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,"0")}${String(d.getUTCDate()).padStart(2,"0")}`;
+ }
+ function dailyDateLabel_(dateKey){
+   const d=new Date(Date.UTC(Number(dateKey.slice(0,4)),Number(dateKey.slice(4,6))-1,Number(dateKey.slice(6,8))));
+   return new Intl.DateTimeFormat("en-IN",{weekday:"long",day:"numeric",month:"long",year:"numeric",timeZone:"Asia/Kolkata"}).format(d);
+ }
+ function buildStatisticsFromCache_(city,period,cities,patientsByCity){
+   const rows=[];
+   cities.forEach(c=>(patientsByCity[c]||[]).forEach(p=>rows.push({
+     patientName:p?.name??p?.patientName??"",age:p?.age??"",ageUnit:p?.ageUnit??"",
+     opdCharges:p?.opdCharges??0,opdCashPaid:Number(p?.opdCashPaid)||0,opdOnlinePaid:Number(p?.opdOnlinePaid)||0,opdTotalPaid:Number(p?.opdTotalPaid)||0,
+     eegCharges:p?.eegCharges===""||p?.eegCharges==null?null:Number(p?.eegCharges),eegCashPaid:Number(p?.eegCashPaid)||0,eegOnlinePaid:Number(p?.eegOnlinePaid)||0,eegTotalPaid:Number(p?.eegTotalPaid)||0,
+     mobileNumber:p?.whatsapp??p?.mobileNumber??"",opdRefund:p?.opdRefund??0,eegRefund:p?.eegRefund??0,date:p?.date??"",appointmentId:p?.appointmentId??"",city:c,
+     followupCity:c==="Latur"?(p?.nextFollowupCity??p?.followupCity??""):""
+   })));
+   rows.sort((a,b)=>String(a.appointmentId||"").localeCompare(String(b.appointmentId||"")));
+   const t={patientCount:0,freeOPD:0,eegCount:0,freeEEG:0,opdTotal:0,opdCash:0,opdOnline:0,opdPaid:0,opdRefund:0,eegTotal:0,eegCash:0,eegOnline:0,eegPaid:0,eegRefund:0,totalCash:0,totalOnline:0,totalCollection:0,totalRefund:0,netCash:0,netOnline:0,netTotal:0};
+   const daily={};
+   rows.forEach(x=>{
+     const oc=Number(x.opdCharges)||0,or=Number(x.opdRefund)||0,ec=x.eegCharges==null?null:Number(x.eegCharges),er=Number(x.eegRefund)||0;
+     t.patientCount++;t.opdTotal+=oc;t.opdCash+=Number(x.opdCashPaid)||0;t.opdOnline+=Number(x.opdOnlinePaid)||0;t.opdPaid+=Number(x.opdTotalPaid)||0;t.opdRefund+=or;
+     if(oc===0||(oc>0&&or===oc))t.freeOPD++;
+     if(ec!=null){t.eegCount++;t.eegTotal+=ec;t.eegCash+=Number(x.eegCashPaid)||0;t.eegOnline+=Number(x.eegOnlinePaid)||0;t.eegPaid+=Number(x.eegTotalPaid)||0;t.eegRefund+=er;if(ec===0||(ec>0&&er===ec))t.freeEEG++;}
+     const k=String(x.date||"");if(/^\d{8}$/.test(k)){if(!daily[k])daily[k]={opd:0,eeg:0};daily[k].opd++;if(ec!=null)daily[k].eeg++;}
+   });
+   t.totalCash=t.opdCash+t.eegCash;t.totalOnline=t.opdOnline+t.eegOnline;t.totalCollection=t.opdPaid+t.eegPaid;t.totalRefund=t.opdRefund+t.eegRefund;t.netCash=t.totalCash-t.totalRefund;t.netOnline=t.totalOnline;t.netTotal=t.netCash+t.netOnline;
+   return {ok:true,city:city,period:period,periodLabel:retrievalPeriodLabel(period),showMode:"both",hasDetail:true,rows:rows,totals:t,trendData:{daily:Object.keys(daily).sort().map(k=>({date:k,opd:daily[k].opd,eeg:daily[k].eeg}))},statisticsSourceCities:cities.slice()};
+ }
+ async function tryDailyCacheStatistics_(city,period,cities){
+   if(!["today","yesterday","daybefore"].includes(period))return {handled:false};
+   const dateKey=dailyDateKey_(period),targets=(Array.isArray(cities)&&cities.length?cities:[city]);
+   const patientsByCity={},missing=[];
+   for(const c of targets){
+     const cache=await IDB.getOPDTodayCache_(c,dateKey);
+     if(cache&&Array.isArray(cache.patients)&&cache.status!=="STALE"&&cache.status!=="CACHED_INCOMPLETE")patientsByCity[c]=cache.patients;else missing.push(c);
+   }
+   if(missing.length)return {handled:false,cacheMissing:true,missing,dateKey,cachedResult:buildStatisticsFromCache_(city,period,targets.filter(c=>!missing.includes(c)),patientsByCity)};
+   return {handled:true,result:buildStatisticsFromCache_(city,period,targets,patientsByCity)};
+ }
+
+ function mergeStatisticsResults_(base,extra){
+   if(!base)return extra;
+   if(!extra)return base;
+   const rows=[...(base.rows||[]),...(extra.rows||[])];
+   const a=base.totals||{},b=extra.totals||{},sum=k=>(Number(a[k])||0)+(Number(b[k])||0);
+   const totals={patientCount:sum("patientCount"),freeOPD:sum("freeOPD"),eegCount:sum("eegCount"),freeEEG:sum("freeEEG"),opdTotal:sum("opdTotal"),opdCash:sum("opdCash"),opdOnline:sum("opdOnline"),opdPaid:sum("opdPaid"),opdRefund:sum("opdRefund"),eegTotal:sum("eegTotal"),eegCash:sum("eegCash"),eegOnline:sum("eegOnline"),eegPaid:sum("eegPaid"),eegRefund:sum("eegRefund")};
+   totals.totalCash=totals.opdCash+totals.eegCash;totals.totalOnline=totals.opdOnline+totals.eegOnline;totals.totalCollection=totals.opdPaid+totals.eegPaid;totals.totalRefund=totals.opdRefund+totals.eegRefund;totals.netCash=totals.totalCash-totals.totalRefund;totals.netOnline=totals.totalOnline;totals.netTotal=totals.netCash+totals.netOnline;
+   const daily={};[...(base.trendData?.daily||[]),...(extra.trendData?.daily||[])].forEach(x=>{const k=String(x.date||"");if(!daily[k])daily[k]={opd:0,eeg:0};daily[k].opd+=Number(x.opd)||0;daily[k].eeg+=Number(x.eeg)||0;});
+   return {...extra,city:"All",period:base.period,periodLabel:base.periodLabel,showMode:"both",hasDetail:true,rows,totals,trendData:{...(extra.trendData||{}),daily:Object.keys(daily).sort().map(k=>({date:k,opd:daily[k].opd,eeg:daily[k].eeg}))},statisticsSourceCities:[...(base.statisticsSourceCities||[]),...(extra.statisticsSourceCities||[])].filter((x,i,a)=>a.indexOf(x)===i)};
+ }
+
  async function retrieveSelectedRecords(){
    const btn=$("get");
    const citySelect=$("city");
@@ -302,14 +294,52 @@ document.addEventListener("DOMContentLoaded",()=>{
    const old=btn.textContent;
    const selectedPeriod=periodSelect.value;
    let sourceCities=null;
-   if(citySelect.value==="all" && (selectedPeriod==="today" || selectedPeriod==="yesterday" || selectedPeriod==="daybefore"))
+   if(selectedPeriod==="today" || selectedPeriod==="yesterday" || selectedPeriod==="daybefore"){
      sourceCities=sourceCitiesForDailyPeriod_(selectedPeriod);
-   const request=statisticsRequest_(citySelect.value,selectedPeriod,"both",sourceCities||[]);
-   const retrievalKey=statisticsCriteriaKey_(request.city,request.period,request.showMode,request.selectedCities);
+     if(citySelect.value!=="all" && !sourceCities.includes(citySelect.value)){
+       const dateKey=dailyDateKey_(selectedPeriod);
+       const message=`${U.esc(citySelect.value)} OPD was not scheduled on ${U.esc(dailyDateLabel_(dateKey))}.`;
+       $("results").innerHTML=`<div class="status">${message}</div>`;
+       setRetrievalStatus("Selected city/date is not scheduled.");
+       return;
+     }
+     if(citySelect.value==="all" && !sourceCities.length){
+       const dateKey=dailyDateKey_(selectedPeriod);
+       $("results").innerHTML=`<div class="status">No OPD was scheduled on ${U.esc(dailyDateLabel_(dateKey))}.</div>`;
+       setRetrievalStatus("No scheduled cities for the selected date.");
+       return;
+     }
+   }
+   let request=statisticsRequest_(citySelect.value,selectedPeriod,"both",sourceCities||[]);
+   let retrievalKey=statisticsCriteriaKey_(request.city,request.period,request.showMode,request.selectedCities);
    setRetrievalControls(true);
    $("historyGate").hidden=true;
    btn.textContent="Retrieving Records…";
-   $("results").innerHTML=`<div class="status">Connecting to Statistics retrieval…</div>`;
+   $("results").innerHTML=`<div class="status">Checking schedule and OPD cache…</div>`;
+
+   let cacheFallback=null;
+   if(["today","yesterday","daybefore"].includes(selectedPeriod)){
+     const cacheCheck=await tryDailyCacheStatistics_(request.city,selectedPeriod,sourceCities);
+     if(cacheCheck.handled){
+       const state={retrievalKey:retrievalKey,requestId:"",city:request.city,period:request.period,showMode:request.showMode,selectedCities:request.selectedCities,createdAt:Date.now(),updatedAt:Date.now()};
+       activeRetrieval=state;
+       await applyStatisticsResult_(state,cacheCheck.result);
+       activeRetrieval=null;
+       setRetrievalStatus("Statistics retrieved from OPD_TODAY cache.");
+       setRetrievalControls(false);
+       btn.textContent=old;
+       return;
+     }
+     if(cacheCheck.cacheMissing){
+       cacheFallback=cacheCheck;
+       const missingText=cacheCheck.missing.map(U.esc).join(", ");
+       $("results").innerHTML=`<div class="status">OPD cache is not available for ${missingText} on ${U.esc(dailyDateLabel_(cacheCheck.dateKey))}. Scanning Google Sheet, this may take some time…</div>`;
+     }
+   }
+   if(cacheFallback && request.city==="all"){
+     request=statisticsRequest_("all",selectedPeriod,"both",cacheFallback.missing);
+     retrievalKey=statisticsCriteriaKey_(request.city,request.period,request.showMode,request.selectedCities);
+   }
 
    try{
      const start=await NeuronAPI.call("startStatisticsRetrieval",request,10000);
@@ -337,36 +367,27 @@ document.addEventListener("DOMContentLoaded",()=>{
        return;
      }
 
-     const controller=new AbortController();
-     state.controller=controller;
-     state.cancelling=false;
-     $("results").innerHTML=`<div class="status">${
-       citySelect.value==="all"
-         ? ((selectedPeriod==="today" || selectedPeriod==="yesterday" || selectedPeriod==="daybefore")
-            ? "Determining city and retrieving records…"
-            : "Retrieving records from all cities…")
-         : "Retrieving records from Google Sheets…"
-     }</div>`;
+     if(!cacheFallback){
+       $("results").innerHTML=`<div class="status">${
+         citySelect.value==="all"
+           ? ((selectedPeriod==="today" || selectedPeriod==="yesterday" || selectedPeriod==="daybefore")
+              ? "Determining city and retrieving records…"
+              : "Retrieving records from all cities…")
+           : "Retrieving records from Google Sheets…"
+       }</div>`;
+     }
 
      try{
-       const r=await NeuronAPI.call("retrieveRecords",Object.assign({},request,{
+       let r=await NeuronAPI.call("retrieveRecords",Object.assign({},request,{
          retrievalKey:state.retrievalKey,requestId:state.requestId
-       }),30000,{signal:controller.signal});
-       if(r&&r.cancelled){
-         await saveStatisticsRetrievalState_(state,"CANCELLED",{});
-         setRetrievalStatus("Retrieval cancelled successfully.");
-         return;
-       }
+       }),30000);
+       if(cacheFallback && request.city==="all")r=mergeStatisticsResults_(cacheFallback.cachedResult,r);
        await applyStatisticsResult_(state,r);
      }catch(e){
-       if(state.cancelling)return;
        const msg=String(e.message||e);
        if(msg.indexOf("Network timeout")!==-1){
          setRetrievalStatus("Retrieval timed out / connection lost. The backend retrieval is still being monitored.");
          $("results").innerHTML=`<div class="status">Connection lost. Statistics retrieval continues in the background. You can leave this page and reconnect later.</div>`;
-       }else if(msg==="Request cancelled."){
-         await saveStatisticsRetrievalState_(state,"CANCELLED",{});
-         setRetrievalStatus("Retrieval cancelled successfully.");
        }else{
          setRetrievalStatus(msg);
          $("results").innerHTML=`<div class="status">${U.esc(msg)}</div>`;
@@ -378,14 +399,10 @@ document.addEventListener("DOMContentLoaded",()=>{
      $("results").innerHTML=`<div class="status">${U.esc(msg)}</div>`;
      setRetrievalStatus("Unable to start or reconnect to Statistics retrieval. If the connection was interrupted, retrying the same criteria will reuse any server-side running retrieval.");
    }finally{
-     if(activeRetrieval){
-       activeRetrieval.controller=activeRetrieval.controller||null;
-     }
      setRetrievalControls(false);
      btn.textContent=old;
    }
  }
- $("cancelRetrieval").onclick=()=>cancelActiveRetrieval_(false);
 
  let historicalVerifyPending=false;
  async function requestHistoricalAccess(){
@@ -491,7 +508,13 @@ document.addEventListener("DOMContentLoaded",()=>{
        return;
      }
      const city=esc(r.city||$("city").value);
-     const dateLabel=esc(r.periodLabel||$("period").selectedOptions[0]?.textContent||$("period").value);
+     const dateLabel=["today","yesterday","daybefore"].includes(r.period)
+       ? esc(dailyDateLabel_(dailyDateKey_(r.period)))
+       : esc(r.periodLabel||$("period").selectedOptions[0]?.textContent||$("period").value);
+     if(["today","yesterday","daybefore"].includes(r.period)){
+       $("results").innerHTML=`<div class="status">No OPD records found for ${city} on ${dateLabel}.</div>`;
+       return;
+     }
      $("results").innerHTML=`<div class="status">No Record Available for ${city}, ${dateLabel}, Patient / EEG.</div>`;
      return;
    }

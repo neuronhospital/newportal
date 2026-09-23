@@ -1,21 +1,12 @@
 window.NeuronAPI={
- call:async(action,data={},timeout=25000,options={})=>{
+ call:async(action,data={},timeout=25000)=>{
   const u=NEURON_CONFIG.apiUrl;
   if(!u||u.includes("PASTE_YOUR"))throw Error("Configure the Apps Script /exec URL in js/config.js.");
   if(!navigator.onLine)throw Error("You are offline. The request is retained locally where supported.");
 
   const ms=Math.max(1000,Number(timeout)||25000);
   const controller=new AbortController();
-  const externalSignal=options&&options.signal;
-  let externalAborted=false;
-  let externalAbortHandler=null;
-  let abortTimer=null;
   let timeoutTimer=null;
-  if(externalSignal){
-    externalAbortHandler=()=>{externalAborted=true;try{controller.abort();}catch(_) {}};
-    if(externalSignal.aborted) externalAbortHandler();
-    else externalSignal.addEventListener("abort",externalAbortHandler,{once:true});
-  }
 
   const run=async()=>{
     const r=await fetch(u,{
@@ -47,12 +38,10 @@ window.NeuronAPI={
     return await Promise.race([run(),hardTimeout]);
   }catch(e){
     if(e&&e.name==="AbortError")
-      throw externalAborted ? Error("Request cancelled.") : Error("Network timeout. The request may still have been recorded.");
+      throw Error("Network timeout. The request may still have been recorded.");
     throw e;
   }finally{
-    if(abortTimer)clearTimeout(abortTimer);
     if(timeoutTimer)clearTimeout(timeoutTimer);
-    if(externalSignal&&externalAbortHandler)externalSignal.removeEventListener("abort",externalAbortHandler);
   }
  },
  verifyBooking:async(id,city,retries=2,bookingData={})=>{
