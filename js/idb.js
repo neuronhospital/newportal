@@ -108,6 +108,7 @@ window.IDB={
  _followupDailyBackgroundRuns:{},
  _todayOPDBackgroundRuns:{},
  _backgroundTimersStarted:false,
+ _backgroundSyncRecoveryTimers:{},
  async cleanupLegacyEEGCache_(){
   if(this._legacyEEGCacheCleaned)return;
   this._legacyEEGCacheCleaned=true;
@@ -176,6 +177,34 @@ window.IDB={
  },
  async getBackgroundSyncStatus_(kind,city,date){
   return this.get("meta",this.backgroundSyncStatusKey_(kind,city,date));
+ },
+ scheduleBackgroundSyncRecovery_(kind,city,date,leaseExpiresAt){
+  const k=String(kind||"").trim(),c=String(city||"").trim(),d=String(date||"").trim();
+  const lease=Number(leaseExpiresAt)||0;
+  if(!k||!c||!d||!lease)return;
+  const timerKey=this.backgroundSyncStatusKey_(k,c,d);
+  const existingTimer=this._backgroundSyncRecoveryTimers[timerKey];
+  if(existingTimer&&existingTimer.expiresAt>=lease)return;
+  if(existingTimer)clearTimeout(existingTimer.timer);
+  const delay=Math.max(50,lease-Date.now()+100);
+  const timer=setTimeout(async()=>{
+   delete this._backgroundSyncRecoveryTimers[timerKey];
+   try{
+    const state=await this.getBackgroundSyncStatus_(k,c,d).catch(()=>null);
+    if(!state||state.status!=="RUNNING")return;
+    const currentLease=Number(state.leaseExpiresAt)||0;
+    if(currentLease>Date.now()){
+     this.scheduleBackgroundSyncRecovery_(k,c,d,currentLease);
+     return;
+    }
+    if(k==="OPD_TODAY")await this.syncTodayOPDCacheBackground_(c);
+    else if(k==="FOLLOWUP")await this.startDailyFollowupBackgroundSync_(c);
+    await this.renderBackgroundSyncBar_();
+   }catch(_){
+    this.scheduleBackgroundSyncRecovery_(k,c,d,Date.now()+this.BACKGROUND_SYNC_LEASE_MS);
+   }
+  },delay);
+  this._backgroundSyncRecoveryTimers[timerKey]={timer,expiresAt:lease};
  },
  async setBackgroundSyncStatus_(status){
   return this.put("meta",status);
@@ -291,8 +320,18 @@ window.IDB={
   const task=(async()=>{
    const date=this.todayKey_();
    try{
-    const gate=this.opdBackgroundStartGate_(date);
-    if(!gate.eligible)return {mode:"SKIPPED",reason:gate.reason};
+    const existing=await this.getBackgroundSyncStatus_("OPD_TODAY",c,date).catch(()=>null);
+    if(existing?.status==="SUCCESS"||existing?.status==="FAILED"||existing?.status==="INCOMPLETE")return {mode:"SKIPPED",reason:"CYCLE_TERMINAL",status:existing.status};
+    if(existing?.status==="RUNNING"){
+     const lease=Number(existing.leaseExpiresAt)||0;
+     if(lease>Date.now()){
+      this.scheduleBackgroundSyncRecovery_("OPD_TODAY",c,date,lease);
+      return {mode:"SKIPPED",reason:"ACTIVE",status:"RUNNING"};
+     }
+    }else{
+     const gate=this.opdBackgroundStartGate_(date);
+     if(!gate.eligible)return {mode:"SKIPPED",reason:gate.reason};
+    }
     return await this.runBackgroundSyncCycle_("OPD_TODAY",c,date,async()=>{
       await this.waitForCriticalOperationsToFinish_(3000);
       const key=`OPD_TODAY|${date}|${c}`;
@@ -331,6 +370,13 @@ window.IDB={
     if(marker)return {mode:"SKIPPED",reason:"COMPLETE_MARKER"};
     const existing=await this.getBackgroundSyncStatus_("FOLLOWUP",c,date).catch(()=>null);
     if(existing&&(existing.status==="SUCCESS"||existing.status==="FAILED"||existing.status==="INCOMPLETE"))return {mode:"SKIPPED",reason:"CYCLE_TERMINAL",status:existing.status};
+    if(existing?.status==="RUNNING"){
+     const lease=Number(existing.leaseExpiresAt)||0;
+     if(lease>Date.now()){
+      this.scheduleBackgroundSyncRecovery_("FOLLOWUP",c,date,lease);
+      return {mode:"SKIPPED",reason:"ACTIVE",status:"RUNNING"};
+     }
+    }
     return await this.runBackgroundSyncCycle_("FOLLOWUP",c,date,async()=>{
       await this.waitForCriticalOperationsToFinish_(3000);
       const meta=await this.getFollowupMeta(c);
