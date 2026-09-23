@@ -268,10 +268,11 @@ document.addEventListener("DOMContentLoaded",()=>{
    if(!["today","yesterday","daybefore"].includes(period))return {handled:false};
    const dateKey=dailyDateKey_(period),targets=(Array.isArray(cities)&&cities.length?cities:[city]);
    const patientsByCity={},missing=[];
-   for(const c of targets){
-     const cache=await IDB.getOPDTodayCache_(c,dateKey);
-     if(cache&&Array.isArray(cache.patients)&&cache.status!=="STALE"&&cache.status!=="CACHED_INCOMPLETE")patientsByCity[c]=cache.patients;else missing.push(c);
-   }
+   const results=await Promise.all(targets.map(async c=>({city:c,cache:await IDB.getOPDTodayCache_(c,dateKey)})));
+   results.forEach(({city:c,cache})=>{
+     if(cache&&Array.isArray(cache.patients)&&cache.status!=="STALE"&&cache.status!=="CACHED_INCOMPLETE")patientsByCity[c]=cache.patients;
+     else missing.push(c);
+   });
    if(missing.length)return {handled:false,cacheMissing:true,missing,dateKey,cachedResult:buildStatisticsFromCache_(city,period,targets.filter(c=>!missing.includes(c)),patientsByCity)};
    return {handled:true,result:buildStatisticsFromCache_(city,period,targets,patientsByCity)};
  }

@@ -127,8 +127,9 @@ window.IDB={
  async getOPDTodayCache_(city,date){
   const c=String(city||"").trim(),d=/^\d{8}$/.test(String(date||""))?String(date):this.todayKey_();
   if(!c)return null;
-  await this.cleanupLegacyEEGCache_();
-  await this.cleanupOldTodayOPDCaches_(this.todayKey_());
+  // Statistics cache lookup must be an exact O(1)-style IDB key read.
+  // Retention cleanup is maintained by the normal OPD_TODAY synchronization
+  // path and must never block Statistics retrieval.
   return this.get("cache",`OPD_TODAY|${d}|${c}`).catch(()=>null);
  },
  followupCheckedToday_(meta){
