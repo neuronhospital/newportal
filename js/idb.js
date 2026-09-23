@@ -2,11 +2,9 @@ window.IDB={
  db:null,
  _dbGeneration:0,
  CACHE_FRESHNESS_MS:30*60*1000,
- BACKGROUND_SYNC_MAX_ATTEMPTS:3,
- BACKGROUND_SYNC_RETRY_DELAY_MS:3000,
  OPD_BACKGROUND_SYNC_INTERVAL_MS:15*60*1000,
- BACKGROUND_SYNC_LEASE_MS:15000,
- BACKGROUND_SYNC_HEARTBEAT_MS:5000,
+ MANUAL_FOLLOWUP_REBUILD_LEASE_MS:20000,
+ MANUAL_FOLLOWUP_REBUILD_HEARTBEAT_MS:5000,
  _isConnectionLifecycleError_(e){
   const name=String(e?.name||"").toLowerCase();
   const msg=String(e?.message||e||"").toLowerCase();
@@ -105,10 +103,8 @@ window.IDB={
  _legacyEEGCacheCleaned:false,
  _todayOPDCacheCleanupDate:"",
  _todayOPDRefreshes:{},
- _followupDailyBackgroundRuns:{},
- _todayOPDBackgroundRuns:{},
  _backgroundTimersStarted:false,
- _backgroundSyncRecoveryTimers:{},
+ _backgroundServiceWorkerMessageBound:false,
  async cleanupLegacyEEGCache_(){
   if(this._legacyEEGCacheCleaned)return;
   this._legacyEEGCacheCleaned=true;
@@ -117,17 +113,6 @@ window.IDB={
  async cleanupOldTodayOPDCaches_(today){
   if(this._todayOPDCacheCleanupDate===today)return;
   try{await this.deleteCacheByPrefixExcept("cache","OPD_TODAY|",`OPD_TODAY|${today}|`);this._todayOPDCacheCleanupDate=today;}catch(_){ }
- },
- async criticalOperationActive_(){
-  try{
-   const active=await this.pending();
-   return Array.isArray(active)&&active.length>0;
-  }catch(_){
-   return true;
-  }
- },
- async waitForCriticalOperationsToFinish_(retryMs=3000){
-  while(await this.criticalOperationActive_())await new Promise(resolve=>setTimeout(resolve,retryMs));
  },
  followupCheckedToday_(meta){
   if(!meta||meta.status!=="READY")return false;
@@ -169,232 +154,8 @@ window.IDB={
   const current=this.getBackgroundSyncBarState_();
   if(current?.cycleId===cycleId)this.setBackgroundSyncBarState_({...current,status:"DISMISSED",dismissAt:0,updatedAt:Date.now()});
  },
- followupBackgroundMarkerKey_(city,date){
-  return `neuron_followup_background_${String(date||"")}_${String(city||"").trim()}`;
- },
- opdBackgroundStartKey_(date){
-  return `neuron_opd_background_start_${String(date||"").trim()}`;
- },
  async getBackgroundSyncStatus_(kind,city,date){
   return this.get("meta",this.backgroundSyncStatusKey_(kind,city,date));
- },
- scheduleBackgroundSyncRecovery_(kind,city,date,leaseExpiresAt){
-  const k=String(kind||"").trim(),c=String(city||"").trim(),d=String(date||"").trim();
-  const lease=Number(leaseExpiresAt)||0;
-  if(!k||!c||!d||!lease)return;
-  const timerKey=this.backgroundSyncStatusKey_(k,c,d);
-  const existingTimer=this._backgroundSyncRecoveryTimers[timerKey];
-  if(existingTimer&&existingTimer.expiresAt>=lease)return;
-  if(existingTimer)clearTimeout(existingTimer.timer);
-  const delay=Math.max(50,lease-Date.now()+100);
-  const timer=setTimeout(async()=>{
-   delete this._backgroundSyncRecoveryTimers[timerKey];
-   try{
-    const state=await this.getBackgroundSyncStatus_(k,c,d).catch(()=>null);
-    if(!state||state.status!=="RUNNING")return;
-    const currentLease=Number(state.leaseExpiresAt)||0;
-    if(currentLease>Date.now()){
-     this.scheduleBackgroundSyncRecovery_(k,c,d,currentLease);
-     return;
-    }
-    if(k==="OPD_TODAY")await this.syncTodayOPDCacheBackground_(c);
-    else if(k==="FOLLOWUP")await this.startDailyFollowupBackgroundSync_(c);
-    await this.renderBackgroundSyncBar_();
-   }catch(_){
-    this.scheduleBackgroundSyncRecovery_(k,c,d,Date.now()+this.BACKGROUND_SYNC_LEASE_MS);
-   }
-  },delay);
-  this._backgroundSyncRecoveryTimers[timerKey]={timer,expiresAt:lease};
- },
- async setBackgroundSyncStatus_(status){
-  return this.put("meta",status);
- },
- opdBackgroundStartGate_(date){
-  const key=this.opdBackgroundStartKey_(date),now=Date.now();
-  let previous=0;
-  try{previous=Number(localStorage.getItem(key))||0;}catch(_){return {eligible:false,reason:"STORAGE_UNAVAILABLE"};}
-  if(previous&&now-previous<this.OPD_BACKGROUND_SYNC_INTERVAL_MS)return {eligible:false,reason:"WINDOW_ACTIVE",startedAt:previous};
-  try{localStorage.setItem(key,String(now));}catch(_){return {eligible:false,reason:"STORAGE_UNAVAILABLE"};}
-  return {eligible:true,startedAt:now};
- },
- async claimBackgroundSync_(kind,city,date,mode="INCREMENTAL"){
-  const c=String(city||"").trim(),d=String(date||"").trim(),k=String(kind||"").trim();
-  if(!c||!d||!k)return {claimed:false,reason:"INVALID"};
-  const now=Date.now(),key=this.backgroundSyncStatusKey_(k,c,d),db=await this.open();
-  return new Promise((ok,no)=>{
-    const t=db.transaction("meta","readwrite"),st=t.objectStore("meta"),r=st.get(key);
-    let result={claimed:false,reason:"UNKNOWN"},next=null;
-    r.onsuccess=()=>{
-      const current=r.result||null;
-      const terminal=current&&(current.status==="SUCCESS"||current.status==="FAILED"||current.status==="INCOMPLETE");
-      const running=current?.status==="RUNNING";
-      const leaseFresh=running&&Number(current.leaseExpiresAt)>now;
-      if(terminal){result={claimed:false,reason:"TERMINAL",status:current.status};return;}
-      if(leaseFresh){result={claimed:false,reason:"ACTIVE",status:current.status};return;}
-      const previousAttempts=Math.max(0,Number(current?.attemptCount)||0);
-      if(running&&previousAttempts>=this.BACKGROUND_SYNC_MAX_ATTEMPTS){
-       const finished={...current,status:"FAILED",completedAt:now,durationMs:Math.max(0,now-(Number(current.startedAt)||now)),lastHeartbeatAt:now,leaseExpiresAt:0,error:current.error||"Background synchronization attempt limit reached.",updatedAt:now};
-       st.put(finished);result={claimed:false,reason:"ATTEMPTS_EXHAUSTED",status:finished};return;
-      }
-      const owner=`${now}-${Math.random().toString(36).slice(2)}`;
-      const resumedAttempt=running?Math.min(this.BACKGROUND_SYNC_MAX_ATTEMPTS,previousAttempts+1):1;
-      const cycleId=running?String(current.cycleId||`${k}:${d}:${c}:${Number(current.startedAt)||now}`):`${k}:${d}:${c}:${now}`;
-      next={key,cacheType:k,city:c,date:d,status:"RUNNING",mode,owner,cycleId,startedAt:running?Number(current.startedAt)||now:now,completedAt:null,durationMs:null,attemptCount:previousAttempts,maxAttempts:this.BACKGROUND_SYNC_MAX_ATTEMPTS,rowsProcessed:running?Number(current.rowsProcessed)||0:0,rowsAdded:running?Number(current.rowsAdded)||0:0,lastHeartbeatAt:now,leaseExpiresAt:now+this.BACKGROUND_SYNC_LEASE_MS,error:running?current.error||null:null,retryAt:running?Number(current.retryAt)||0:0,resumeAttempt:resumedAttempt,updatedAt:now};
-      st.put(next);result={claimed:true,status:next};
-    };
-    r.onerror=()=>no(r.error);
-    t.oncomplete=()=>ok(result);
-    t.onerror=()=>no(t.error||new Error("Background synchronization claim failed."));
-    t.onabort=()=>no(t.error||new Error("Background synchronization claim aborted."));
-  });
- },
- async heartbeatBackgroundSync_(key,owner){
-  if(!key||!owner)return false;
-  try{
-    const db=await this.open(),now=Date.now();
-    return await new Promise((ok,no)=>{
-      const t=db.transaction("meta","readwrite"),st=t.objectStore("meta"),r=st.get(key);let alive=false;
-      r.onsuccess=()=>{const x=r.result;if(x?.status==="RUNNING"&&x.owner===owner){st.put({...x,lastHeartbeatAt:now,leaseExpiresAt:now+this.BACKGROUND_SYNC_LEASE_MS,updatedAt:now});alive=true;}};
-      r.onerror=()=>no(r.error);t.oncomplete=()=>ok(alive);t.onerror=()=>no(t.error||new Error("Background synchronization heartbeat failed."));
-    });
-  }catch(_){return false;}
- },
- async updateBackgroundSyncAttempt_(key,owner,attempt,error=null){
-  const db=await this.open(),now=Date.now();
-  return new Promise((ok,no)=>{
-    const t=db.transaction("meta","readwrite"),st=t.objectStore("meta"),r=st.get(key);let updated=null;
-    r.onsuccess=()=>{const x=r.result;if(!x||x.owner!==owner||x.status!=="RUNNING"){updated=null;return;}updated={...x,attemptCount:attempt,lastHeartbeatAt:now,leaseExpiresAt:now+this.BACKGROUND_SYNC_LEASE_MS,error:error?String(error):null,retryAt:error?now+this.BACKGROUND_SYNC_RETRY_DELAY_MS:0,updatedAt:now};st.put(updated);};
-    r.onerror=()=>no(r.error);t.oncomplete=()=>ok(updated);t.onerror=()=>no(t.error||new Error("Background synchronization attempt update failed."));
-  });
- },
- async finishBackgroundSync_(key,owner,status,error=null,extra={}){
-  const db=await this.open(),now=Date.now();
-  return new Promise((ok,no)=>{
-    const t=db.transaction("meta","readwrite"),st=t.objectStore("meta"),r=st.get(key);let result=null;
-    r.onsuccess=()=>{const x=r.result;if(!x||x.owner!==owner){result=null;return;}const started=Number(x.startedAt)||now;result={...x,status,completedAt:now,durationMs:Math.max(0,now-started),lastHeartbeatAt:now,leaseExpiresAt:0,error:error?String(error):null,updatedAt:now,...extra};st.put(result);};
-    r.onerror=()=>no(r.error);t.oncomplete=()=>ok(result);t.onerror=()=>no(t.error||new Error("Background synchronization completion update failed."));
-  });
- },
- backgroundSyncSuccess_(kind,result){
-  return !!result&&result.mode!=="FAILED"&&result.mode!=="SKIPPED"&&result.mode!=="IN_PROGRESS";
- },
- async runBackgroundSyncCycle_(kind,city,date,operation,mode="INCREMENTAL"){
-  const c=String(city||"").trim(),d=String(date||"").trim(),k=String(kind||"").trim();
-  if(!c||!d)return {mode:"SKIPPED",reason:"INVALID"};
-  const claim=await this.claimBackgroundSync_(k,c,d,mode);
-  if(!claim.claimed)return {mode:"SKIPPED",reason:claim.reason,status:claim.status};
-  void this.renderBackgroundSyncBar_().catch(()=>{});
-  const state=claim.status, key=state.key, owner=state.owner;
-  this.backgroundSyncBarRunning_(state.cycleId);
-  let heartbeatTimer=null;
-  try{
-    heartbeatTimer=setInterval(()=>{void this.heartbeatBackgroundSync_(key,owner);},this.BACKGROUND_SYNC_HEARTBEAT_MS);
-    let attempt=Math.max(1,Math.min(this.BACKGROUND_SYNC_MAX_ATTEMPTS,Number(state.resumeAttempt)||1));
-    let lastResult=null,lastError=null;
-    const retryAt=Number(state.retryAt)||0;
-    if(retryAt>0&&retryAt>Date.now())await new Promise(resolve=>setTimeout(resolve,retryAt-Date.now()));
-    for(;attempt<=this.BACKGROUND_SYNC_MAX_ATTEMPTS;attempt++){
-      await this.updateBackgroundSyncAttempt_(key,owner,attempt,null);
-      try{lastResult=await operation();}catch(e){lastResult={mode:"FAILED",error:e?.message||String(e)};}
-      if(this.backgroundSyncSuccess_(k,lastResult)){
-        const finished=await this.finishBackgroundSync_(key,owner,"SUCCESS",null,{rowsProcessed:Number(lastResult?.rowsReceived||lastResult?.rowsLoaded||lastResult?.rowsScanned||0),rowsAdded:Number(lastResult?.rowsAdded||lastResult?.rowsInserted||0)});
-        if(k==="FOLLOWUP")try{localStorage.setItem(this.followupBackgroundMarkerKey_(c,d),"1");}catch(_){ }
-        return {...lastResult,backgroundStatus:finished||null,mode:lastResult?.mode||"SUCCESS"};
-      }
-      lastError=lastResult?.error||`Background ${k} synchronization attempt ${attempt} failed.`;
-      if(attempt<this.BACKGROUND_SYNC_MAX_ATTEMPTS){
-        await this.updateBackgroundSyncAttempt_(key,owner,attempt,lastError);
-        await new Promise(resolve=>setTimeout(resolve,this.BACKGROUND_SYNC_RETRY_DELAY_MS));
-      }
-    }
-    const finished=await this.finishBackgroundSync_(key,owner,"FAILED",lastError);
-    if(k==="FOLLOWUP")try{localStorage.removeItem(this.followupBackgroundMarkerKey_(c,d));}catch(_){ }
-    return {mode:"FAILED",city:c,error:lastError,backgroundStatus:finished||null};
-  }finally{
-    if(heartbeatTimer)clearInterval(heartbeatTimer);
-  }
- },
- async syncTodayOPDCacheBackground_(city){
-  const c=String(city||"").trim();if(!c)return {mode:"SKIPPED",reason:"CITY_MISSING"};
-  if(this._todayOPDBackgroundRuns[c])return this._todayOPDBackgroundRuns[c];
-  const task=(async()=>{
-   const date=this.todayKey_();
-   try{
-    const existing=await this.getBackgroundSyncStatus_("OPD_TODAY",c,date).catch(()=>null);
-    if(existing?.status==="SUCCESS"||existing?.status==="FAILED"||existing?.status==="INCOMPLETE")return {mode:"SKIPPED",reason:"CYCLE_TERMINAL",status:existing.status};
-    if(existing?.status==="RUNNING"){
-     const lease=Number(existing.leaseExpiresAt)||0;
-     if(lease>Date.now()){
-      this.scheduleBackgroundSyncRecovery_("OPD_TODAY",c,date,lease);
-      return {mode:"SKIPPED",reason:"ACTIVE",status:"RUNNING"};
-     }
-    }else{
-     const gate=this.opdBackgroundStartGate_(date);
-     if(!gate.eligible)return {mode:"SKIPPED",reason:gate.reason};
-    }
-    return await this.runBackgroundSyncCycle_("OPD_TODAY",c,date,async()=>{
-      await this.waitForCriticalOperationsToFinish_(3000);
-      const key=`OPD_TODAY|${date}|${c}`;
-      let cache=await this.get("cache",key).catch(()=>null);
-      const stateResult=await window.NeuronAPI.call("getTodayOPDSyncState",{city:c,date},10000);
-      if(!stateResult||stateResult.ok!==true)throw new Error(stateResult?.error||"Unable to check today's OPD synchronization state.");
-      const state=stateResult.syncState;
-      if(!state){const refreshed=await this.getTodayOPDCache_(c,{forceRefresh:true});return {mode:"FULL_REFRESH",city:c,cache:refreshed};}
-      if(!cache||!Array.isArray(cache.patients)||cache.complete!==true||cache.status==="STALE"||cache.status==="CACHED_INCOMPLETE")return {mode:"FULL_REFRESH",city:c,cache:await this.getTodayOPDCache_(c,{forceRefresh:true})};
-      const clientSerial=Number(cache.lastSerial),clientRow=Number(cache.lastRowNumber);
-      if(!Number.isInteger(clientSerial)||!Number.isInteger(clientRow)||clientRow<1)return {mode:"FULL_REFRESH",city:c,cache:await this.getTodayOPDCache_(c,{forceRefresh:true})};
-      if(Number(state.serial)<clientSerial||Number(state.rowNumber)<clientRow)return {mode:"FULL_REFRESH",city:c,cache:await this.getTodayOPDCache_(c,{forceRefresh:true})};
-      if(Number(state.serial)===clientSerial&&Number(state.rowNumber)===clientRow){const now=Date.now();const next={...cache,lastServerCheckAt:now};await this.replace("cache",key,next);return {mode:"UNCHANGED",city:c,cache:next};}
-      const r=await window.NeuronAPI.call("getTodayOPDIncremental",{city:c,date,lastSerial:clientSerial,lastRowNumber:clientRow},15000);
-      if(!r||r.ok!==true||r.valid!==true||r.unchanged===true&&Number(r.syncState?.serial)!==clientSerial)return {mode:"FULL_REFRESH",city:c,cache:await this.getTodayOPDCache_(c,{forceRefresh:true})};
-      if(r.unchanged===true){const now=Date.now();const next={...cache,lastServerCheckAt:now,lastSerial:Number(r.syncState?.serial)||clientSerial,lastRowNumber:Number(r.syncState?.rowNumber)||clientRow};await this.replace("cache",key,next);return {mode:"UNCHANGED",city:c,cache:next};}
-      const rows=Array.isArray(r.rows)?r.rows:[],existing=Array.isArray(cache.patients)?cache.patients.slice():[],byId=new Map(existing.map(x=>[String(x?.appointmentId||""),x]));
-      rows.forEach(x=>{const id=String(x?.appointmentId||"");if(id)byId.set(id,x);});
-      const patients=[...byId.values()].sort((a,b)=>{const sa=Number(String(a?.appointmentId||"").match(/-(\d+)$/)?.[1]),sb=Number(String(b?.appointmentId||"").match(/-(\d+)$/)?.[1]);return (Number.isFinite(sa)?sa:0)-(Number.isFinite(sb)?sb:0);});
-      const now=Date.now(),next={...cache,patients,status:"REFRESHED",complete:true,lastServerRefreshAt:now,lastServerCheckAt:now,cachedAt:cache.cachedAt||now,lastSerial:Number(r.syncState?.serial)||Number(state.serial)||null,lastRowNumber:Number(r.syncState?.rowNumber)||Number(state.rowNumber)||null};
-      if(this.serialGap_(patients,"appointmentId"))next.status="STALE";
-      await this.replace("cache",key,next);return {mode:"INCREMENTAL",city:c,rowsAdded:rows.length,cache:next};
-    });
-   }catch(e){return {mode:"FAILED",city:c,error:e?.message||String(e)};}
-   finally{delete this._todayOPDBackgroundRuns[c];}
-  })();
-  this._todayOPDBackgroundRuns[c]=task;return task;
- },
- async startDailyFollowupBackgroundSync_(city){
-  const c=String(city||"").trim();if(!c)return {mode:"SKIPPED",reason:"CITY_MISSING"};
-  if(this._followupDailyBackgroundRuns[c])return this._followupDailyBackgroundRuns[c];
-  const task=(async()=>{
-   const date=this.todayKey_();
-   try{
-    let marker=false;try{marker=localStorage.getItem(this.followupBackgroundMarkerKey_(c,date))==="1";}catch(_){ }
-    if(marker)return {mode:"SKIPPED",reason:"COMPLETE_MARKER"};
-    const existing=await this.getBackgroundSyncStatus_("FOLLOWUP",c,date).catch(()=>null);
-    if(existing&&(existing.status==="SUCCESS"||existing.status==="FAILED"||existing.status==="INCOMPLETE"))return {mode:"SKIPPED",reason:"CYCLE_TERMINAL",status:existing.status};
-    if(existing?.status==="RUNNING"){
-     const lease=Number(existing.leaseExpiresAt)||0;
-     if(lease>Date.now()){
-      this.scheduleBackgroundSyncRecovery_("FOLLOWUP",c,date,lease);
-      return {mode:"SKIPPED",reason:"ACTIVE",status:"RUNNING"};
-     }
-    }
-    return await this.runBackgroundSyncCycle_("FOLLOWUP",c,date,async()=>{
-      await this.waitForCriticalOperationsToFinish_(3000);
-      const meta=await this.getFollowupMeta(c);
-      if(this.followupMetaValid_(meta,c)&&this.followupCheckedToday_(meta))return {mode:"ALREADY_CHECKED",city:c};
-      let result;
-      if(!this.followupMetaValid_(meta,c))result=await this.buildFollowupCityCache_(c);
-      else result=await this.syncFollowupCityCache_(c);
-      if(result?.mode==="FAILED")return result;
-      const verified=await this.getFollowupMeta(c);
-      if(!this.followupMetaValid_(verified,c))throw new Error("Follow-up synchronization final validation failed.");
-      const now=Date.now();
-      await this.setFollowupMeta({...verified,lastServerCheckAt:now,lastServerCheckDate:date,lastUpdatedAt:now});
-      return result;
-    });
-   }catch(e){return {mode:"FAILED",city:c,error:e?.message||String(e)};}
-   finally{delete this._followupDailyBackgroundRuns[c];}
-  })();
-  this._followupDailyBackgroundRuns[c]=task;return task;
  },
  ensureBackgroundSyncBar_(){
   if(!document.body)return null;
@@ -407,8 +168,6 @@ window.IDB={
   const city=window.TodayCity?.resolve?.()||window.Schedule?.cityAtNow?.(window.NEURON_CONFIG?.cities||[])||"",date=this.todayKey_();
   if(!city){bar.hidden=true;return;}
   let [opd,follow]=await Promise.all([this.getBackgroundSyncStatus_("OPD_TODAY",city,date).catch(()=>null),this.getBackgroundSyncStatus_("FOLLOWUP",city,date).catch(()=>null)]);
-  let followMarker=false;try{followMarker=localStorage.getItem(this.followupBackgroundMarkerKey_(city,date))==="1";}catch(_){}
-  if(!follow&&followMarker)follow={cacheType:"FOLLOWUP",status:"SUCCESS",completedAt:Date.now(),durationMs:0,cycleId:`FOLLOWUP:${date}:${city}:marker`};
   const terminal=x=>x&&["SUCCESS","FAILED","INCOMPLETE"].includes(x.status),active=x=>x?.status==="RUNNING";
   const relevant=active(opd)||active(follow)||terminal(opd)||terminal(follow);
   if(!relevant){bar.hidden=true;return;}
@@ -437,6 +196,20 @@ window.IDB={
    setTimeout(()=>{if(Number(bar.dataset.hideAt)===hideAt){this.backgroundSyncBarDismiss_(cycleId);bar.hidden=true;bar.dataset.hideAt="";}},remaining);
   }else bar.dataset.hideAt="";
  },
+ async requestBackgroundSyncToServiceWorker_(city){
+  const c=String(city||"").trim();
+  const date=this.todayKey_();
+  if(!c||!navigator.serviceWorker)return false;
+  try{
+   const reg=await navigator.serviceWorker.ready;
+   const message={type:"NEURON_START_BACKGROUND_SYNC",city:c,date};
+   const target=navigator.serviceWorker.controller||reg.active||reg.waiting||reg.installing;
+   if(target)target.postMessage(message);
+   if(reg.sync?.register)await reg.sync.register("neuron-background-sync").catch(()=>{});
+   if(reg.periodicSync?.register)await reg.periodicSync.register("neuron-periodic-background-sync",{minInterval:this.OPD_BACKGROUND_SYNC_INTERVAL_MS}).catch(()=>{});
+   return !!target;
+  }catch(_){return false;}
+ },
  startBackgroundCacheSync_(){
   if(this._backgroundTimersStarted)return;
   this._backgroundTimersStarted=true;
@@ -444,13 +217,16 @@ window.IDB={
    try{
     const city=window.TodayCity?.resolve?.()||window.Schedule?.cityAtNow?.(window.NEURON_CONFIG?.cities||[])||"";
     if(!city)return;
-    void this.syncTodayOPDCacheBackground_(city).then(()=>this.renderBackgroundSyncBar_()).catch(()=>this.renderBackgroundSyncBar_());
-    void this.startDailyFollowupBackgroundSync_(city).then(()=>this.renderBackgroundSyncBar_()).catch(()=>this.renderBackgroundSyncBar_());
+    void this.requestBackgroundSyncToServiceWorker_(city);
     void this.renderBackgroundSyncBar_();
-   }catch(_){ }
+   }catch(_){}
   };
   run();
   window.setInterval(run,this.OPD_BACKGROUND_SYNC_INTERVAL_MS);
+  if(navigator.serviceWorker&&!this._backgroundServiceWorkerMessageBound){
+   this._backgroundServiceWorkerMessageBound=true;
+   navigator.serviceWorker.addEventListener("message",e=>{if(e.data?.type==="NEURON_BACKGROUND_SYNC_UPDATED")void this.renderBackgroundSyncBar_();});
+  }
  },
  async getTodayOPDCache_(city,{forceRefresh=false}={}){
   const c=String(city||"").trim();
@@ -599,8 +375,29 @@ window.IDB={
     const known=Number(meta.highestKnownSourceRow),contiguous=Number(meta.highestContiguousSourceRow),lowest=Number(meta.lowestSourceRow),count=Number(meta.recordCount);
     return Number.isInteger(known)&&known>=1&&Number.isInteger(contiguous)&&contiguous>=1&&Number.isInteger(lowest)&&lowest>=1&&Number.isInteger(count)&&count>=0&&contiguous<=known&&lowest<=known;
   },
-  async buildFollowupCityCache_(city){
+  async buildFollowupCityCache_(city,options={}){
     const c=String(city||"").trim();if(!c)throw new Error("Follow-up city is required.");
+    const skipLegacyLock=options?.skipLegacyLock===true;
+    if(skipLegacyLock){
+      const meta=await this.getFollowupMeta(c);
+      if(this.followupMetaValid_(meta,c))return {mode:"ALREADY_READY",city:c,recordCount:Number(meta.recordCount)||0};
+      await this.beginFollowupCityBuild(c);
+      try{
+        const r=await window.NeuronAPI.call("getFollowupCityHistory",{city:c},100000);
+        if(!r||r.ok!==true)throw new Error(r?.error||"Unable to build Follow-up history.");
+        const records=Array.isArray(r.records)?r.records:[],BATCH=500;
+        for(let i=0;i<records.length;i+=BATCH)await this.putFollowupBuildBatch(c,records.slice(i,i+BATCH));
+        const written=await this.countFollowupVisits_(c);
+        if(written!==records.length)throw new Error("Follow-up cache build verification failed.");
+        const p=window.U?.parts?.()||{},safeMonth=p.y?`${p.y}-${String(p.m).padStart(2,"0")}`:"",now=Date.now();
+        const next={city:c,boundaryDate:String(r.boundaryDate||""),oldestDate:records[0]?.date||"",newestDate:records[records.length-1]?.date||"",recordCount:records.length,lowestSourceRow:Number(records[0]?.sourceRow)||1,highestKnownSourceRow:Number(r.highestKnownSourceRow)||1,highestContiguousSourceRow:Number(r.highestContiguousSourceRow)||1,createdAt:now,lastFullBuildAt:now,lastServerCheckAt:now,lastCleanupMonth:safeMonth,lastServerCheckDate:this.todayKey_()};
+        await this.finishFollowupCityBuild(c,next);
+        return {mode:"FULL_BUILD",city:c,rowsLoaded:records.length,oldestDate:next.oldestDate,newestDate:next.newestDate,highestKnownSourceRow:next.highestKnownSourceRow,highestContiguousSourceRow:next.highestContiguousSourceRow};
+      }catch(e){
+        await this.setFollowupMeta({city:c,status:"BUILD_FAILED",lastUpdatedAt:Date.now()}).catch(()=>{});
+        throw e;
+      }
+    }
     let owner=null,renewTimer=null,lockLost=false;
     try{
       const deadline=Date.now()+130000;
@@ -612,10 +409,7 @@ window.IDB={
         await new Promise(resolve=>setTimeout(resolve,500));
       }
       if(!owner)throw new Error("Follow-up cache build is already in progress. Please try again.");
-      const renew=async()=>{
-        if(!owner)return false;
-        return this.renewFollowupBuildLock_(c,owner,120000).catch(()=>false);
-      };
+      const renew=async()=>{if(!owner)return false;return this.renewFollowupBuildLock_(c,owner,120000).catch(()=>false);};
       renewTimer=setInterval(()=>{void renew().then(ok=>{if(!ok)lockLost=true;}).catch(()=>{lockLost=true;});},30000);
       await this.beginFollowupCityBuild(c);
       try{
@@ -630,25 +424,23 @@ window.IDB={
         const meta={city:c,boundaryDate:String(r.boundaryDate||""),oldestDate:records[0]?.date||"",newestDate:records[records.length-1]?.date||"",recordCount:records.length,lowestSourceRow:Number(records[0]?.sourceRow)||1,highestKnownSourceRow:Number(r.highestKnownSourceRow)||1,highestContiguousSourceRow:Number(r.highestContiguousSourceRow)||1,createdAt:now,lastFullBuildAt:now,lastServerCheckAt:now,lastCleanupMonth:safeMonth,lastServerCheckDate:this.todayKey_()};
         await this.finishFollowupCityBuild(c,meta);
         return {mode:"FULL_BUILD",city:c,rowsLoaded:records.length,oldestDate:meta.oldestDate,newestDate:meta.newestDate,highestKnownSourceRow:meta.highestKnownSourceRow,highestContiguousSourceRow:meta.highestContiguousSourceRow};
-      }catch(e){
-        await this.setFollowupMeta({city:c,status:"BUILD_FAILED",lastUpdatedAt:Date.now()}).catch(()=>{});
-        throw e;
-      }
-    }finally{
-      if(renewTimer)clearInterval(renewTimer);
-      if(owner)await this.releaseFollowupBuildLock_(c,owner).catch(()=>{});
-    }
+      }catch(e){await this.setFollowupMeta({city:c,status:"BUILD_FAILED",lastUpdatedAt:Date.now()}).catch(()=>{});throw e;}
+    }finally{if(renewTimer)clearInterval(renewTimer);if(owner)await this.releaseFollowupBuildLock_(c,owner).catch(()=>{});}
   },
-  async syncFollowupCityCache_(city){
+  async syncFollowupCityCache_(city,options={}){
     const c=String(city||"").trim();if(!c)return {mode:"FAILED",error:"Follow-up city is required."};
-    const lockKey=this.followupSyncLockKey_(c),d=await this.open(),owner=`${Date.now()}-${Math.random().toString(36).slice(2)}`,now=Date.now();
-    const locked=await new Promise((ok,no)=>{let acquired=false;const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache"),r=st.get(lockKey);r.onsuccess=()=>{if(r.result&&Number(r.result.expiresAt)>now){acquired=false;return;}st.put({key:lockKey,type:"FOLLOWUP_SYNC_LOCK",city:c,owner,expiresAt:now+120000,updatedAt:now});acquired=true;};r.onerror=()=>no(r.error);t.oncomplete=()=>ok(acquired);t.onerror=()=>no(t.error||new Error("Follow-up synchronization lock failed."));});
-    if(!locked)return {mode:"IN_PROGRESS",city:c};
+    const skipLegacyLock=options?.skipLegacyLock===true;
+    let owner=null;
+    if(!skipLegacyLock){
+      const lockKey=this.followupSyncLockKey_(c),d=await this.open(),now=Date.now();
+      owner=`${now}-${Math.random().toString(36).slice(2)}`;
+      const locked=await new Promise((ok,no)=>{let acquired=false;const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache"),r=st.get(lockKey);r.onsuccess=()=>{if(r.result&&Number(r.result.expiresAt)>now){acquired=false;return;}st.put({key:lockKey,type:"FOLLOWUP_SYNC_LOCK",city:c,owner,expiresAt:now+120000,updatedAt:now});acquired=true;};r.onerror=()=>no(r.error);t.oncomplete=()=>ok(acquired);t.onerror=()=>no(t.error||new Error("Follow-up synchronization lock failed."));});
+      if(!locked)return {mode:"IN_PROGRESS",city:c};
+    }
     try{
       const meta=await this.getFollowupMeta(c);
       if(!this.followupMetaValid_(meta,c))return {mode:"FAILED",city:c,error:"Follow-up cache metadata is not valid for incremental synchronization."};
       const previousContiguous=Number(meta.highestContiguousSourceRow)||1;
-      const previousKnown=Number(meta.highestKnownSourceRow)||1;
       const from=Math.max(2,previousContiguous+1);
       const r=await window.NeuronAPI.call("getFollowupCitySyncRange",{city:c,fromRow:from},100000);
       if(!r||r.ok!==true)throw new Error(r?.error||"Unable to synchronize Follow-up history.");
@@ -659,13 +451,8 @@ window.IDB={
         if(current&&current.status==="READY")await this.setFollowupMeta({...current,city:c,lastUpdatedAt:Date.now(),lastServerCheckAt:Date.now(),lastServerCheckDate:this.todayKey_()});
         return {mode:"ALREADY_CURRENT",city:c,idbContiguousRow:previousContiguous,spreadsheetLastRow,rowsScanned:0};
       }
-      const records=Array.isArray(r.records)?r.records:[];
-      let inserted=0,updated=0;
-      for(let i=0;i<records.length;i+=250){
-        const batch=records.slice(i,i+250);
-        const counts=await this.putFollowupSyncBatch_(c,batch);
-        inserted+=counts.inserted;updated+=counts.updated;
-      }
+      const records=Array.isArray(r.records)?r.records:[];let inserted=0,updated=0;
+      for(let i=0;i<records.length;i+=250){const counts=await this.putFollowupSyncBatch_(c,records.slice(i,i+250));inserted+=counts.inserted;updated+=counts.updated;}
       const current=await this.getFollowupMeta(c);
       if(!current||current.status!=="READY")throw new Error("Follow-up cache metadata changed during synchronization.");
       const newContiguous=Math.max(Number(current.highestContiguousSourceRow)||0,toRow);
@@ -673,12 +460,8 @@ window.IDB={
       const nextCount=Math.max(0,Number(current.recordCount)||0)+inserted;
       await this.setFollowupMeta({...current,city:c,status:"READY",lowestSourceRow:Number(current.lowestSourceRow)||1,highestKnownSourceRow:newKnown,highestContiguousSourceRow:newContiguous,recordCount:nextCount,lastUpdatedAt:Date.now(),lastSyncAt:Date.now(),lastServerCheckAt:Date.now(),lastServerCheckDate:this.todayKey_()});
       return {mode:"INCREMENTAL",city:c,fromRow:from,toRow,rowsReceived:records.length,rowsInserted:inserted,rowsUpdated:updated,previousContiguousRow:previousContiguous,newContiguousRow:newContiguous,spreadsheetLastRow:spreadsheetLastRow};
-    }catch(e){
-      const meta=await this.getFollowupMeta(c).catch(()=>null);
-      return {mode:"FAILED",city:c,error:e?.message||String(e),previousContiguousRow:Number(meta?.highestContiguousSourceRow)||0};
-    }finally{
-      await this.releaseFollowupSyncLock_(c,owner).catch(()=>{});
-    }
+    }catch(e){const meta=await this.getFollowupMeta(c).catch(()=>null);return {mode:"FAILED",city:c,error:e?.message||String(e),previousContiguousRow:Number(meta?.highestContiguousSourceRow)||0};}
+    finally{if(!skipLegacyLock&&owner)await this.releaseFollowupSyncLock_(c,owner).catch(()=>{});}
   },
   putFollowupSyncBatch_(city,records){
     const c=String(city||"").trim(),list=Array.isArray(records)?records:[];
@@ -706,13 +489,41 @@ window.IDB={
   async reconcileFollowupCityGaps_(city){
     return this.syncFollowupCityCache_(city);
   },
+  pageOwnerId_(){
+    try{let id=sessionStorage.getItem("neuron_page_owner_id");if(!id){id=`PAGE-${Date.now()}-${Math.random().toString(36).slice(2)}`;sessionStorage.setItem("neuron_page_owner_id",id);}return id;}catch(_){return `PAGE-${Date.now()}-${Math.random().toString(36).slice(2)}`;}
+  },
+  manualFollowupRebuildLeaseKey_(city){return `MANUAL_REBUILD|${String(city||"").trim()}`;},
+  async acquireManualFollowupRebuildLease_(city){
+    const c=String(city||"").trim();if(!c)throw new Error("Follow-up city is required.");
+    const owner=`${this.pageOwnerId_()}-${Date.now()}`,now=Date.now(),key=this.manualFollowupRebuildLeaseKey_(c),d=await this.open();
+    return new Promise((ok,no)=>{const t=d.transaction("meta","readwrite"),st=t.objectStore("meta"),r=st.get(key);let result=null;r.onsuccess=()=>{const old=r.result;if(old&&Number(old.leaseExpiresAt)>now){result=null;return;}result={key,city:c,type:"MANUAL_FOLLOWUP_REBUILD_LEASE",owner,leaseExpiresAt:now+this.MANUAL_FOLLOWUP_REBUILD_LEASE_MS,lastHeartbeatAt:now,updatedAt:now};st.put(result);};r.onerror=()=>no(r.error);t.oncomplete=()=>ok(result);t.onerror=()=>no(t.error||new Error("Manual Follow-up rebuild lease acquisition failed."));t.onabort=()=>no(t.error||new Error("Manual Follow-up rebuild lease acquisition aborted."));});
+  },
+  async renewManualFollowupRebuildLease_(city,owner){
+    const c=String(city||"").trim();if(!c||!owner)return false;const now=Date.now(),key=this.manualFollowupRebuildLeaseKey_(c),d=await this.open();
+    return new Promise((ok,no)=>{const t=d.transaction("meta","readwrite"),st=t.objectStore("meta"),r=st.get(key);let renewed=false;r.onsuccess=()=>{if(r.result?.owner!==owner)return;st.put({...r.result,lastHeartbeatAt:now,leaseExpiresAt:now+this.MANUAL_FOLLOWUP_REBUILD_LEASE_MS,updatedAt:now});renewed=true;};r.onerror=()=>no(r.error);t.oncomplete=()=>ok(renewed);t.onerror=()=>no(t.error||new Error("Manual Follow-up rebuild lease renewal failed."));t.onabort=()=>no(t.error||new Error("Manual Follow-up rebuild lease renewal aborted."));});
+  },
+  async releaseManualFollowupRebuildLease_(city,owner){
+    const c=String(city||"").trim();if(!c||!owner)return;const d=await this.open(),key=this.manualFollowupRebuildLeaseKey_(c);
+    await new Promise((ok,no)=>{const t=d.transaction("meta","readwrite"),st=t.objectStore("meta"),r=st.get(key);r.onsuccess=()=>{if(r.result?.owner===owner)st.delete(key);};r.onerror=()=>no(r.error);t.oncomplete=ok;t.onerror=()=>no(t.error||new Error("Manual Follow-up rebuild lease release failed."));});
+  },
+  async withManualFollowupRebuildLease_(city,operation){
+    const lease=await this.acquireManualFollowupRebuildLease_(city);
+    if(!lease)return {mode:"IN_PROGRESS",city:String(city||"").trim()};
+    let timer=null,active=true;
+    try{
+      timer=setInterval(()=>{void this.renewManualFollowupRebuildLease_(city,lease.owner).then(ok=>{if(!ok)active=false;}).catch(()=>{active=false;});},this.MANUAL_FOLLOWUP_REBUILD_HEARTBEAT_MS);
+      const result=await operation();
+      if(!active)throw new Error("Manual Follow-up rebuild lease was lost.");
+      return result;
+    }finally{if(timer)clearInterval(timer);await this.releaseManualFollowupRebuildLease_(city,lease.owner).catch(()=>{});}
+  },
   async rebuildFollowupCityCache_(city){
     const c=String(city||"").trim();if(!c)return {mode:"FAILED",error:"Follow-up city is required."};
-    const meta=await this.getFollowupMeta(c);
-    if(!this.followupMetaValid_(meta,c)){
-      try{return await this.buildFollowupCityCache_(c);}catch(e){return {mode:"FAILED",city:c,error:e?.message||String(e)};}
-    }
-    return this.syncFollowupCityCache_(c);
+    return this.withManualFollowupRebuildLease_(c,async()=>{
+      const meta=await this.getFollowupMeta(c);
+      if(!this.followupMetaValid_(meta,c)){try{return await this.buildFollowupCityCache_(c,{skipLegacyLock:true});}catch(e){return {mode:"FAILED",city:c,error:e?.message||String(e)};}}
+      return this.syncFollowupCityCache_(c,{skipLegacyLock:true});
+    });
   },
 
   async getOrBuildFollowupPatients_(city,whatsapp){
