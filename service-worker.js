@@ -83,10 +83,8 @@ async function apiCall_(action,data={},timeout=25000){
 }
 
 async function criticalOperationActive_(){
- try{
-  const d=await openDb();
+  const d=await openDb_();
   return await new Promise((ok,no)=>{const t=d.transaction("tx"),idx=t.objectStore("tx").index("status");let pending=[],uncertain=[],done=0,settled=false;const finish=()=>{if(++done!==2||settled)return;settled=true;ok(pending.length+uncertain.length>0)};const fail=e=>{if(!settled){settled=true;no(e)}};const a=idx.getAll("pending"),b=idx.getAll("uncertain");a.onsuccess=()=>{pending=a.result||[];finish()};b.onsuccess=()=>{uncertain=b.result||[];finish()};a.onerror=()=>fail(a.error);b.onerror=()=>fail(b.error);t.onerror=()=>fail(t.error);t.onabort=()=>fail(t.error||new Error("Pending transaction lookup aborted."));});
- }catch(_){return true;}
 }
 async function waitForCriticalOperations_(){while(await criticalOperationActive_())await new Promise(r=>setTimeout(r,3000));}
 async function getStatus_(kind,city,date){return idbGet_("meta",metaKey_(kind,city,date));}
@@ -111,14 +109,14 @@ async function claim_(kind,city,date,mode){
  });
 }
 async function heartbeat_(key,owner){
- const db=await openDb(),now=Date.now();return new Promise((ok,no)=>{const t=db.transaction("meta","readwrite"),st=t.objectStore("meta"),r=st.get(key);let alive=false;r.onsuccess=()=>{const x=r.result;if(x?.status==="RUNNING"&&x.owner===owner){st.put({...x,lastHeartbeatAt:now,leaseExpiresAt:now+BG.LEASE_MS,updatedAt:now});alive=true;}};r.onerror=()=>no(r.error);t.oncomplete=()=>ok(alive);t.onerror=()=>no(t.error)});
+ const db=await openDb_(),now=Date.now();return new Promise((ok,no)=>{const t=db.transaction("meta","readwrite"),st=t.objectStore("meta"),r=st.get(key);let alive=false;r.onsuccess=()=>{const x=r.result;if(x?.status==="RUNNING"&&x.owner===owner){st.put({...x,lastHeartbeatAt:now,leaseExpiresAt:now+BG.LEASE_MS,updatedAt:now});alive=true;}};r.onerror=()=>no(r.error);t.oncomplete=()=>ok(alive);t.onerror=()=>no(t.error)});
 }
 async function updateAttempt_(key,owner,attempt,error=null){const x=await idbGet_("meta",key);if(!x||x.owner!==owner||x.status!=="RUNNING")return null;const now=Date.now();const next={...x,attemptCount:attempt,lastHeartbeatAt:now,leaseExpiresAt:now+BG.LEASE_MS,error:error?String(error):null,retryAt:error?now+BG.RETRY_DELAY_MS:0,updatedAt:now};await setStatus_(next);return next;}
 async function finish_(key,owner,status,error=null,extra={}){const x=await idbGet_("meta",key);if(!x||x.owner!==owner)return null;const now=Date.now(),next={...x,status,completedAt:now,durationMs:Math.max(0,now-(Number(x.startedAt)||now)),lastHeartbeatAt:now,leaseExpiresAt:0,error:error?String(error):null,updatedAt:now,...extra};await setStatus_(next);postUpdate_();return next;}
 
 async function opdGate_(date){
  const key=`OPD_BACKGROUND_START|${date}`,now=Date.now();
- const db=await openDb();
+ const db=await openDb_();
  return new Promise((ok,no)=>{
   const t=db.transaction("meta","readwrite"),st=t.objectStore("meta"),r=st.get(key);let allowed=false;
   r.onsuccess=()=>{const cur=r.result;if(cur?.startedAt&&now-Number(cur.startedAt)<BG.OPD_GATE_MS){allowed=false;return;}st.put({key,type:"OPD_BACKGROUND_START",date,startedAt:now,updatedAt:now});allowed=true;};
@@ -152,7 +150,7 @@ async function followMeta_(city){return idbGet_("followupCache",followMetaKey_(c
 function followMetaValid_(m,c){if(!m||m.status!=="READY"||String(m.city||"").trim()!==c)return false;const known=Number(m.highestKnownSourceRow),cont=Number(m.highestContiguousSourceRow),low=Number(m.lowestSourceRow),count=Number(m.recordCount);return Number.isInteger(known)&&known>=1&&Number.isInteger(cont)&&cont>=1&&Number.isInteger(low)&&low>=1&&Number.isInteger(count)&&count>=0&&cont<=known&&low<=known;}
 async function putFollowBatch_(city,records){
  if(!records.length)return {inserted:0,updated:0};
- const d=await openDb();
+ const d=await openDb_();
  return new Promise((ok,no)=>{
   const t=d.transaction("followupCache","readwrite"),st=t.objectStore("followupCache");let inserted=0,updated=0,remaining=records.length,settled=false;
   const finish=()=>{if(--remaining>0)return;};
