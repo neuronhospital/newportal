@@ -1,6 +1,8 @@
 window.IDB={
  db:null,
  _dbGeneration:0,
+ _backgroundSyncAckWaiters:Object.create(null),
+ _backgroundSyncMessageBound:false,
  CACHE_FRESHNESS_MS:30*60*1000,
  OPD_BACKGROUND_SYNC_INTERVAL_MS:15*60*1000,
  MANUAL_FOLLOWUP_REBUILD_LEASE_MS:20000,
@@ -222,16 +224,41 @@ window.IDB={
    setTimeout(()=>{if(Number(bar.dataset.hideAt)===hideAt){this.backgroundSyncBarDismiss_(cycleId);bar.hidden=true;bar.dataset.hideAt="";}},remaining);
   }else bar.dataset.hideAt="";
  },
+ bindBackgroundServiceWorkerMessages_(){
+  if(this._backgroundSyncMessageBound||!navigator.serviceWorker)return;
+  this._backgroundSyncMessageBound=true;
+  navigator.serviceWorker.addEventListener("message",e=>{
+   const data=e.data||{};
+   if(data.type==="NEURON_BACKGROUND_SYNC_ACCEPTED"&&data.requestId){
+    const waiter=this._backgroundSyncAckWaiters[data.requestId];
+    if(waiter){delete this._backgroundSyncAckWaiters[data.requestId];clearTimeout(waiter.timer);waiter.resolve(data);}
+    return;
+   }
+   if(data.type==="NEURON_BACKGROUND_SYNC_UPDATED")void this.renderBackgroundSyncBar_();
+  });
+ },
  async requestBackgroundSyncToServiceWorker_(city){
   const c=String(city||"").trim(),date=this.todayKey_();
-  if(!c||!navigator.serviceWorker)return false;
+  if(!c||!navigator.serviceWorker)return {sent:false,accepted:false};
+  const requestId=`REQ-${Date.now()}-${Math.random().toString(36).slice(2)}`,requestSentAt=Date.now();
+  this.bindBackgroundServiceWorkerMessages_();
   try{
    const reg=await navigator.serviceWorker.ready;
    const target=navigator.serviceWorker.controller||reg.active||reg.waiting||reg.installing;
-   if(!target)return false;
-   target.postMessage({type:"NEURON_START_BACKGROUND_SYNC",city:c,date});
-   return true;
-  }catch(_){return false;}
+   if(!target)return {sent:false,accepted:false,requestId};
+   const ack=new Promise(resolve=>{
+    const timer=setTimeout(()=>{delete this._backgroundSyncAckWaiters[requestId];resolve(null)},3000);
+    this._backgroundSyncAckWaiters[requestId]={resolve,timer};
+   });
+   target.postMessage({type:"NEURON_START_BACKGROUND_SYNC",requestId,city:c,date});
+   const accepted=await ack;
+   if(accepted)return {sent:true,accepted:true,requestId};
+   const durable=await this.get("meta","BACKGROUND_SYNC_REQUEST").catch(()=>null);
+   if(durable?.requestId===requestId)return {sent:true,accepted:true,requestId,source:"IDB"};
+   const [opd,follow]=await Promise.all([this.getBackgroundSyncStatus_("OPD_TODAY",c,date).catch(()=>null),this.getBackgroundSyncStatus_("FOLLOWUP",c,date).catch(()=>null)]);
+   const activeOrTerminal=x=>x&&String(x.requestId||"")===requestId&&["RUNNING","SUCCESS","FAILED","INCOMPLETE"].includes(x.status);
+   return {sent:true,accepted:!!(activeOrTerminal(opd)||activeOrTerminal(follow)),requestId,source:"STATUS"};
+  }catch(_){return {sent:false,accepted:false,requestId};}
  },
  startBackgroundCacheSync_(){
   if(this._backgroundTimersStarted)return;
@@ -248,12 +275,9 @@ window.IDB={
     await this.renderBackgroundSyncBar_();
    }catch(_){}
   };
+  this.bindBackgroundServiceWorkerMessages_();
   void run();
   window.setInterval(()=>{void run();},this.OPD_BACKGROUND_SYNC_INTERVAL_MS);
-  if(navigator.serviceWorker&&!this._backgroundServiceWorkerMessageBound){
-   this._backgroundServiceWorkerMessageBound=true;
-   navigator.serviceWorker.addEventListener("message",e=>{if(e.data?.type==="NEURON_BACKGROUND_SYNC_UPDATED")void this.renderBackgroundSyncBar_();});
-  }
  },
  async getTodayOPDCache_(city,{forceRefresh=false}={}){
   const c=String(city||"").trim();
