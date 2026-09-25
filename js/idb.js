@@ -658,7 +658,7 @@ window.IDB={
 
     if(kind==="OPD_BOOKING"){
       [
-        ["name","name"],["age","age"],["ageUnit","ageUnit"],["address","address"],
+        ["patientName","name"],["age","age"],["ageUnit","ageUnit"],["address","address"],
         ["patientType","patientType"],["whatsapp","whatsapp"],["city","city"],
         ["referredBy","referredBy"],["nextFollowupCity","nextFollowupCity"],
         ["opdCharges","opdCharges"],["opdCharges","totalOPDCharges"],
