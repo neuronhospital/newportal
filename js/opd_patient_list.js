@@ -47,8 +47,8 @@
       if (eegPaid !== null) items.push(`EEG : ${U.money(eegPaid)}`);
     }
 
-    const opdRefund = p?.opdRefundProvided === true ? (nonNegativeAmount(p?.opdRefund) ?? 0) : 0;
-    const eegRefund = p?.eegRefundProvided === true ? (nonNegativeAmount(p?.eegRefund) ?? 0) : 0;
+    const opdRefund = nonNegativeAmount(p?.opdRefund) ?? 0;
+    const eegRefund = nonNegativeAmount(p?.eegRefund) ?? 0;
     const refundTotal = opdRefund + eegRefund;
     let refund = "";
     if (refundTotal > 0) {

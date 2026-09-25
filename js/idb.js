@@ -682,7 +682,8 @@ window.IDB={
         ["name","name"],["age","age"],["ageUnit","ageUnit"],["address","address"],
         ["referredBy","referredBy"],["whatsappNew","whatsapp"],["whatsapp","whatsapp"],
         ["nextFollowupCity","nextFollowupCity"],["opdCharges","opdCharges"],
-        ["opdCharges","totalOPDCharges"],["opdCashPaid","opdCashPaid"],["opdOnlinePaid","opdOnlinePaid"]
+        ["opdCharges","totalOPDCharges"],["opdCashPaid","opdCashPaid"],["opdOnlinePaid","opdOnlinePaid"],
+        ["opdTotalPaid","opdTotalPaid"]
       ].forEach(([a,b])=>{
         const sourceKey=(a==="whatsappNew"&&!has(resultPatient,a)&&!has(result,a))?"whatsapp":a;
         setIfAvailable(sourceKey,b);
@@ -695,8 +696,14 @@ window.IDB={
     }else if(kind==="REFUND"){
       const updateOPD=payload.updateOPD===true||payload.updateOPD==="true";
       const updateEEG=payload.updateEEG===true||payload.updateEEG==="true";
-      if(updateOPD&&has(result,"opdRefund")){patch.opdRefund=result.opdRefund;patch.opdRefundProvided=true;}
-      if(updateEEG&&has(result,"eegRefund")){patch.eegRefund=result.eegRefund;patch.eegRefundProvided=true;}
+      if(updateOPD){
+        const v=pick("opdRefund",undefined);
+        if(v!==undefined){patch.opdRefund=v;patch.opdRefundProvided=Number(v)>0;}
+      }
+      if(updateEEG){
+        const v=pick("eegRefund",undefined);
+        if(v!==undefined){patch.eegRefund=v;patch.eegRefundProvided=Number(v)>0;}
+      }
     }
 
     if(!cache||!Array.isArray(cache.patients)){
