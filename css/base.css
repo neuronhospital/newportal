@@ -540,3 +540,21 @@ body.neuron-embedded{overflow-y:auto;overscroll-behavior-y:contain;-webkit-overf
   .opd-today-footer{padding:4px 10px;gap:7px}
   .opd-today-footer .opd-today-update,.opd-today-footer .cta{min-width:92px;min-height:44px;padding:7px 12px}
 }
+
+/* v211.6: Today's EEG Booking popup matches the finalized Today's OPD popup layout. */
+.eeg-today-dialog{height:min(82vh,760px);display:grid;grid-template-rows:auto minmax(0,1fr) auto;background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+.eeg-today-header.opd-today-header{padding:7px 15px 6px}
+.eeg-today-heading-row.opd-today-heading-row{min-height:26px}
+.eeg-today-heading-row.opd-today-heading-row h2{margin:0;font-size:19px;line-height:1.25;font-weight:850;color:var(--ink)}
+.eeg-today-list.opd-today-list{min-height:0;overflow-y:auto;padding:7px 13px 10px;-webkit-overflow-scrolling:touch}
+.eeg-today-footer.opd-today-footer{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:4px 13px}
+.eeg-today-footer.opd-today-footer .cta{width:auto;min-width:96px;min-height:44px;margin:0;padding:7px 14px}
+@media(max-width:520px){
+  .eeg-today-dialog{width:95vw;height:86vh;border-radius:14px}
+  .eeg-today-header.opd-today-header{padding:6px 13px 5px}
+  .eeg-today-heading-row.opd-today-heading-row{min-height:25px;gap:8px}
+  .eeg-today-heading-row.opd-today-heading-row h2{font-size:18px}
+  .eeg-today-list.opd-today-list{padding:7px 13px 10px}
+  .eeg-today-footer.opd-today-footer{padding:4px 10px;gap:7px}
+  .eeg-today-footer.opd-today-footer .cta{min-width:92px;min-height:44px;padding:7px 12px}
+}
