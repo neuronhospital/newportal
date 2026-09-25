@@ -62,7 +62,7 @@ function render(list){
   const paymentLines=[];
   if(p.refundAvailable.opd) paymentLines.push('OPD Paid : ₹'+Number(p.opdTotalPaid||0));
   if(p.refundAvailable.eeg) paymentLines.push('EEG Paid : ₹'+Number(p.eegTotalPaid||0));
-  x.innerHTML='<h3>'+U.esc(p.name||'')+'</h3>'+paymentLines.map(v=>'<p>'+U.esc(v)+'</p>').join('');
+  x.innerHTML='<h3>'+U.esc(p.patientName||'')+'</h3>'+paymentLines.map(v=>'<p>'+U.esc(v)+'</p>').join('');
   x.onclick=()=>selectPatient(p,x);
   d.appendChild(x);
   if(list.length===1)selectPatient(p,x);
@@ -143,7 +143,7 @@ function showRefundConfirmation(saved){
  if(opdVal>0)type.push('OPD Refund ₹'+opdVal);
  if(eegVal>0)type.push('EEG Refund ₹'+eegVal);
  const c=document.getElementById('confirmation');
- if(c)c.innerHTML='<div class="card" style="text-align:center;background:#c8f7c5"><div style="font-size:40px">✓</div><b>Refund Processed Successfully</b><br><br>Patient Name: '+(saved.name||'')+'<br>Age: '+(saved.age||'')+'<br>Appointment ID: '+(saved.appointmentId||'')+'<br>'+type.join('<br>')+'</div>';
+ if(c)c.innerHTML='<div class="card" style="text-align:center;background:#c8f7c5"><div style="font-size:40px">✓</div><b>Refund Processed Successfully</b><br><br>Patient Name: '+(saved.patientName||'')+'<br>Age: '+(saved.age||'')+'<br>Appointment ID: '+(saved.appointmentId||'')+'<br>'+type.join('<br>')+'</div>';
  if(btn){btn.textContent='Refund Completed';btn.disabled=true;}
  inputs.forEach(i=>i.disabled=true);
  const status=document.getElementById('refundStatus');
@@ -171,7 +171,7 @@ document.addEventListener("DOMContentLoaded",()=>{
  const r=window.NeuronPatientActionRules?.refundAvailability?.(p) || {opd:false,eeg:false};
  p.refundAvailable=r;
  document.getElementById('patients').innerHTML='';
- const x=document.createElement('div'); x.className='card patient-card'; x.innerHTML='<h3>'+U.esc(p.name||'')+'</h3>';
+ const x=document.createElement('div'); x.className='card patient-card'; x.innerHTML='<h3>'+U.esc(p.patientName||'')+'</h3>';
  document.getElementById('patients').appendChild(x);
  selectPatient(p,x);
 });

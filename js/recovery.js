@@ -14,7 +14,7 @@
   const failedTimers=new Map();
 
   const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
-  const nameOf=x=>String(x?.payload?.childName||x?.payload?.patientName||"Patient").trim()||"Patient";
+  const nameOf=x=>String(x?.payload?.patientName||"Patient").trim()||"Patient";
   const typeLabel=t=>t==="EEG_BOOKING"?"EEG Booking":t==="EEG_CALLS_BOOKING"?"EEG Calls Booking":t==="OPD_UPDATE"?"OPD Update":t==="EEG_UPDATE"?"EEG Update":t==="REFUND"?"Refund":"OPD Booking";
   const readState=()=>{try{const x=JSON.parse(localStorage.getItem(UI_KEY)||"[]");return Array.isArray(x)?x:[]}catch(_){return[]}};
   const writeState=a=>{try{localStorage.setItem(UI_KEY,JSON.stringify(a))}catch(_){} };
@@ -97,7 +97,7 @@
     const rows=[];
     const add=(label,key,fallback="")=>{let v=valueFor(key);if(v==null||v==="")v=fallback;if(v!==""&&v!=null)rows.push(`<div class="neuron-recovery-detail-row"><span>${esc(label)}</span><b>${esc(v)}</b></div>`)};
     add("Appointment ID","appointmentId");
-    add("Patient Name","patientName",patient.name||nameOf(x));
+    add("Patient Name","patientName",patient.patientName||nameOf(x));
     const age=valueFor("age"),ageUnit=valueFor("ageUnit");
     if(age!==undefined&&age!==null&&age!==""){
       const ageDisplay=ageUnit?`${age} ${ageUnit}`:String(age);
@@ -140,7 +140,7 @@
     location.href=target;
   }
 
-  async function verifyOPDOnce(x,timeout){try{return await NeuronAPI.call("checkBookingRequest",{bookingRequestId:x.id,city:x.payload.city,appointmentDate:x.payload.appointmentDate||"",whatsapp:x.payload.whatsapp||"",childName:x.payload.childName||x.payload.patientName||""},timeout)}catch(_){return null}}
+  async function verifyOPDOnce(x,timeout){try{return await NeuronAPI.call("checkBookingRequest",{bookingRequestId:x.id,city:x.payload.city,appointmentDate:x.payload.appointmentDate||"",whatsapp:x.payload.whatsapp||"",patientName:x.payload.patientName||""},timeout)}catch(_){return null}}
   async function verifyEEGOnce(x,timeout){try{return await NeuronAPI.call("checkEEGBookingRequest",{eegBookingRequestId:x.id,appointmentId:x.payload.appointmentId,rowNumber:x.payload.rowNumber,city:x.payload.city},timeout)}catch(_){return null}}
   async function verifyEEGCallsOnce(x,timeout){try{return await NeuronAPI.call("checkEEGCallsBookingRequest",{bookingRequestId:x.id},timeout)}catch(_){return null}}
   async function verifyOPDUpdateOnce(x,timeout){try{return await NeuronAPI.call("checkOPDUpdateStatus",x.payload,timeout)}catch(_){return null}}
@@ -153,8 +153,8 @@
     if(!r||r.ok!==true||r.found!==true)return false;
     const p=r.patient&&typeof r.patient==="object"?r.patient:{};
     const payload=x.payload||{};
-    const expectedName=normalizeName(payload.childName||payload.patientName);
-    const returnedName=normalizeName(r.patientName||p.name);
+    const expectedName=normalizeName(payload.patientName);
+    const returnedName=normalizeName(r.patientName||p.patientName);
     if(expectedName&&(!returnedName||expectedName!==returnedName))return false;
     const expectedCity=String(payload.city||"").trim().toLowerCase();
     const returnedCity=String(r.city||p.city||"").trim().toLowerCase();
@@ -219,7 +219,7 @@
       appointmentId:result.appointmentId||x.payload?.appointmentId||"",
       date:result.date||x.payload?.appointmentDate||"",
       time:result.time||x.payload?.time||"",
-      patientName:result.patientName||result.patient?.name||x.payload?.childName||x.payload?.patientName||"",
+      patientName:result.patientName||result.patient?.patientName||x.payload?.patientName||"",
       age:result.age??result.patient?.age??x.payload?.age,
       ageUnit:result.ageUnit||result.patient?.ageUnit||x.payload?.ageUnit||"",
       address:(result.address??result.patient?.address??x.payload?.address)||"",
@@ -452,12 +452,12 @@
   }
 
   async function isPatientRecovering(criteria){
-    const c=typeof criteria==="string"?{name:criteria}:criteria||{};
-    const targetName=normalizeName(c.name),targetPhone=normalizePhone(c.whatsapp),targetCity=String(c.city||"").trim().toLowerCase(),targetDate=String(c.appointmentDate||"").trim(),targetType=String(c.type||"OPD_BOOKING").trim();
+    const c=typeof criteria==="string"?{patientName:criteria}:criteria||{};
+    const targetName=normalizeName(c.patientName),targetPhone=normalizePhone(c.whatsapp),targetCity=String(c.city||"").trim().toLowerCase(),targetDate=String(c.appointmentDate||"").trim(),targetType=String(c.type||"OPD_BOOKING").trim();
     const states=readState();
-    if(states.some(x=>x.type===targetType&&x.status==="recovering"&&normalizeName(x.payload?.childName||x.payload?.patientName)===targetName))return true;
+    if(states.some(x=>x.type===targetType&&x.status==="recovering"&&normalizeName(x.payload?.patientName)===targetName))return true;
     const items=await window.IDB.pending().catch(()=>[]);
-    return items.some(x=>{if(x.type!==targetType)return false;const p=x.payload||{};const sameName=normalizeName(p.childName||p.patientName)===targetName;const samePhone=!targetPhone||normalizePhone(p.whatsapp)===targetPhone;const sameCity=!targetCity||String(p.city||"").trim().toLowerCase()===targetCity;const sameDate=!targetDate||String(p.appointmentDate||"").trim()===targetDate;return sameName&&samePhone&&sameCity&&sameDate});
+    return items.some(x=>{if(x.type!==targetType)return false;const p=x.payload||{};const sameName=normalizeName(p.patientName)===targetName;const samePhone=!targetPhone||normalizePhone(p.whatsapp)===targetPhone;const sameCity=!targetCity||String(p.city||"").trim().toLowerCase()===targetCity;const sameDate=!targetDate||String(p.appointmentDate||"").trim()===targetDate;return sameName&&samePhone&&sameCity&&sameDate});
   }
 
   window.NeuronRecovery={reconcilePendingBookings,isPatientRecovering};

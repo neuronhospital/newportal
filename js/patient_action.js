@@ -39,7 +39,7 @@
   function openPatient(p) {
     setContext(p);
     const m = modal(); if (!m) return;
-    $("patientActionTitle").textContent = p?.name || "Patient";
+    $("patientActionTitle").textContent = p?.patientName || "Patient";
     $("patientActionAge").textContent = ageText(p);
     renderActions();
     m.hidden = false;
@@ -92,7 +92,7 @@
       const date=(()=>{const p=U.parts();return `${p.y}${String(p.m).padStart(2,"0")}${String(p.d).padStart(2,"0")}`})();
       const record=await IDB.get("cache",`OPD_TODAY|${date}|${city}`).catch(()=>null);
       const next=(record?.patients||[]).find(x=>String(x.appointmentId||"")===String(selectedTodayPatient.appointmentId||""));
-      if(next){ setContext(next,currentAction); $("patientActionTitle").textContent=next.name||"Patient"; $("patientActionAge").textContent=ageText(next); renderActions(); }
+      if(next){ setContext(next,currentAction); $("patientActionTitle").textContent=next.patientName||"Patient"; $("patientActionAge").textContent=ageText(next); renderActions(); }
       window.dispatchEvent(new CustomEvent("neuron:patient-action-updated",{detail:{patient:next||selectedTodayPatient,action:currentAction,message}}));
     } catch (_) {}
   }

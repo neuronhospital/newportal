@@ -665,7 +665,7 @@ $("patients").innerHTML="";
       // Display returned patients directly.
       const renderPatient=(x)=>{
         const b=document.createElement("button"); b.type="button"; b.className="patient-option";
-        b.innerHTML=`<strong>${U.esc(x.name)}</strong><span class="patient-meta">${U.esc(x.age)} ${U.esc(x.ageUnit)} • ${U.esc(x.city)} • ${U.date(x.date)}</span>`;
+        b.innerHTML=`<strong>${U.esc(x.patientName)}</strong><span class="patient-meta">${U.esc(x.age)} ${U.esc(x.ageUnit)} • ${U.esc(x.city)} • ${U.date(x.date)}</span>`;
         b.onclick=()=>{
           // Selecting another patient must remove any confirmation belonging to a previous patient.
           $("confirmation").hidden=true;
@@ -673,12 +673,12 @@ $("patients").innerHTML="";
           $("submitStatus").textContent="";
           bookingSessionId++; bookingInProgress=false;
           selected=x; document.querySelectorAll(".patient-option").forEach(z=>z.classList.remove("selected")); b.classList.add("selected");
-          $("selectedPatientName").textContent=U.title(x.name||"—");
+          $("selectedPatientName").textContent=U.title(x.patientName||"—");
           $("selectedPatientAge").textContent=`${x.age ?? "—"} ${x.ageUnit||""}`.trim();
           $("selectedPatientCity").textContent=x.city||"—";
           $("selectedPatientBookingDate").textContent=U.date(x.date)||"—";
           $("selectedPatientCard").hidden=false;
-          $("name").value=U.title(x.name);
+          $("name").value=U.title(x.patientName);
           // Follow-up patient details are locked after retrieval. Payment Mode
           // and OPD Charges remain editable; all other fields require Edit.
           if($("followWa") && !$("followWa").value) $("followWa").value=U.phone(x.whatsapp||x.phone||"");
@@ -913,7 +913,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     }
     const bookingPhone=U.phone(type==="Follow-up"?$("followWa").value:$("wa").value);
     const recoveryPatientName=U.title($("name").value);
-    if(await window.NeuronRecovery?.isPatientRecovering?.({name:recoveryPatientName,whatsapp:bookingPhone,city:$("city").value,appointmentDate:$("date").dataset.key})){
+    if(await window.NeuronRecovery?.isPatientRecovering?.({patientName:recoveryPatientName,whatsapp:bookingPhone,city:$("city").value,appointmentDate:$("date").dataset.key})){
       $("submitStatus").textContent=`${recoveryPatientName} has a pending appointment. The system is recovering the appointment status. Please wait for the recovery status to update before booking this patient again.`;
       $("submitStatus").style.color="#7b1fa2";
       return;
@@ -960,7 +960,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     const startedAt=Date.now(),timeoutMs=15000;
     const payload={
       bookingRequestId:id,
-      childName:U.title($("name").value),
+      patientName:U.title($("name").value),
       age:Number($("age").value),
       ageUnit:$("unit").value,
       address:U.title($("address").value),
@@ -1087,7 +1087,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     const p=r.payload||{};
     resetFields("New");
     const set=(id,v)=>{if($(id)&&v!==undefined&&v!==null)$(id).value=String(v)};
-    set("name",p.childName||p.patientName); set("age",p.age); set("unit",p.ageUnit||"years");
+    set("name",p.patientName); set("age",p.age); set("unit",p.ageUnit||"years");
     set("address",p.address); set("ref",p.referredBy); set("wa",p.whatsapp); set("city",p.city); set("next",p.nextFollowupCity);
     updateCityOptions(); syncCityPickerTrigger();
     if($("date")){setTodayDateDisplay();$("date").dataset.key=todayKey();$("date").disabled=true;}
