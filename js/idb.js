@@ -46,7 +46,6 @@ window.IDB={
  },
  opdTodayCacheStale_(cache,records,field="appointmentId"){
   if(!cache)return false;
-  if(Array.isArray(records)&&records.some(p=>!String(p?.patientName==null?"":p.patientName).trim()))return true;
   return this.serialGap_(records,field);
  },
  markCacheStale_(cache,records,field="appointmentId"){
@@ -659,7 +658,7 @@ window.IDB={
 
     if(kind==="OPD_BOOKING"){
       [
-        ["patientName","patientName"],["age","age"],["ageUnit","ageUnit"],["address","address"],
+        ["name","name"],["age","age"],["ageUnit","ageUnit"],["address","address"],
         ["patientType","patientType"],["whatsapp","whatsapp"],["city","city"],
         ["referredBy","referredBy"],["nextFollowupCity","nextFollowupCity"],
         ["opdCharges","opdCharges"],["opdCharges","totalOPDCharges"],
@@ -680,7 +679,7 @@ window.IDB={
       ["eegCharges","eegCashPaid","eegOnlinePaid","eegTotalPaid","eegBookingRequestId","eegUpdateRequestId"].forEach(k=>setIfAvailable(k,k));
     }else if(kind==="OPD_UPDATE"){
       [
-        ["patientName","patientName"],["age","age"],["ageUnit","ageUnit"],["address","address"],
+        ["name","name"],["age","age"],["ageUnit","ageUnit"],["address","address"],
         ["referredBy","referredBy"],["whatsappNew","whatsapp"],["whatsapp","whatsapp"],
         ["nextFollowupCity","nextFollowupCity"],["opdCharges","opdCharges"],
         ["opdCharges","totalOPDCharges"],["opdCashPaid","opdCashPaid"],["opdOnlinePaid","opdOnlinePaid"]
@@ -718,7 +717,7 @@ window.IDB={
     if(i<0&&kind!=="OPD_BOOKING")return {updated:false,reason:"patient_missing"};
 
     const base=i>=0?{...patients[i]}:{
-      appointmentId,date,time:String(pick("time","")||""),patientName:String(pick("patientName","")||""),
+      appointmentId,date,time:String(pick("time","")||""),name:String(pick("patientName",pick("name",""))||""),
       age:pick("age",null),ageUnit:String(pick("ageUnit","")||""),address:String(pick("address","")||""),
       patientType:String(pick("patientType","Follow-up")||""),whatsapp:String(pick("whatsapp","")||""),city,
       referredBy:String(pick("referredBy","")||""),nextFollowupCity:String(pick("nextFollowupCity","")||""),
@@ -757,7 +756,7 @@ window.IDB={
       r.onsuccess=()=>{
         const cache=r.result;
         if(!cache||!Array.isArray(cache.records)){ok({eegCallsUpdated:false});return;}
-        const record={rowNumber,appointmentId:String(b.appointmentId||""),date:String(b.date||""),dateKey:/^\d{8}$/.test(String(b.date||""))?String(b.date):"",time:String(b.time||""),patientName:String(b.patientName||""),age:b.age,ageUnit:String(b.ageUnit||""),ageText:(b.age!=null&&b.ageUnit)?`${b.age} ${b.ageUnit}`:"",address:String(b.address||""),whatsapp:String(b.whatsapp||""),referredBy:String(b.referredBy||""),paymentReceived:Number(b.paymentReceived)||0,eegTechnician:String(b.eegTechnician||"")};
+        const record={rowNumber,appointmentId:String(b.appointmentId||""),date:String(b.date||""),dateKey:/^\d{8}$/.test(String(b.date||""))?String(b.date):"",time:String(b.time||""),patientName:String(b.patientName||b.name||""),age:b.age,ageUnit:String(b.ageUnit||""),ageText:(b.age!=null&&b.ageUnit)?`${b.age} ${b.ageUnit}`:"",address:String(b.address||""),whatsapp:String(b.whatsapp||""),referredBy:String(b.referredBy||""),paymentReceived:Number(b.paymentReceived)||0,eegTechnician:String(b.eegTechnician||"")};
         const byRow=new Map(cache.records.map(x=>[Number(x?.rowNumber),x]));byRow.set(rowNumber,record);
         let records=Array.from(byRow.values()).sort((a,b)=>(Number(a.rowNumber)||0)-(Number(b.rowNumber)||0));if(records.length>120)records=records.slice(-120);
         st.put({...cache,records,lastScannedRow:Math.max(Number(cache.lastScannedRow)||0,rowNumber),lastDataUpdatedAt:Date.now()});
