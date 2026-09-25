@@ -188,38 +188,11 @@
       try{return await fn()}catch(_){return undefined}
     }
   }
-  async function syncSuccessfulBookingToTodayCaches_(booking){
-    // Make the exact successful booking visible in IDB before the caller shows
-    // confirmation. This is intentionally best-effort and must never turn a
-    // successful server booking into a UI failure if IndexedDB is unavailable.
-    let result={todayUpdated:false};
-    try{result=await IDB.syncBookingCaches_(booking)||result;}catch(_){ }
 
-    // Reconcile the authoritative Today cache in the background. The exact
-    // patient patch above removes the normal consistency window; this refresh
-    // repairs an incomplete/stale cache without delaying confirmation.
-    if(String(booking?.kind||"")==="OPD_BOOKING"&&booking?.city){
-      void (async()=>{
-        try{
-          const refreshed=await IDB.getTodayOPDCache_(booking.city,{forceRefresh:true});
-          const appointmentId=String(booking.appointmentId||"").trim();
-          const present=appointmentId&&Array.isArray(refreshed?.patients)
-            ?refreshed.patients.some(p=>String(p?.appointmentId||"").trim()===appointmentId)
-            :false;
-          // If the authoritative refresh raced the just-completed Sheet write,
-          // restore the exact successful booking so the background refresh
-          // can never erase the immediate IDB patch.
-          if(!present)await IDB.syncBookingCaches_(booking);
-        }catch(_){ }
-      })();
-    }
-    return result;
+  async function updateTodayOPDFromRecovery_(x,result){
+    const mutation={kind:x.type,result:result,payload:x.payload||{},recovered:true};
+    return syncWithOneRetry_(()=>IDB.updateTodayOPDFromMutation_(mutation));
   }
-  async function syncRecoveredBookingToTodayCaches_(recoveredBooking){
-    return syncWithOneRetry_(()=>IDB.syncBookingCaches_(recoveredBooking));
-  }
-  window.syncSuccessfulBookingToTodayCaches_=syncSuccessfulBookingToTodayCaches_;
-  window.syncRecoveredBookingToTodayCaches_=syncRecoveredBookingToTodayCaches_;
 
   function matchesRecoveredOperation(x,result){
     if(!result||result.ok!==true||result.found!==true)return false;
@@ -231,34 +204,14 @@
     return true;
   }
 
-  async function syncRecoveredMutationToToday_(x,result){
-    const p=x.payload||{};
-    if(x.type==="OPD_UPDATE"){
-      const q=result.patient||result;
-      await syncWithOneRetry_(()=>IDB.patchTodayPatient_({appointmentId:p.appointmentId,city:p.city,date:p.appointmentDate,patch:{name:q.name??p.name,age:q.age??p.age,ageUnit:q.ageUnit??p.ageUnit,address:q.address??p.address,referredBy:q.referredBy??p.referredBy,whatsapp:q.whatsapp??p.whatsappNew??p.whatsapp,nextFollowupCity:q.nextFollowupCity??p.nextFollowupCity,opdCharges:q.opdCharges??p.opdCharges,totalOPDCharges:q.totalOPDCharges??q.opdCharges??p.opdCharges,opdCashPaid:q.opdCashPaid??p.opdCashPaid,opdOnlinePaid:q.opdOnlinePaid??p.opdOnlinePaid}}));
-      return;
-    }
-    if(x.type==="EEG_UPDATE"){
-      const q=result.patient||result;
-      await syncWithOneRetry_(()=>IDB.patchTodayPatient_({appointmentId:p.appointmentId,city:p.city,date:p.appointmentDate,patch:{eegCharges:q.eegCharges??p.eegCharges,eegCashPaid:q.eegCashPaid??p.eegCashPaid,eegOnlinePaid:q.eegOnlinePaid??p.eegOnlinePaid,eegTotalPaid:q.eegTotalPaid??q.eegCharges??p.eegCharges}}));
-      return;
-    }
-    if(x.type==="REFUND"){
-      const patch={};
-      if(p.updateOPD===true && String(result.opdRefund??"")!==""){patch.opdRefund=result.opdRefund;patch.opdRefundProvided=true;}
-      if(p.updateEEG===true && String(result.eegRefund??"")!==""){patch.eegRefund=result.eegRefund;patch.eegRefundProvided=true;}
-      await syncWithOneRetry_(()=>IDB.patchTodayPatient_({appointmentId:p.appointmentId,city:p.city,date:p.appointmentDate,patch}));
-    }
-  }
-
   async function completeRecovery(x,result){
     clearPendingTimer(x.id);
     if(x.type==="OPD_UPDATE"||x.type==="EEG_UPDATE"||x.type==="REFUND"){
-      await syncRecoveredMutationToToday_(x,result);
+      await updateTodayOPDFromRecovery_(x,result);
       try{await IDB.put("tx",{...x,status:"complete",result,recoveredAt:Date.now()});}catch(_){ }
       upsertState({id:x.id,type:x.type,status:"recovered",payload:x.payload||{},result,phase:"recovered",updatedAt:Date.now()});
       renderBar();
-      window.dispatchEvent(new CustomEvent("neuron:recovery-result",{detail:{status:"recovered",type:x.type,patientName:nameOf(x),result,payload:x.payload,globalHandled:x.type!=="OPD_BOOKING"}}));
+      window.dispatchEvent(new CustomEvent("neuron:recovery-result",{detail:{status:"recovered",type:x.type,patientName:nameOf(x),result,payload:x.payload,globalHandled:true}}));
       return;
     }
     const booking={
@@ -290,10 +243,13 @@
       eegTechnician:result.eegTechnician??result.patient?.eegTechnician??x.payload?.eegTechnician
     };
     try{void IDB.put("tx",{...x,status:"complete",result,recoveredAt:Date.now()}).catch(()=>{});}catch(_){ }
-    try{void syncRecoveredBookingToTodayCaches_(booking);}catch(_){ }
+    try{
+      if(x.type==="EEG_CALLS_BOOKING") await IDB.syncEEGCallsBookingCache_(booking);
+      else await updateTodayOPDFromRecovery_(x,{...result,...booking});
+    }catch(_){ }
     upsertState({id:x.id,type:x.type,status:"recovered",payload:x.payload||{},result,phase:"recovered",updatedAt:Date.now()});
     renderBar();
-    window.dispatchEvent(new CustomEvent("neuron:recovery-result",{detail:{status:"recovered",type:x.type,patientName:nameOf(x),result,payload:x.payload,globalHandled:x.type!=="OPD_BOOKING"}}));
+    window.dispatchEvent(new CustomEvent("neuron:recovery-result",{detail:{status:"recovered",type:x.type,patientName:nameOf(x),result,payload:x.payload,globalHandled:x.type!=="EEG_CALLS_BOOKING"}}));
   }
 
   async function failRecovery(x){
@@ -303,7 +259,7 @@
     try{await IDB.put("tx",{...x,status:"failed",failedAt:Date.now(),failureReason:"Request not found after recovery verification"});}catch(_){ }
     upsertState({id:x.id,type:x.type,status:"failed",payload:x.payload||{},result:null,phase:"failed",failedAt:Date.now(),updatedAt:Date.now()});
     renderBar();
-    window.dispatchEvent(new CustomEvent("neuron:recovery-result",{detail:{status:"failed",type:x.type,patientName:nameOf(x),result:null,payload:x.payload,globalHandled:x.type!=="OPD_BOOKING"}}));
+    window.dispatchEvent(new CustomEvent("neuron:recovery-result",{detail:{status:"failed",type:x.type,patientName:nameOf(x),result:null,payload:x.payload,globalHandled:x.type!=="EEG_CALLS_BOOKING"}}));
   }
 
   async function runRecovery(x){

@@ -2,7 +2,6 @@ let selected=null;
 function refundTxId_(p){return `REFUND|${String(p.appointmentId||"")}|${Number(p.rowNumber)||0}|${Date.now()}|${Math.random().toString(36).slice(2,8)}`;}
 function isUncertainMutationError_(e){const m=String(e?.message||e||"");return /Network timeout|request may still have been recorded|You are offline|Failed to fetch|NetworkError|fetch failed/i.test(m)||e?.name==="TypeError";}
 function recoverUncertainMutation_(tx){try{void IDB.put("tx",{...tx,status:"uncertain",uncertainAt:Date.now()}).then(()=>window.NeuronRecovery?.reconcilePendingBookings?.()).catch(()=>{});}catch(_){} }
-function patchRefundToday_(p,result){const patch={};if(String(p.opdRefund??'').trim()!==''){patch.opdRefund=result?.opdRefund??Number(p.opdRefund);patch.opdRefundProvided=true;}if(String(p.eegRefund??'').trim()!==''){patch.eegRefund=result?.eegRefund??Number(p.eegRefund);patch.eegRefundProvided=true;}return IDB.patchTodayPatient_({appointmentId:p.appointmentId,city:p.city,date:p.appointmentDate,patch});}
 
 document.addEventListener('DOMContentLoaded',()=>{
  const cities=Object.keys(window.Schedule?{...window.Schedule}:{}).length?["Latur","Nilanga","Udgir","Beed","Ambajogai","Dharashiv","Omerga","Barshi"]:["Latur"];
@@ -114,10 +113,9 @@ function save(){
  const tx={id:refundTxId_(p),type:"REFUND",status:"pending",startedAt:Date.now(),timeoutMs:25000,payload:p};
  api({action:'saveRefund',appointmentId:p.appointmentId,rowNumber:p.rowNumber,city:p.city,opdRefund:p.opdRefund,eegRefund:p.eegRefund,updateOPD:p.updateOPD,updateEEG:p.updateEEG}).then(async x=>{
   if(!x.ok)throw Error(x.error||'Refund failed.');
-  const patched=await patchRefundToday_(p,x);
-  if(!patched?.updated||!patched.patient)throw Error("Refund was saved, but today's OPD cache could not be synchronized. Please reload the patient after synchronization.");
+  let patched={updated:false,patient:null};try{patched=await IDB.updateTodayOPDFromMutation_({kind:"REFUND",result:x,payload:p})||patched;}catch(_){}
   try{await IDB.put("tx",{...tx,status:"complete",result:x,completedAt:Date.now()});}catch(_){}
-  const saved=patched.patient;
+  const saved={...(patched.patient||selected||{})};if(p.updateOPD) {saved.opdRefund=x.opdRefund??saved.opdRefund;saved.opdRefundProvided=true;}if(p.updateEEG) {saved.eegRefund=x.eegRefund??saved.eegRefund;saved.eegRefundProvided=true;}
   window.NeuronPatientActionContext?.notify?.("REFUND");
   showRefundConfirmation(saved);
   const refund = window.NeuronPatientActionRules?.refundAvailability?.(saved) || {opd:false,eeg:false};

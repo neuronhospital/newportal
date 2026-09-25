@@ -627,197 +627,145 @@ window.IDB={
     return {patients,authoritativeNegative,serverFallback:false};
   },
   
-  async patchTodayPatient_(data={}){
-    const appointmentId=String(data.appointmentId||"").trim();
-    const city=String(data.city||"").trim();
-    const date=/^\d{8}$/.test(String(data.date||""))?String(data.date):this.todayKey_();
-    if(!appointmentId||!city)return {updated:false,reason:"invalid"};
-    const key=`OPD_TODAY|${date}|${city}`;
-    let cache=await this.get("cache",key).catch(()=>null);
-    let patients=Array.isArray(cache?.patients)?cache.patients.slice():[];
-    let i=patients.findIndex(x=>String(x?.appointmentId||"").trim()===appointmentId);
-    // A successful mutation must never be left without a master OPD_TODAY
-    // record. If the cache is missing or the patient is missing, synchronize
-    // the authoritative today's list first, then apply the mutation.
-    if(!cache||!Array.isArray(cache.patients)||i<0){
-      cache=await this.getTodayOPDCache_(city,{forceRefresh:true});
-      if(!cache||cache.status==="STALE"||cache.complete!==true)return {updated:false,reason:"cache_sync_failed"};
-      patients=Array.isArray(cache.patients)?cache.patients.slice():[];
-      i=patients.findIndex(x=>String(x?.appointmentId||"").trim()===appointmentId);
-      if(i<0)return {updated:false,reason:"patient_missing_after_sync"};
+  async updateTodayOPDFromMutation_(mutation={}){
+    const kind=String(mutation.kind||"").trim();
+    const supported=["OPD_BOOKING","OPD_UPDATE","EEG_BOOKING","EEG_UPDATE","REFUND"];
+    if(supported.indexOf(kind)<0)return {updated:false,reason:"unsupported_mutation"};
+
+    const result=mutation.result&&typeof mutation.result==="object"?mutation.result:{};
+    const payload=mutation.payload&&typeof mutation.payload==="object"?mutation.payload:{};
+    const resultPatient=result.patient&&typeof result.patient==="object"?result.patient:result;
+    const has=(obj,key)=>Object.prototype.hasOwnProperty.call(obj,key)&&obj[key]!==undefined;
+    const pick=(key,fallback=null)=>has(resultPatient,key)?resultPatient[key]:has(result,key)?result[key]:has(payload,key)?payload[key]:fallback;
+    const appointmentId=String(pick("appointmentId","")||"").trim();
+    const city=String(pick("city","")||"").trim();
+    const dateRaw=String(pick("date",pick("appointmentDate",this.todayKey_()))||"").trim();
+    const date=/^\d{8}$/.test(dateRaw)?dateRaw:this.todayKey_();
+    if(!appointmentId||!city)return {updated:false,reason:"mutation_identity_missing"};
+    if(date!==this.todayKey_())return {updated:false,reason:"not_today"};
+
+    let cache=await this.get("cache",`OPD_TODAY|${date}|${city}`).catch(()=>null);
+    const cacheInvalid=!cache||!Array.isArray(cache.patients)||cache.status==="CACHED_INCOMPLETE"||cache.status==="STALE";
+    if(cacheInvalid){
+      cache=await this.getTodayOPDCache_(city,{forceRefresh:true}).catch(()=>null);
     }
-    const patch=data.patch&&typeof data.patch==="object"?data.patch:{};
-    const next={...patients[i]};
-    Object.keys(patch).forEach(k=>{
-      const v=patch[k];
-      if(k==="opdRefund"||k==="eegRefund"){
-        if(v!==undefined&&v!==null&&String(v)!=="") next[k]=v;
-      }else if(v!==undefined&&v!==null){
-        next[k]=v;
-      }
-    });
-    patients[i]=next;
-    const now=Date.now();
-    const updated={...cache,patients,cacheUpdatedAt:now,lastServerCheckAt:cache.lastServerCheckAt||now};
-    await this.replace("cache",key,updated);
-    return {updated:true,patient:next};
-  },
-  async syncBookingCaches_(booking){
-  const kind=String(booking?.kind||"").trim();
-  const appointmentId=String(booking?.appointmentId||"").trim();
-  const city=String(booking?.city||"").trim();
-  const date=String(booking?.date||booking?.appointmentDate||"").trim();
-  if(kind==="EEG_BOOKING"&&appointmentId&&city&&/^\d{8}$/.test(date)){
-    const key=`OPD_TODAY|${date}|${city}`;
-    const existing=await this.get("cache",key).catch(()=>null);
-    const stale=!existing||!Array.isArray(existing.patients)||this.opdTodayCacheStale_(existing,existing.patients,"appointmentId")||existing.status==="CACHED_INCOMPLETE"||existing.status==="STALE";
-    if(stale){
-      const refreshed=await this.getTodayOPDCache_(city,{forceRefresh:true});
-      if(!refreshed||refreshed.status==="STALE"||refreshed.complete!==true)throw Error("Today's OPD cache could not be synchronized before EEG booking.");
-    }
-  }
-  return this.withConnectionRetry_(d=>new Promise((ok,no)=>{
-  const kind=String(booking?.kind||"").trim();
-  const appointmentId=String(booking?.appointmentId||"").trim();
-  const city=String(booking?.city||"").trim();
-  const date=String(booking?.date||booking?.appointmentDate||"").trim();
-  const isTodayBooking=(kind==="OPD_BOOKING"||kind==="EEG_BOOKING") && city && /^\d{8}$/.test(date) && appointmentId;
-  const isEEGCalls=kind==="EEG_CALLS_BOOKING";
-  if(!isTodayBooking&&!isEEGCalls){ok({todayUpdated:false,eegCallsUpdated:false});return;}
-  const t=d.transaction("cache","readwrite"),st=t.objectStore("cache");
-  const opdKey=isTodayBooking?`OPD_TODAY|${date}|${city}`:"";
-  const callsKey="eegCallsRawCacheV1";
-  let opdCache=null,callsCache=null;
-  let opdRead=!isTodayBooking,callsRead=!isEEGCalls;
-  const result={todayUpdated:false,eegCallsUpdated:false};
-  const normalizePayment=(v,fallback)=>{const n=Number(v);return Number.isFinite(n)?n:fallback;};
-  const patientData=booking?.patient&&typeof booking.patient==="object"?booking.patient:{};
-  const common={
-    appointmentId,date,
-    time:String(booking.time??patientData.time??"").trim(),
-    name:booking.patientName??booking.name??patientData.name??"",
-    age:booking.age??patientData.age,
-    ageUnit:booking.ageUnit??patientData.ageUnit??"",
-    address:booking.address??patientData.address??"",
-    patientType:booking.patientType??patientData.patientType??"",
-    whatsapp:booking.whatsapp??patientData.whatsapp??"",
-    city:booking.city??patientData.city??city,
-    referredBy:booking.referredBy??patientData.referredBy??"",
-    nextFollowupCity:booking.nextFollowupCity??patientData.nextFollowupCity??""
-  };
-  const opdFields={
-    opdCharges:booking.opdCharges??patientData.opdCharges,
-    totalOPDCharges:booking.totalOPDCharges??patientData.totalOPDCharges??booking.opdCharges??patientData.opdCharges,
-    opdCashPaid:booking.opdCashPaid??patientData.opdCashPaid,
-    opdOnlinePaid:booking.opdOnlinePaid??patientData.opdOnlinePaid,
-    opdTotalPaid:booking.opdTotalPaid??patientData.opdTotalPaid,
-    opdRefund:patientData.opdRefund??0,eegRefund:patientData.eegRefund??0,
-    opdRefundProvided:patientData.opdRefundProvided??false,eegRefundProvided:patientData.eegRefundProvided??false,
-    bookingRequestId:booking.bookingRequestId??patientData.bookingRequestId??""
-  };
-  const eegPresent=booking.eegCharges!==undefined&&booking.eegCharges!==null&&String(booking.eegCharges).trim()!=="";
-  const eegFields={
-    eegCharges:eegPresent?Number(booking.eegCharges):patientData.eegCharges,
-    eegCashPaid:eegPresent?normalizePayment(booking.eegCashPaid,0):patientData.eegCashPaid,
-    eegOnlinePaid:eegPresent?normalizePayment(booking.eegOnlinePaid,0):patientData.eegOnlinePaid,
-    eegTotalPaid:eegPresent?normalizePayment(booking.eegTotalPaid,0):patientData.eegTotalPaid,
-    eegBookingRequestId:booking.eegBookingRequestId??patientData.eegBookingRequestId??"",
-    eegUpdateRequestId:patientData.eegUpdateRequestId??""
-  };
-  const mergeDefined=(base,fields)=>Object.keys(fields).forEach(k=>{if(fields[k]!==undefined&&fields[k]!==null&&fields[k]!=="")base[k]=fields[k];});
-  const makePatient=(existing)=>{
-    const base={...(existing||{})};
-    mergeDefined(base,common);
-    if(kind==="OPD_BOOKING") mergeDefined(base,opdFields);
-    if(kind==="EEG_BOOKING") mergeDefined(base,eegFields);
-    if(kind==="OPD_BOOKING"&&!eegPresent&&!existing)Object.assign(base,{eegCharges:null,eegCashPaid:0,eegOnlinePaid:0,eegTotalPaid:0,eegBookingRequestId:"",eegUpdateRequestId:""});
-    return base;
-  };
-  const sortPatients=patients=>patients.sort((a,b)=>{
-    const sa=Number(String(a?.appointmentId||"").match(/-(\d+)$/)?.[1]),sb=Number(String(b?.appointmentId||"").match(/-(\d+)$/)?.[1]);
-    if(Number.isFinite(sa)&&Number.isFinite(sb)&&sa!==sb)return sa-sb;
-    return String(a?.time||"").localeCompare(String(b?.time||""));
-  });
-  const applyToday=cache=>{
-    if(!cache&&kind!=="OPD_BOOKING")return;
-    const patients=Array.isArray(cache?.patients)?cache.patients.slice():[];
-    const i=patients.findIndex(x=>String(x?.appointmentId||"").trim()===appointmentId);
-    if(i>=0)patients[i]=makePatient(patients[i]);else patients.push(makePatient(null));
-    sortPatients(patients);
-    const now=Date.now();
-    const bookingSerial=Number(booking.serial)||Number(String(appointmentId).match(/-(\d+)$/)?.[1])||null;
-    const bookingRow=Number(booking.rowNumber)||null;
-    const isFirstOPDBookingForNewTodayCache=
-      !cache &&
-      kind==="OPD_BOOKING" &&
-      date===String(booking.date||booking.appointmentDate||"").trim() &&
-      city===String(booking.city||"").trim() &&
-      bookingSerial===1;
-    const next=cache?{...cache,patients,cacheUpdatedAt:now}:
-      {key:opdKey,type:"OPD_TODAY",date,city,patients,
-       status:isFirstOPDBookingForNewTodayCache?"REFRESHED":"CACHED_INCOMPLETE",
-       complete:isFirstOPDBookingForNewTodayCache,cacheUpdatedAt:now};
-    if(kind==="OPD_BOOKING"&&bookingSerial&&bookingRow){
-      const oldSerial=Number(next.lastSerial)||0,oldRow=Number(next.lastRowNumber)||1;
-      if(bookingSerial>=oldSerial&&bookingRow>=oldRow){
-        next.lastSerial=bookingSerial;
-        next.lastRowNumber=bookingRow;
-        next.lastServerCheckAt=now;
-        next.lastServerRefreshAt=now;
-      }
-    }
-    if(cache&&this.opdTodayCacheStale_(next,patients,"appointmentId"))next.status="STALE";
-    st.put(next);
-    result.todayUpdated=true;
-  };
-  const makeCallsRecord=()=>{
-    const rowNumber=Number(booking.rowNumber);
-    if(!Number.isInteger(rowNumber)||rowNumber<2)return null;
-    const d=String(booking.date||"");
-    return {
-      rowNumber,
-      appointmentId:String(booking.appointmentId||""),
-      date:d,
-      dateKey:/^\d{8}$/.test(d)?d:"",
-      time:String(booking.time||""),
-      patientName:String(booking.patientName||booking.name||""),
-      age:booking.age,
-      ageUnit:String(booking.ageUnit||""),
-      ageText:(booking.age!=null&&booking.ageUnit)?`${booking.age} ${booking.ageUnit}`:"",
-      address:String(booking.address||""),
-      whatsapp:String(booking.whatsapp||""),
-      referredBy:String(booking.referredBy||""),
-      paymentReceived:normalizePayment(booking.paymentReceived,0),
-      eegTechnician:String(booking.eegTechnician||"")
+
+    const patch={};
+    const setIfAvailable=(key,target=key)=>{
+      const v=pick(key,undefined);
+      if(v!==undefined)patch[target]=v;
     };
-  };
-  const applyCalls=cache=>{
-    if(!cache||!Array.isArray(cache.records))return;
-    const record=makeCallsRecord();
-    if(!record)return;
-    const byRow=new Map(cache.records.map(x=>[Number(x?.rowNumber),x]));
-    byRow.set(record.rowNumber,record);
-    let records=Array.from(byRow.values()).sort((a,b)=>(Number(a.rowNumber)||0)-(Number(b.rowNumber)||0));
-    if(records.length>120)records=records.slice(-120);
+
+    if(kind==="OPD_BOOKING"){
+      [
+        ["name","name"],["age","age"],["ageUnit","ageUnit"],["address","address"],
+        ["patientType","patientType"],["whatsapp","whatsapp"],["city","city"],
+        ["referredBy","referredBy"],["nextFollowupCity","nextFollowupCity"],
+        ["opdCharges","opdCharges"],["opdCharges","totalOPDCharges"],
+        ["opdCashPaid","opdCashPaid"],["opdOnlinePaid","opdOnlinePaid"],
+        ["opdTotalPaid","opdTotalPaid"],["bookingRequestId","bookingRequestId"]
+      ].forEach(([a,b])=>setIfAvailable(a,b));
+      patch.eegCharges=null;
+      patch.eegCashPaid=null;
+      patch.eegOnlinePaid=null;
+      patch.eegTotalPaid=null;
+      patch.eegBookingRequestId=has(resultPatient,"eegBookingRequestId")?resultPatient.eegBookingRequestId:null;
+      patch.eegUpdateRequestId=has(resultPatient,"eegUpdateRequestId")?resultPatient.eegUpdateRequestId:null;
+      patch.opdRefund=has(resultPatient,"opdRefund")?resultPatient.opdRefund:null;
+      patch.eegRefund=has(resultPatient,"eegRefund")?resultPatient.eegRefund:null;
+      patch.opdRefundProvided=has(resultPatient,"opdRefundProvided")?resultPatient.opdRefundProvided:false;
+      patch.eegRefundProvided=has(resultPatient,"eegRefundProvided")?resultPatient.eegRefundProvided:false;
+    }else if(kind==="EEG_BOOKING"){
+      ["eegCharges","eegCashPaid","eegOnlinePaid","eegTotalPaid","eegBookingRequestId","eegUpdateRequestId"].forEach(k=>setIfAvailable(k,k));
+    }else if(kind==="OPD_UPDATE"){
+      [
+        ["name","name"],["age","age"],["ageUnit","ageUnit"],["address","address"],
+        ["referredBy","referredBy"],["whatsappNew","whatsapp"],["whatsapp","whatsapp"],
+        ["nextFollowupCity","nextFollowupCity"],["opdCharges","opdCharges"],
+        ["opdCharges","totalOPDCharges"],["opdCashPaid","opdCashPaid"],["opdOnlinePaid","opdOnlinePaid"]
+      ].forEach(([a,b])=>{
+        const sourceKey=(a==="whatsappNew"&&!has(resultPatient,a)&&!has(result,a))?"whatsapp":a;
+        setIfAvailable(sourceKey,b);
+      });
+      if(has(resultPatient,"patientType"))patch.patientType=resultPatient.patientType;
+    }else if(kind==="EEG_UPDATE"){
+      ["eegCharges","eegCashPaid","eegOnlinePaid"].forEach(k=>setIfAvailable(k,k));
+      if(has(resultPatient,"eegTotalPaid"))patch.eegTotalPaid=resultPatient.eegTotalPaid;
+      else if(has(payload,"eegCharges"))patch.eegTotalPaid=payload.eegCharges;
+    }else if(kind==="REFUND"){
+      const updateOPD=payload.updateOPD===true||payload.updateOPD==="true";
+      const updateEEG=payload.updateEEG===true||payload.updateEEG==="true";
+      if(updateOPD&&has(result,"opdRefund")){patch.opdRefund=result.opdRefund;patch.opdRefundProvided=true;}
+      if(updateEEG&&has(result,"eegRefund")){patch.eegRefund=result.eegRefund;patch.eegRefundProvided=true;}
+    }
+
+    if(!cache||!Array.isArray(cache.patients)){
+      cache={key:`OPD_TODAY|${date}|${city}`,type:"OPD_TODAY",date,city,patients:[],status:"CACHED_INCOMPLETE",complete:false,cacheUpdatedAt:Date.now()};
+    }
+    const patients=Array.isArray(cache.patients)?cache.patients.slice():[];
+    let i=patients.findIndex(x=>String(x?.appointmentId||"").trim()===appointmentId);
+    if(i<0){
+      if(kind!=="OPD_BOOKING"){
+        const refreshed=await this.getTodayOPDCache_(city,{forceRefresh:true}).catch(()=>null);
+        if(refreshed&&Array.isArray(refreshed.patients)){
+          cache=refreshed;
+          patients.splice(0,patients.length,...refreshed.patients);
+          i=patients.findIndex(x=>String(x?.appointmentId||"").trim()===appointmentId);
+        }
+      }
+    }
+    if(i<0&&kind!=="OPD_BOOKING")return {updated:false,reason:"patient_missing"};
+
+    const base=i>=0?{...patients[i]}:{
+      appointmentId,date,time:String(pick("time","")||""),name:String(pick("patientName",pick("name",""))||""),
+      age:pick("age",null),ageUnit:String(pick("ageUnit","")||""),address:String(pick("address","")||""),
+      patientType:String(pick("patientType","Follow-up")||""),whatsapp:String(pick("whatsapp","")||""),city,
+      referredBy:String(pick("referredBy","")||""),nextFollowupCity:String(pick("nextFollowupCity","")||""),
+      opdCharges:null,totalOPDCharges:null,opdCashPaid:null,opdOnlinePaid:null,opdTotalPaid:null,
+      opdRefund:null,eegRefund:null,opdRefundProvided:false,eegRefundProvided:false,
+      eegCharges:null,eegCashPaid:null,eegOnlinePaid:null,eegTotalPaid:null,
+      bookingRequestId:null,eegBookingRequestId:null,eegUpdateRequestId:null
+    };
+    Object.keys(patch).forEach(k=>{base[k]=patch[k];});
+    if(i>=0)patients[i]=base;else patients.push(base);
+    patients.sort((a,b)=>{
+      const sa=Number(String(a?.appointmentId||"").match(/-(\d+)$/)?.[1]),sb=Number(String(b?.appointmentId||"").match(/-(\d+)$/)?.[1]);
+      if(Number.isFinite(sa)&&Number.isFinite(sb)&&sa!==sb)return sa-sb;
+      return String(a?.time||"").localeCompare(String(b?.time||""));
+    });
     const now=Date.now();
-    const next={...cache,records,lastScannedRow:Math.max(Number(cache.lastScannedRow)||0,record.rowNumber),lastDataUpdatedAt:now};
-    if(this.cacheStale_(next,records,"appointmentId"))next.status="STALE";
-    st.put(next);
-    result.eegCallsUpdated=true;
-  };
-  const maybeDone=()=>{
-    if(!opdRead||!callsRead)return;
-    if(isTodayBooking)applyToday(opdCache);
-    if(isEEGCalls)applyCalls(callsCache);
-  };
-  if(isTodayBooking){
-    const r1=st.get(opdKey);r1.onsuccess=()=>{opdCache=r1.result;opdRead=true;maybeDone()};r1.onerror=()=>no(r1.error);
-  }
-  if(isEEGCalls){
-    const r3=st.get(callsKey);r3.onsuccess=()=>{callsCache=r3.result;callsRead=true;maybeDone()};r3.onerror=()=>no(r3.error);
-  }
-  t.oncomplete=()=>ok(result);t.onerror=()=>no(t.error);t.onabort=()=>no(t.error||new Error("IndexedDB booking cache synchronization aborted."));
- }))},
+    const next={...cache,patients,cacheUpdatedAt:now,lastServerCheckAt:cache.lastServerCheckAt||now};
+    if(kind==="OPD_BOOKING"){
+      const serial=Number(pick("serial",String(appointmentId).match(/-(\d+)$/)?.[1]))||null;
+      const row=Number(pick("rowNumber",null))||null;
+      if(serial&&row){next.lastSerial=Math.max(Number(next.lastSerial)||0,serial);next.lastRowNumber=Math.max(Number(next.lastRowNumber)||1,row);next.lastServerCheckAt=now;next.lastServerRefreshAt=now;}
+    }
+    next.status=next.complete===true?"REFRESHED":next.status||"REFRESHED";
+    if(next.complete===undefined)next.complete=true;
+    await this.replace("cache",`OPD_TODAY|${date}|${city}`,next);
+    return {updated:true,patient:base,kind,appointmentId,city,date};
+  },
+
+  async syncEEGCallsBookingCache_(booking){
+    const b=booking&&typeof booking==="object"?booking:{};
+    const rowNumber=Number(b.rowNumber);
+    if(!Number.isInteger(rowNumber)||rowNumber<2)return {eegCallsUpdated:false};
+    return this.withConnectionRetry_(d=>new Promise((ok,no)=>{
+      const t=d.transaction("cache","readwrite"),st=t.objectStore("cache"),key="eegCallsRawCacheV1";
+      const r=st.get(key);
+      r.onsuccess=()=>{
+        const cache=r.result;
+        if(!cache||!Array.isArray(cache.records)){ok({eegCallsUpdated:false});return;}
+        const record={rowNumber,appointmentId:String(b.appointmentId||""),date:String(b.date||""),dateKey:/^\d{8}$/.test(String(b.date||""))?String(b.date):"",time:String(b.time||""),patientName:String(b.patientName||b.name||""),age:b.age,ageUnit:String(b.ageUnit||""),ageText:(b.age!=null&&b.ageUnit)?`${b.age} ${b.ageUnit}`:"",address:String(b.address||""),whatsapp:String(b.whatsapp||""),referredBy:String(b.referredBy||""),paymentReceived:Number(b.paymentReceived)||0,eegTechnician:String(b.eegTechnician||"")};
+        const byRow=new Map(cache.records.map(x=>[Number(x?.rowNumber),x]));byRow.set(rowNumber,record);
+        let records=Array.from(byRow.values()).sort((a,b)=>(Number(a.rowNumber)||0)-(Number(b.rowNumber)||0));if(records.length>120)records=records.slice(-120);
+        st.put({...cache,records,lastScannedRow:Math.max(Number(cache.lastScannedRow)||0,rowNumber),lastDataUpdatedAt:Date.now()});
+        ok({eegCallsUpdated:true});
+      };
+      r.onerror=()=>no(r.error);t.onerror=()=>no(t.error);t.onabort=()=>no(t.error||new Error("EEG Calls cache synchronization aborted."));
+    }));
+  },
+
 
 };
 
