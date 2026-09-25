@@ -111,7 +111,10 @@
     window.addEventListener("message", e => {
       if (e.origin !== location.origin) return;
       if (e.data?.type === "NEURON_PATIENT_ACTION_MUTATION") {
-        refreshSelectedAfterMutation(e.data.action||currentAction);
+        (async()=>{
+          await refreshSelectedAfterMutation(e.data.action||currentAction);
+          window.dispatchEvent(new CustomEvent("neuron:refresh-opd-today"));
+        })();
         return;
       }
       if (e.data?.type === "NEURON_PATIENT_ACTION_DONE") {
