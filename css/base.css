@@ -520,3 +520,23 @@ html.neuron-popup-embedded,body.neuron-embedded{overscroll-behavior-y:contain}
 body.neuron-embedded{overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch}
 .patient-action-form-body iframe{overscroll-behavior:contain}
 .patient-action-done{display:block;min-height:42px}
+
+
+/* v211.4: compact Today's OPD popup header/footer; maximize patient scroll area */
+.opd-today-header{padding:7px 15px 6px}
+.opd-today-heading-row{min-height:26px}
+.opd-today-heading-row h2{font-size:19px;line-height:1.25}
+.opd-today-last-updated{margin:0;color:var(--muted);font-size:11px;line-height:1.25;text-align:right;white-space:nowrap}
+.opd-today-status{display:none!important}
+.opd-today-footer{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:4px 13px}
+.opd-today-footer .opd-today-update,.opd-today-footer .cta{width:auto;min-width:96px;min-height:44px;margin:0;padding:7px 14px}
+.opd-today-footer .opd-today-update{border:1px solid var(--p);border-radius:6px;background:#fff;color:var(--p);font:inherit;font-size:13px;font-weight:800;cursor:pointer}
+.opd-today-footer .opd-today-update:active{background:#f5f0fa}
+@media(max-width:520px){
+  .opd-today-header{padding:6px 13px 5px}
+  .opd-today-heading-row{min-height:25px;gap:8px}
+  .opd-today-heading-row h2{font-size:18px}
+  .opd-today-last-updated{font-size:10.5px}
+  .opd-today-footer{padding:4px 10px;gap:7px}
+  .opd-today-footer .opd-today-update,.opd-today-footer .cta{min-width:92px;min-height:44px;padding:7px 12px}
+}
