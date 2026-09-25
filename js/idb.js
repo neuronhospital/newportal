@@ -46,6 +46,7 @@ window.IDB={
  },
  opdTodayCacheStale_(cache,records,field="appointmentId"){
   if(!cache)return false;
+  if(Array.isArray(records)&&records.some(p=>!String(p?.patientName==null?"":p.patientName).trim()))return true;
   return this.serialGap_(records,field);
  },
  markCacheStale_(cache,records,field="appointmentId"){
