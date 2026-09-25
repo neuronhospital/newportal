@@ -718,6 +718,7 @@ window.IDB={
 
     const base=i>=0?{...patients[i]}:{
       appointmentId,date,time:String(pick("time","")||""),name:String(pick("patientName",pick("name",""))||""),
+      rowNumber:Number(pick("rowNumber",null))||null,
       age:pick("age",null),ageUnit:String(pick("ageUnit","")||""),address:String(pick("address","")||""),
       patientType:String(pick("patientType","Follow-up")||""),whatsapp:String(pick("whatsapp","")||""),city,
       referredBy:String(pick("referredBy","")||""),nextFollowupCity:String(pick("nextFollowupCity","")||""),
