@@ -312,7 +312,11 @@ window.IDB={
     if(!r||r.ok!==true)throw Error(r?.error||"Unable to retrieve today's OPD patient list.");
     const serverDate=/^\d{8}$/.test(String(r.date||""))?String(r.date):date;
     const serverCity=String(r.city||c).trim()||c;
-    const patients=Array.isArray(r.patients)?r.patients:[];
+    const patients=(Array.isArray(r.patients)?r.patients:[]).map(p=>{
+      if(!p||typeof p!=="object")return p;
+      const patientName=String(p.patientName||p.name||"");
+      return {...p,name:patientName,patientName};
+    });
     const now=Date.now();
     const serverKey=`OPD_TODAY|${serverDate}|${serverCity}`;
     const fresh={key:serverKey,type:"OPD_TODAY",date:serverDate,city:serverCity,patients,
@@ -658,7 +662,7 @@ window.IDB={
 
     if(kind==="OPD_BOOKING"){
       [
-        ["name","name"],["age","age"],["ageUnit","ageUnit"],["address","address"],
+        ["patientName","patientName"],["age","age"],["ageUnit","ageUnit"],["address","address"],
         ["patientType","patientType"],["whatsapp","whatsapp"],["city","city"],
         ["referredBy","referredBy"],["nextFollowupCity","nextFollowupCity"],
         ["opdCharges","opdCharges"],["opdCharges","totalOPDCharges"],
@@ -679,7 +683,7 @@ window.IDB={
       ["eegCharges","eegCashPaid","eegOnlinePaid","eegTotalPaid","eegBookingRequestId","eegUpdateRequestId"].forEach(k=>setIfAvailable(k,k));
     }else if(kind==="OPD_UPDATE"){
       [
-        ["name","name"],["age","age"],["ageUnit","ageUnit"],["address","address"],
+        ["patientName","patientName"],["age","age"],["ageUnit","ageUnit"],["address","address"],
         ["referredBy","referredBy"],["whatsappNew","whatsapp"],["whatsapp","whatsapp"],
         ["nextFollowupCity","nextFollowupCity"],["opdCharges","opdCharges"],
         ["opdCharges","totalOPDCharges"],["opdCashPaid","opdCashPaid"],["opdOnlinePaid","opdOnlinePaid"]
@@ -717,7 +721,7 @@ window.IDB={
     if(i<0&&kind!=="OPD_BOOKING")return {updated:false,reason:"patient_missing"};
 
     const base=i>=0?{...patients[i]}:{
-      appointmentId,date,time:String(pick("time","")||""),name:String(pick("patientName",pick("name",""))||""),
+      appointmentId,date,time:String(pick("time","")||""),patientName:String(pick("patientName",pick("name",""))||""),name:String(pick("patientName",pick("name",""))||""),
       age:pick("age",null),ageUnit:String(pick("ageUnit","")||""),address:String(pick("address","")||""),
       patientType:String(pick("patientType","Follow-up")||""),whatsapp:String(pick("whatsapp","")||""),city,
       referredBy:String(pick("referredBy","")||""),nextFollowupCity:String(pick("nextFollowupCity","")||""),
@@ -727,6 +731,9 @@ window.IDB={
       bookingRequestId:null,eegBookingRequestId:null,eegUpdateRequestId:null
     };
     Object.keys(patch).forEach(k=>{base[k]=patch[k];});
+    const synchronizedPatientName=String(base.patientName||base.name||"");
+    base.patientName=synchronizedPatientName;
+    base.name=synchronizedPatientName;
     if(i>=0)patients[i]=base;else patients.push(base);
     patients.sort((a,b)=>{
       const sa=Number(String(a?.appointmentId||"").match(/-(\d+)$/)?.[1]),sb=Number(String(b?.appointmentId||"").match(/-(\d+)$/)?.[1]);
@@ -756,7 +763,7 @@ window.IDB={
       r.onsuccess=()=>{
         const cache=r.result;
         if(!cache||!Array.isArray(cache.records)){ok({eegCallsUpdated:false});return;}
-        const record={rowNumber,appointmentId:String(b.appointmentId||""),date:String(b.date||""),dateKey:/^\d{8}$/.test(String(b.date||""))?String(b.date):"",time:String(b.time||""),patientName:String(b.patientName||b.name||""),age:b.age,ageUnit:String(b.ageUnit||""),ageText:(b.age!=null&&b.ageUnit)?`${b.age} ${b.ageUnit}`:"",address:String(b.address||""),whatsapp:String(b.whatsapp||""),referredBy:String(b.referredBy||""),paymentReceived:Number(b.paymentReceived)||0,eegTechnician:String(b.eegTechnician||"")};
+        const record={rowNumber,appointmentId:String(b.appointmentId||""),date:String(b.date||""),dateKey:/^\d{8}$/.test(String(b.date||""))?String(b.date):"",time:String(b.time||""),patientName:String(b.patientName||""),age:b.age,ageUnit:String(b.ageUnit||""),ageText:(b.age!=null&&b.ageUnit)?`${b.age} ${b.ageUnit}`:"",address:String(b.address||""),whatsapp:String(b.whatsapp||""),referredBy:String(b.referredBy||""),paymentReceived:Number(b.paymentReceived)||0,eegTechnician:String(b.eegTechnician||"")};
         const byRow=new Map(cache.records.map(x=>[Number(x?.rowNumber),x]));byRow.set(rowNumber,record);
         let records=Array.from(byRow.values()).sort((a,b)=>(Number(a.rowNumber)||0)-(Number(b.rowNumber)||0));if(records.length>120)records=records.slice(-120);
         st.put({...cache,records,lastScannedRow:Math.max(Number(cache.lastScannedRow)||0,rowNumber),lastDataUpdatedAt:Date.now()});
