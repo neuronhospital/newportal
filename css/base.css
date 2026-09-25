@@ -528,7 +528,7 @@ body.neuron-embedded{overflow-y:auto;overscroll-behavior-y:contain;-webkit-overf
 .opd-today-heading-row h2{font-size:19px;line-height:1.25}
 .opd-today-last-updated{margin:0;color:var(--muted);font-size:11px;line-height:1.25;text-align:right;white-space:nowrap}
 .opd-today-status{display:none!important}
-.opd-today-footer{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:4px 13px}
+.opd-today-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 13px}
 .opd-today-footer .opd-today-update,.opd-today-footer .cta{width:auto;min-width:96px;min-height:44px;margin:0;padding:7px 14px}
 .opd-today-footer .opd-today-update{border:1px solid var(--p);border-radius:6px;background:#fff;color:var(--p);font:inherit;font-size:13px;font-weight:800;cursor:pointer}
 .opd-today-footer .opd-today-update:active{background:#f5f0fa}
