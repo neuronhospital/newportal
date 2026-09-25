@@ -274,7 +274,7 @@ document.addEventListener("DOMContentLoaded",()=>{
  function buildStatisticsFromCache_(city,period,cities,patientsByCity){
    const rows=[];
    cities.forEach(c=>(patientsByCity[c]||[]).forEach(p=>rows.push({
-     patientName:p?.patientName??"",age:p?.age??"",ageUnit:p?.ageUnit??"",
+     patientName:p?.name??p?.patientName??"",age:p?.age??"",ageUnit:p?.ageUnit??"",
      opdCharges:p?.opdCharges??0,opdCashPaid:Number(p?.opdCashPaid)||0,opdOnlinePaid:Number(p?.opdOnlinePaid)||0,opdTotalPaid:Number(p?.opdTotalPaid)||0,
      eegCharges:p?.eegCharges===""||p?.eegCharges==null?null:Number(p?.eegCharges),eegCashPaid:Number(p?.eegCashPaid)||0,eegOnlinePaid:Number(p?.eegOnlinePaid)||0,eegTotalPaid:Number(p?.eegTotalPaid)||0,
      mobileNumber:p?.whatsapp??p?.mobileNumber??"",opdRefund:p?.opdRefund??0,eegRefund:p?.eegRefund??0,date:p?.date??"",appointmentId:p?.appointmentId??"",city:c,

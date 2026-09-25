@@ -106,7 +106,7 @@
         return `${separator}<span class="${cls}">${esc(item)}</span>`;
       }).join("");
       const thirdLine = meta.mobileThirdLine ? `<span class="opd-today-card-line3"><span class="opd-today-payment">${esc(meta.mobileThirdLine)}</span></span>` : "";
-      return `<button type="button" class="opd-today-row" data-appointment-id="${esc(p?.appointmentId || "")}"><span class="opd-today-card-line1"><span class="opd-today-number">${i + 1}</span><span class="opd-today-name"><b>${esc(p?.patientName || "")}</b></span>${age ? `<span class="opd-today-age">${esc(age)}</span>` : ""}</span><span class="opd-today-card-line2">${inline}</span>${thirdLine}</button>`;
+      return `<button type="button" class="opd-today-row" data-appointment-id="${esc(p?.appointmentId || "")}"><span class="opd-today-card-line1"><span class="opd-today-number">${i + 1}</span><span class="opd-today-name"><b>${esc(p?.name || "")}</b></span>${age ? `<span class="opd-today-age">${esc(age)}</span>` : ""}</span><span class="opd-today-card-line2">${inline}</span>${thirdLine}</button>`;
     }).join("");
     list.querySelectorAll("[data-appointment-id]").forEach(row => row.addEventListener("click", () => {
       const id=String(row.dataset.appointmentId||"");

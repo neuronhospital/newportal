@@ -125,7 +125,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       r.patients.forEach((x,i)=>{
         const b=document.createElement('button');
         b.className='patient-option';
-        b.innerHTML=`<strong>${U.esc(x.patientName)}</strong><span class="patient-meta">${U.esc(x.age)} ${U.esc(x.ageUnit)} • ${U.esc(x.city||"")} • ${U.date(x.date)}</span>`;
+        b.innerHTML=`<strong>${U.esc(x.name)}</strong><span class="patient-meta">${U.esc(x.age)} ${U.esc(x.ageUnit)} • ${U.esc(x.city||"")} • ${U.date(x.date)}</span>`;
         b.onclick=()=>{
           sel=x;
           $('confirmation').hidden=true;
@@ -134,7 +134,7 @@ document.addEventListener("DOMContentLoaded",()=>{
           document.querySelectorAll('.patient-option').forEach(z=>z.classList.remove('selected'));
           b.classList.add('selected');
           $('payment').hidden=false;
-          if($('paymentPatientName')) $('paymentPatientName').textContent=x.patientName||'';
+          if($('paymentPatientName')) $('paymentPatientName').textContent=x.name||'';
           setPaymentDefaults();
           updatePayment();
           if($('paymentPatientName')){
@@ -162,8 +162,8 @@ document.addEventListener("DOMContentLoaded",()=>{
     if(!String($('city').value||'').trim())return error('Please select the city.','city');
     const wa=U.phone($('wa').value);
     if(!/^[6-9]\d{9}$/.test(wa))return error('Enter a valid 10-digit WhatsApp number.','wa');
-    if(await window.NeuronRecovery?.isPatientRecovering?.({patientName:sel.patientName,whatsapp:wa,city:$('city').value,appointmentDate:(()=>{const p=U.parts();return p.y+String(p.m).padStart(2,'0')+String(p.d).padStart(2,'0')})()})){
-      return error(`${sel.patientName} has a pending appointment. The system is recovering the appointment status. Please wait for the recovery status to update before booking this patient again.`);
+    if(await window.NeuronRecovery?.isPatientRecovering?.({name:sel.name,whatsapp:wa,city:$('city').value,appointmentDate:(()=>{const p=U.parts();return p.y+String(p.m).padStart(2,'0')+String(p.d).padStart(2,'0')})()})){
+      return error(`${sel.name} has a pending appointment. The system is recovering the appointment status. Please wait for the recovery status to update before booking this patient again.`);
     }
     const m=String($('mode').value||'').trim();
     if(!['Cash','Online','Split'].includes(m))return error('Please select a valid payment mode.','mode');
@@ -195,13 +195,13 @@ document.addEventListener("DOMContentLoaded",()=>{
     $('book').className='btn btn-success';
     $('bookMessage').hidden=false;
     $('bookMessage').textContent='Wait we are Confirming your EEG Booking...';
-    const id=U.requestId8(),startedAt=Date.now(),timeoutMs=15000,p={eegBookingRequestId:id,bookingRequestId:sel.bookingRequestId||"",appointmentId:sel.appointmentId,rowNumber:sel.rowNumber,patientName:sel.patientName,whatsapp:wa,city:$('city').value,eegCharges:total,eegPaymentMode:m,eegCashPaid:cPaid,eegOnlinePaid:oPaid};
+    const id=U.requestId8(),startedAt=Date.now(),timeoutMs=15000,p={eegBookingRequestId:id,bookingRequestId:sel.bookingRequestId||"",appointmentId:sel.appointmentId,rowNumber:sel.rowNumber,patientName:sel.name,whatsapp:wa,city:$('city').value,eegCharges:total,eegPaymentMode:m,eegCashPaid:cPaid,eegOnlinePaid:oPaid};
     try{
       try{await IDB.put('tx',{id,type:'EEG_BOOKING',status:'pending',startedAt,timeoutMs,payload:p});}catch(_){}
       const r=await NeuronAPI.call('bookEEG',p,timeoutMs);
       try{await IDB.put('tx',{id,type:'EEG_BOOKING',status:'complete',payload:p,result:r});}catch(_){}
       try{await IDB.updateTodayOPDFromMutation_({kind:"EEG_BOOKING",result:r,payload:p});}catch(_){}
-      const confirmationPatient=r.patientName||sel.patientName;
+      const confirmationPatient=r.patientName||sel.name;
       window.NeuronPatientActionContext?.notify?.("BOOK_EEG");
       $('confirmation').innerHTML=`<div class="success"><div class="success-icon">✓</div><h2>EEG Appointment Confirmed</h2><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(confirmationPatient)}</b></div><div class="confirm-row"><span>EEG Charges</span><b>${U.money(r.eegCharges)}</b></div></div>`;
       $('patients').innerHTML='';sel=null;$('payment').hidden=true;$('paymentPatientName').textContent='';$('amount').value='';$('cash').value='';$('online').value='';$('total').textContent='₹0';$('status').textContent='';$('confirmation').hidden=false;resetBookButton();
@@ -225,7 +225,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     clearLoadedState();
     sel=cp;
     $('confirmation').hidden=true; $('confirmation').innerHTML=''; $('bookMessage').hidden=true;
-    $('payment').hidden=false; if($('paymentPatientName'))$('paymentPatientName').textContent=cp.patientName||'';
+    $('payment').hidden=false; if($('paymentPatientName'))$('paymentPatientName').textContent=cp.name||'';
     setPaymentDefaults(); updatePayment();
   }
 

@@ -67,7 +67,7 @@
     list.innerHTML = patients.map((p, i) => {
       const age = ageText(p);
       const meta = age ? `${age} • ${paidText(p)}` : paidText(p);
-      return `<div class="eeg-today-row"><span class="eeg-today-number">${i + 1}.</span><span class="eeg-today-patient"><b>${esc(p?.patientName || "")}</b><span>${esc(meta)}</span></span></div>`;
+      return `<div class="eeg-today-row"><span class="eeg-today-number">${i + 1}.</span><span class="eeg-today-patient"><b>${esc(p?.name || "")}</b><span>${esc(meta)}</span></span></div>`;
     }).join("");
   }
 
