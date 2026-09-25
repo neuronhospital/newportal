@@ -61,13 +61,12 @@
     if (!list) return;
     const patients = sortPatients(eegPatients(record?.patients));
     if (!patients.length) {
-      list.innerHTML = '<div class="eeg-today-empty">No EEG patients found for today.</div>';
+      list.innerHTML = '<div class="opd-today-empty">No EEG patients found for today.</div>';
       return;
     }
     list.innerHTML = patients.map((p, i) => {
       const age = ageText(p);
-      const meta = age ? `${age} • ${paidText(p)}` : paidText(p);
-      return `<div class="eeg-today-row"><span class="eeg-today-number">${i + 1}.</span><span class="eeg-today-patient"><b>${esc(p?.name || "")}</b><span>${esc(meta)}</span></span></div>`;
+      return `<div class="opd-today-row"><span class="opd-today-card-line1"><span class="opd-today-number">${i + 1}</span><span class="opd-today-name"><b>${esc(p?.name || "")}</b></span>${age ? `<span class="opd-today-age">${esc(age)}</span>` : ""}</span><span class="opd-today-card-line2"><span class="opd-today-payment">EEG : ${esc(paidText(p))}</span></span></div>`;
     }).join("");
   }
 
