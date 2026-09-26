@@ -563,7 +563,8 @@ document.addEventListener("DOMContentLoaded",()=>{
   }));
   document.addEventListener("keydown",e=>{
     if(e.key==="Escape"){
-      if(!$("cityPickerModal")?.hidden){closeCityPicker();}
+      if(!$("rebuildFollowupConfirmModal")?.hidden){setRebuildFollowupConfirmVisible(false);}
+      else if(!$("cityPickerModal")?.hidden){closeCityPicker();}
       else if(!$("specialAccessModal")?.hidden){closeSpecialAccessPopup();pendingRestrictedCity="";restoreDefaultCity();}
       else if(!$("opdRestrictionModal")?.hidden){closeCityRestrictionPopup();pendingRestrictedCity="";restoreDefaultCity();}
     }
@@ -579,6 +580,9 @@ document.addEventListener("DOMContentLoaded",()=>{
     modal.hidden=!visible;
     modal.setAttribute("aria-hidden",visible?"false":"true");
     document.body.classList.toggle("opd-modal-open",visible);
+    if(visible){
+      requestAnimationFrame(()=>$("rebuildFollowupConfirmYes")?.focus());
+    }
   };
 
   const runRebuildFollowupCache=async()=>{
@@ -614,6 +618,9 @@ document.addEventListener("DOMContentLoaded",()=>{
   });
   $("rebuildFollowupConfirmYes")?.addEventListener("click",()=>runRebuildFollowupCache());
   $("rebuildFollowupConfirmNo")?.addEventListener("click",()=>setRebuildFollowupConfirmVisible(false));
+  $("rebuildFollowupConfirmModal")?.addEventListener("click",e=>{
+    if(e.target===$("rebuildFollowupConfirmModal")||e.target.classList.contains("opd-access-backdrop"))setRebuildFollowupConfirmVisible(false);
+  });
 
   $("load").onclick=async()=>{
     if(followStatusTimer){clearTimeout(followStatusTimer);followStatusTimer=null;}
