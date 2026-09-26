@@ -170,6 +170,7 @@ document.addEventListener("DOMContentLoaded",()=>{
 
  const STATS_IDB_STORE="statisticsRetrieval";
  let statisticsPollTimer=null;
+ let statisticsTopStatusTimer=null;
 
  function statisticsCriteriaKey_(city,period,showMode,selectedCities){
    const cities=(Array.isArray(selectedCities)?selectedCities:[]).map(x=>String(x).toLowerCase()).sort();
@@ -194,10 +195,13 @@ document.addEventListener("DOMContentLoaded",()=>{
  function setStatisticsTopStatus_(status,city,period){
    const el=$("statisticsRetrievalTopStatus");
    if(!el)return;
+   if(statisticsTopStatusTimer){clearTimeout(statisticsTopStatusTimer);statisticsTopStatusTimer=null;}
    if(!status){el.hidden=true;el.textContent="";el.className="statistics-retrieval-top-status";return;}
    el.hidden=false;
    el.className=`statistics-retrieval-top-status ${String(status).toLowerCase()}`;
    el.textContent=statisticsStatusText_(status,city,period);
+   if(status==="COMPLETED"||status==="FAILED")
+     statisticsTopStatusTimer=setTimeout(()=>{statisticsTopStatusTimer=null;setStatisticsTopStatus_(null,"","");},5000);
  }
 
  async function saveStatisticsRetrievalState_(state, status, extra){
