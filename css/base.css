@@ -353,6 +353,8 @@ body[data-title="Home"] .portal-action:active{background:#fff}
 @media(max-width:699px){.neuron-recovery-actions button{min-height:36px}.neuron-recovery-dialog{max-height:84vh}.neuron-recovery-detail-row{align-items:flex-start;flex-direction:column;gap:3px}.neuron-recovery-detail-row b{text-align:left}}
 
 .statistics-retrieval-top-status{display:flex;align-items:center;gap:8px;margin:0 0 10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;font-size:13px;font-weight:750;box-shadow:0 2px 8px rgba(16,24,40,.05)}
+.statistics-retrieval-top-status:empty{display:none!important}
+#results:empty{display:none!important}
 .statistics-retrieval-top-status.running{border-color:#c7d7fe}.statistics-retrieval-top-status.completed{border-color:#b7ebc6}.statistics-retrieval-top-status.failed{border-color:#f2c2c2}
 
 /* v199.6: responsive Statistics Performance Trends */
