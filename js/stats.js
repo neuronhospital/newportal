@@ -9,23 +9,43 @@ document.addEventListener("DOMContentLoaded",()=>{
      : "Latur"
  );
  if(NEURON_CONFIG.cities.includes(defaultDailyCity)) $("city").value=defaultDailyCity;
- const q=U.parts(),cur=`${q.y}-${String(q.m).padStart(2,"0")}`;
- $("period").innerHTML=
-   `<option value="today">Today</option>
-    <option value="yesterday">Yesterday</option>
-    <option value="daybefore">Day Before Yesterday</option>
-    <option value="${cur}">${new Intl.DateTimeFormat("en-IN",{month:"long",year:"numeric",timeZone:"Asia/Kolkata"}).format(new Date(Date.UTC(q.y,q.m-1,1)))}</option>
-    <option value="${(()=>{const d=new Date(Date.UTC(q.y,q.m-2,1));return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}`})()}">${new Intl.DateTimeFormat("en-IN",{month:"long",year:"numeric",timeZone:"Asia/Kolkata"}).format(new Date(Date.UTC(q.y,q.m-2,1)))}</option>
-    <option value="${(()=>{const d=new Date(Date.UTC(q.y,q.m-3,1));return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}`})()}">${new Intl.DateTimeFormat("en-IN",{month:"long",year:"numeric",timeZone:"Asia/Kolkata"}).format(new Date(Date.UTC(q.y,q.m-3,1)))}</option>
-    <option value="${(()=>{const d=new Date(Date.UTC(q.y,q.m-4,1));return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}`})()}">${new Intl.DateTimeFormat("en-IN",{month:"long",year:"numeric",timeZone:"Asia/Kolkata"}).format(new Date(Date.UTC(q.y,q.m-4,1)))}</option>
-    <option value="last12">Last 12 Months</option>
-    <option value="last5">Last 5 Years</option>
-    <option value="currentyear">${q.y}</option>
-    <option value="lastyear">${q.y-1}</option>
-    <option value="${q.y-2}">${q.y-2}</option>
-    <option value="${q.y-3}">${q.y-3}</option>
-    <option value="${q.y-4}">${q.y-4}</option>
-    <option value="${q.y-5}">${q.y-5}</option>`;
+ const q=U.parts();
+ function populatePeriodOptions_(preferred){
+   const cur=`${q.y}-${String(q.m).padStart(2,"0")}`;
+   const city=String($("city").value||"all");
+   const daily=[
+     ["today","Today"],
+     ["yesterday","Yesterday"],
+     ["daybefore","Day Before Yesterday"]
+   ];
+   const dailyOptions=daily.filter(([value])=>{
+     const date=selectedDateForDailyPeriod_(value);
+     if(city.toLowerCase()==="all") return scheduledCitiesForDate_(date).length>0;
+     return scheduledCitiesForDate_(date).includes(city);
+   });
+   const monthOption=(offset)=>{
+     const d=new Date(Date.UTC(q.y,q.m-1-offset,1));
+     const value=`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}`;
+     const label=new Intl.DateTimeFormat("en-IN",{month:"long",year:"numeric",timeZone:"Asia/Kolkata"}).format(d);
+     return `<option value="${value}">${label}</option>`;
+   };
+   $("period").innerHTML=
+     dailyOptions.map(([value,label])=>`<option value="${value}">${label}</option>`).join("")+
+     `<option value="${cur}">${new Intl.DateTimeFormat("en-IN",{month:"long",year:"numeric",timeZone:"Asia/Kolkata"}).format(new Date(Date.UTC(q.y,q.m-1,1)))}</option>`+
+     monthOption(1)+monthOption(2)+monthOption(3)+
+     `<option value="last12">Last 12 Months</option>
+      <option value="last5">Last 5 Years</option>
+      <option value="currentyear">${q.y}</option>
+      <option value="lastyear">${q.y-1}</option>
+      <option value="${q.y-2}">${q.y-2}</option>
+      <option value="${q.y-3}">${q.y-3}</option>
+      <option value="${q.y-4}">${q.y-4}</option>
+      <option value="${q.y-5}">${q.y-5}</option>`;
+   const options=[...$("period").options];
+   if(preferred && options.some(o=>o.value===preferred)) $("period").value=preferred;
+   else if(dailyOptions.length) $("period").value=dailyOptions[0][0];
+   else $("period").selectedIndex=0;
+ }
 
  function retrievalPeriodLabel(period){
    const q=U.parts();
@@ -116,19 +136,34 @@ document.addEventListener("DOMContentLoaded",()=>{
    $("historyStatus").textContent="";
    if(window.NEURON_StatisticsTrends && typeof window.NEURON_StatisticsTrends.clear==="function") window.NEURON_StatisticsTrends.clear();
  }
- [$("city"),$("period")].forEach(el=>el.addEventListener("change",clearResults));
+ $("city").addEventListener("change",()=>{
+   const current=$("period").value;
+   clearResults();
+   populatePeriodOptions_(current);
+ });
+ $("period").addEventListener("change",clearResults);
+ populatePeriodOptions_("today");
 
 
  let activeRetrieval=null;
  let pendingNavigationHref=null;
  let pendingHistoryDirection=0;
 
- function setRetrievalStatus(message){
+ let retrievalStatusTimer=null;
+ function setRetrievalStatus(message,autoHideMs){
+   if(retrievalStatusTimer){clearTimeout(retrievalStatusTimer);retrievalStatusTimer=null;}
    $("retrievalStatus").textContent=message||"";
+   if(message && Number(autoHideMs)>0){
+     retrievalStatusTimer=setTimeout(()=>{
+       $("retrievalStatus").textContent="";
+       retrievalStatusTimer=null;
+     },Number(autoHideMs));
+   }
  }
 
  function setRetrievalControls(active){
    $("get").disabled=active;
+   $("refreshStats").disabled=active;
    $("city").disabled=active;
    $("period").disabled=active;
  }
@@ -217,6 +252,7 @@ document.addEventListener("DOMContentLoaded",()=>{
        if(activeRetrieval && activeRetrieval.retrievalKey && activeRetrieval.retrievalKey!==state.retrievalKey)return;
        if(r.status==="COMPLETED"&&r.result){
          await applyStatisticsResult_(state,r.result);
+         if(state.source==="SPREADSHEET") setRetrievalStatus("Statistics retrieved from Spreadsheet.",5000);
          return;
        }
        if(r.status!=="RUNNING"&&r.status!=="COMPLETED"){
@@ -278,14 +314,20 @@ document.addEventListener("DOMContentLoaded",()=>{
      opdCharges:p?.opdCharges??0,opdCashPaid:Number(p?.opdCashPaid)||0,opdOnlinePaid:Number(p?.opdOnlinePaid)||0,opdTotalPaid:Number(p?.opdTotalPaid)||0,
      eegCharges:p?.eegCharges===""||p?.eegCharges==null?null:Number(p?.eegCharges),eegCashPaid:Number(p?.eegCashPaid)||0,eegOnlinePaid:Number(p?.eegOnlinePaid)||0,eegTotalPaid:Number(p?.eegTotalPaid)||0,
      mobileNumber:p?.whatsapp??p?.mobileNumber??"",opdRefund:p?.opdRefund??0,eegRefund:p?.eegRefund??0,date:p?.date??"",appointmentId:p?.appointmentId??"",city:c,
-     followupCity:c==="Latur"?(p?.nextFollowupCity??p?.followupCity??""):""
+     patientType:p?.patientType??"",followupCity:c==="Latur"?(p?.nextFollowupCity??p?.followupCity??""):""
    })));
    rows.sort((a,b)=>String(a.appointmentId||"").localeCompare(String(b.appointmentId||"")));
-   const t={patientCount:0,freeOPD:0,eegCount:0,freeEEG:0,opdTotal:0,opdCash:0,opdOnline:0,opdPaid:0,opdRefund:0,eegTotal:0,eegCash:0,eegOnline:0,eegPaid:0,eegRefund:0,totalCash:0,totalOnline:0,totalCollection:0,totalRefund:0,netCash:0,netOnline:0,netTotal:0};
+   const t={patientCount:0,opdNew:0,opdFollowup:0,freeOPD:0,eegCount:0,freeEEG:0,opdTotal:0,opdCash:0,opdOnline:0,opdPaid:0,opdRefund:0,eegTotal:0,eegCash:0,eegOnline:0,eegPaid:0,eegRefund:0,totalCash:0,totalOnline:0,totalCollection:0,totalRefund:0,netCash:0,netOnline:0,netTotal:0};
    const daily={};
    rows.forEach(x=>{
      const oc=Number(x.opdCharges)||0,or=Number(x.opdRefund)||0,ec=x.eegCharges==null?null:Number(x.eegCharges),er=Number(x.eegRefund)||0;
-     t.patientCount++;t.opdTotal+=oc;t.opdCash+=Number(x.opdCashPaid)||0;t.opdOnline+=Number(x.opdOnlinePaid)||0;t.opdPaid+=Number(x.opdTotalPaid)||0;t.opdRefund+=or;
+     t.patientCount++;
+     if(period==="today"){
+       const patientType=String(x.patientType||"").trim().toLowerCase();
+       if(patientType==="new")t.opdNew++;
+       else if(patientType==="follow-up")t.opdFollowup++;
+     }
+     t.opdTotal+=oc;t.opdCash+=Number(x.opdCashPaid)||0;t.opdOnline+=Number(x.opdOnlinePaid)||0;t.opdPaid+=Number(x.opdTotalPaid)||0;t.opdRefund+=or;
      if(oc===0||(oc>0&&or===oc))t.freeOPD++;
      if(ec!=null){t.eegCount++;t.eegTotal+=ec;t.eegCash+=Number(x.eegCashPaid)||0;t.eegOnline+=Number(x.eegOnlinePaid)||0;t.eegPaid+=Number(x.eegTotalPaid)||0;t.eegRefund+=er;if(ec===0||(ec>0&&er===ec))t.freeEEG++;}
      const k=String(x.date||"");if(/^\d{8}$/.test(k)){if(!daily[k])daily[k]={opd:0,eeg:0};daily[k].opd++;if(ec!=null)daily[k].eeg++;}
@@ -317,45 +359,71 @@ document.addEventListener("DOMContentLoaded",()=>{
    return {...extra,city:"All",period:base.period,periodLabel:base.periodLabel,showMode:"both",hasDetail:true,rows,totals,trendData:{...(extra.trendData||{}),daily:Object.keys(daily).sort().map(k=>({date:k,opd:daily[k].opd,eeg:daily[k].eeg}))},statisticsSourceCities:[...(base.statisticsSourceCities||[]),...(extra.statisticsSourceCities||[])].filter((x,i,a)=>a.indexOf(x)===i)};
  }
 
- async function retrieveSelectedRecords(){
+ async function retrieveFromScriptProperties_(){
+   const citySelect=$("city"),periodSelect=$("period");
+   const selectedPeriod=periodSelect.value;
+   const request=statisticsRequest_(citySelect.value,selectedPeriod,"both",sourceCitiesForDailyPeriod_(selectedPeriod));
+   const targets=request.city==="all" ? request.selectedCities : [request.city];
+   if(selectedPeriod!=="today" || !targets.length){
+     return {handled:false,source:"SPREADSHEET"};
+   }
+   const responses=await Promise.all(targets.map(async city=>{
+     const r=await NeuronAPI.call("getTodayOPDFromProperties",{city:city,date:dailyDateKey_(selectedPeriod)},25000);
+     if(!r || r.ok!==true) throw Error(r?.error||`Unable to retrieve ScriptProperties data for ${city}.`);
+     return r;
+   }));
+   const patientsByCity={};
+   let usedSpreadsheetFallback=false;
+   responses.forEach(r=>{
+     patientsByCity[r.city]=Array.isArray(r.patients)?r.patients:[];
+     if(String(r.source||"").toUpperCase()==="SPREADSHEET_REBUILD") usedSpreadsheetFallback=true;
+   });
+   const result=buildStatisticsFromCache_(request.city,selectedPeriod,targets,patientsByCity);
+   const state={retrievalKey:statisticsCriteriaKey_(request.city,request.period,request.showMode,request.selectedCities),requestId:"",city:request.city,period:request.period,showMode:request.showMode,selectedCities:request.selectedCities,createdAt:Date.now(),updatedAt:Date.now()};
+   activeRetrieval=state;
+   await applyStatisticsResult_(state,result);
+   activeRetrieval=null;
+   return {handled:true,source:usedSpreadsheetFallback?"SPREADSHEET":"SCRIPT_PROPERTIES"};
+ }
+
+ async function retrieveSelectedRecords(mode="instant"){
    const btn=$("get");
    const citySelect=$("city");
    const periodSelect=$("period");
    const old=btn.textContent;
+   const isRefresh=mode==="refresh";
    const selectedPeriod=periodSelect.value;
    let sourceCities=null;
-   if(selectedPeriod==="today" || selectedPeriod==="yesterday" || selectedPeriod==="daybefore"){
+   if(selectedPeriod==="today" || selectedPeriod==="yesterday" || selectedPeriod==="daybefore")
      sourceCities=sourceCitiesForDailyPeriod_(selectedPeriod);
-     if(citySelect.value!=="all" && !sourceCities.includes(citySelect.value)){
-       const dateKey=dailyDateKey_(selectedPeriod);
-       const message=`${U.esc(citySelect.value)} OPD was not scheduled on ${U.esc(dailyDateLabel_(dateKey))}.`;
-       $("results").innerHTML=`<div class="status">${message}</div>`;
-       setRetrievalStatus("Selected city/date is not scheduled.");
-       return;
-     }
-     if(citySelect.value==="all" && !sourceCities.length){
-       const dateKey=dailyDateKey_(selectedPeriod);
-       $("results").innerHTML=`<div class="status">No OPD was scheduled on ${U.esc(dailyDateLabel_(dateKey))}.</div>`;
-       setRetrievalStatus("No scheduled cities for the selected date.");
-       return;
-     }
-   }
    let request=statisticsRequest_(citySelect.value,selectedPeriod,"both",sourceCities||[]);
    let retrievalKey=statisticsCriteriaKey_(request.city,request.period,request.showMode,request.selectedCities);
    setRetrievalControls(true);
    $("historyGate").hidden=true;
-   btn.textContent="Retrieving Records…";
-   $("results").innerHTML=`<div class="status">Checking schedule and OPD cache…</div>`;
+   btn.textContent=isRefresh?"Refreshing…":"Retrieving…";
+   $("results").innerHTML=`<div class="status">Checking ${isRefresh?"ScriptProperties and OPD cache":"OPD cache"}…</div>`;
+
+   if(isRefresh){
+     try{
+       const refreshed=await retrieveFromScriptProperties_();
+       if(refreshed.handled){
+         setRetrievalStatus(refreshed.source==="SCRIPT_PROPERTIES"?"Statistics retrieved from ScriptProperties.":"Statistics retrieved from Spreadsheet.",5000);
+         return;
+       }
+     }catch(e){
+       // ScriptProperties could not supply a complete result; continue with the existing Spreadsheet retrieval path.
+     }
+   }
 
    let cacheFallback=null;
-   if(["today","yesterday","daybefore"].includes(selectedPeriod)){
+   if(!isRefresh && ["today","yesterday","daybefore"].includes(selectedPeriod)){
      const cacheCheck=await tryDailyCacheStatistics_(request.city,selectedPeriod,sourceCities);
      if(cacheCheck.handled){
        const state={retrievalKey:retrievalKey,requestId:"",city:request.city,period:request.period,showMode:request.showMode,selectedCities:request.selectedCities,createdAt:Date.now(),updatedAt:Date.now()};
        activeRetrieval=state;
        await applyStatisticsResult_(state,cacheCheck.result);
        activeRetrieval=null;
-       setRetrievalStatus("Statistics retrieved from OPD_TODAY cache.");
+       setRetrievalStatus("Statistics retrieved from OPD_TODAY cache.",5000);
        setRetrievalControls(false);
        btn.textContent=old;
        return;
@@ -381,13 +449,15 @@ document.addEventListener("DOMContentLoaded",()=>{
        showMode:request.showMode,
        selectedCities:request.selectedCities,
        createdAt:Date.now(),
-       updatedAt:Date.now()
+       updatedAt:Date.now(),
+       source:isRefresh?"SPREADSHEET":""
      };
      activeRetrieval=state;
-     await saveStatisticsRetrievalState_(state,start.status||"RUNNING",{reused:!!start.reused});
+     await saveStatisticsRetrievalState_(state,start.status||"RUNNING",{reused:!!start.reused,source:isRefresh?"SPREADSHEET":""});
 
      if(start.status==="COMPLETED"&&start.result){
        await applyStatisticsResult_(state,start.result);
+       if(isRefresh) setRetrievalStatus("Statistics retrieved from Spreadsheet.",5000);
        return;
      }
 
@@ -413,6 +483,7 @@ document.addEventListener("DOMContentLoaded",()=>{
        }),30000);
        if(cacheFallback && request.city==="all")r=mergeStatisticsResults_(cacheFallback.cachedResult,r);
        await applyStatisticsResult_(state,r);
+       if(isRefresh) setRetrievalStatus("Statistics retrieved from Spreadsheet.",5000);
      }catch(e){
        const msg=String(e.message||e);
        if(msg.indexOf("Network timeout")!==-1){
@@ -435,6 +506,7 @@ document.addEventListener("DOMContentLoaded",()=>{
  }
 
  let historicalVerifyPending=false;
+ let pendingRetrievalMode="instant";
  async function requestHistoricalAccess(){
    const input=$("historyPassword");
    const btn=$("historyUnlock");
@@ -447,7 +519,7 @@ document.addEventListener("DOMContentLoaded",()=>{
      localStorage.setItem(HISTORY_KEY,"1");
      input.value="";
      status.textContent="Historical access granted.";
-     await retrieveSelectedRecords();
+     await retrieveSelectedRecords(pendingRetrievalMode);
    }catch(e){
      status.textContent=e.message||"Unable to unlock historical statistics.";
    }finally{
@@ -468,13 +540,26 @@ document.addEventListener("DOMContentLoaded",()=>{
  $("get").onclick=async()=>{
    const selectedPeriod=$("period").value;
    if(selectedPeriod!=="today" && !hasHistoricalAccess()){
+     pendingRetrievalMode="instant";
      $("results").innerHTML="";
      $("historyGate").hidden=false;
      $("historyStatus").textContent="";
      focusHistoricalAccess();
      return;
    }
-   await retrieveSelectedRecords();
+   await retrieveSelectedRecords("instant");
+ };
+ $("refreshStats").onclick=async()=>{
+   const selectedPeriod=$("period").value;
+   if(selectedPeriod!=="today" && !hasHistoricalAccess()){
+     pendingRetrievalMode="refresh";
+     $("results").innerHTML="";
+     $("historyGate").hidden=false;
+     $("historyStatus").textContent="";
+     focusHistoricalAccess();
+     return;
+   }
+   await retrieveSelectedRecords("refresh");
  };
  $("historyUnlock").onclick=requestHistoricalAccess;
 
@@ -491,6 +576,7 @@ document.addEventListener("DOMContentLoaded",()=>{
      : (Array.isArray(r.statisticsScheduledCities)?r.statisticsScheduledCities:[]);
    const showDetail=hasDetail;
    const patientCount=Number(t.patientCount)||0;
+   if(window.NEURON_StatisticsTrends && patientCount===0) window.NEURON_StatisticsTrends.clear();
    const freeOPD=Number(t.freeOPD)||0;
    const freeEEG=Number(t.freeEEG)||0;
    const totalRefundOPD=Number(t.opdRefund)||0;
@@ -508,25 +594,13 @@ document.addEventListener("DOMContentLoaded",()=>{
        ? `<div class="status" style="margin-top:8px">Data retrieved from: ${sourceCities.map(esc).join(" + ")}</div>`
        : `<div class="status" style="margin-top:8px">No scheduled visit for this date. No city data was retrieved.</div>`;
    }
-   html+=`<div class="service-summary">
-     <div class="service-card">
-       <div class="service-card-title">OPD</div>
-       <div class="service-card-body">
-         <div class="service-metric"><span>Total</span><strong class="metric-total">${patientCount}</strong></div>
-         <div class="service-divider"></div>
-         <div class="service-metric"><span>Free</span><strong class="metric-free">${freeOPD}</strong></div>
-       </div>
-     </div>
-     <div class="service-card">
-       <div class="service-card-title">EEG</div>
-       <div class="service-card-body">
-         <div class="service-metric"><span>Total</span><strong class="metric-total">${Number(t.eegCount)||0}</strong></div>
-         <div class="service-divider"></div>
-         <div class="service-metric"><span>Free</span><strong class="metric-free">${freeEEG}</strong></div>
-       </div>
-     </div>
-   </div>
-   <div class="collection-card"><div class="collection-table-wrap"><table class="collection-table"><thead><tr><th></th><th>OPD</th><th>EEG</th><th>OPD+EEG</th><th>Net Total</th></tr></thead><tbody>
+   const isToday=r.period==="today";
+   const summaryTable=`<div class="statistics-table-card"><div class="statistics-table-title">Today's Summary</div><div class="statistics-table-wrap"><table class="statistics-summary-table"><thead><tr><th></th><th>Total</th><th>New</th><th>Follow-up</th><th>Free</th></tr></thead><tbody>
+     <tr><th>OPD</th><td>${patientCount}</td><td>${isToday?Number(t.opdNew)||0:"—"}</td><td>${isToday?Number(t.opdFollowup)||0:"—"}</td><td>${freeOPD}</td></tr>
+     <tr><th>EEG</th><td>${Number(t.eegCount)||0}</td><td>—</td><td>—</td><td>${freeEEG}</td></tr>
+   </tbody></table></div></div>`;
+   html+=summaryTable;
+   html+=`<div class="statistics-table-card"><div class="statistics-table-title">Payment Summary</div><div class="collection-table-wrap"><table class="collection-table"><thead><tr><th></th><th>OPD</th><th>EEG</th><th>OPD+EEG</th><th>Net Total</th></tr></thead><tbody>
      <tr><th class="collection-label">Cash</th><td>${money(t.opdCash)}</td><td>${money(t.eegCash)}</td><td>${money(totalCash)}</td><td>${money(netCash)}</td></tr>
      <tr><th class="collection-label">Online</th><td>${money(t.opdOnline)}</td><td>${money(t.eegOnline)}</td><td>${money(totalOnline)}</td><td>${money(netOnline)}</td></tr>
      <tr><th class="collection-label">Refund</th><td>${money(totalRefundOPD)}</td><td>${money(totalRefundEEG)}</td><td>${money(totalRefund)}</td><td>${money(totalRefund)}</td></tr>
@@ -549,7 +623,9 @@ document.addEventListener("DOMContentLoaded",()=>{
      return;
    }
    if(showDetail){
+     html+=`<div class="statistics-table-card"><div class="statistics-table-title">Patient Details Table</div>`;
      html+=bothTable(rows,t,String(r.city||"").toLowerCase()==="all");
+     html+=`</div>`;
      html+=`<div class="download-row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:nowrap">
        <button id="downloadCsv" class="btn btn-secondary">⬇ Download CSV</button>
        <button id="downloadMobile" class="btn btn-secondary">⬇ Mobile Number</button>
@@ -853,7 +929,7 @@ document.addEventListener("DOMContentLoaded",()=>{
    bindGraphClicks_();
  }
  window.NEURON_StatisticsTrends={
-   consume:function(r){latestResponse=r||null;loadedStatisticsPeriod=String($("period").value||"");syncTrendOptions_();section.hidden=["today","yesterday","daybefore"].includes(loadedStatisticsPeriod);section.classList.add("is-collapsed");toggle.setAttribute("aria-expanded","false");toggle.textContent="Show";renderTrend_();},
+   consume:function(r){latestResponse=r||null;loadedStatisticsPeriod=String($("period").value||"");if(!latestResponse || Number(latestResponse?.totals?.patientCount||0)<=0){section.hidden=true;return;}syncTrendOptions_();section.hidden=["today","yesterday","daybefore"].includes(loadedStatisticsPeriod);section.classList.add("is-collapsed");toggle.setAttribute("aria-expanded","false");toggle.textContent="Show";renderTrend_();},
    clear:function(){clearPopup_();latestResponse=null;loadedStatisticsPeriod=null;section.hidden=true;section.classList.add("is-collapsed");toggle.setAttribute("aria-expanded","false");toggle.textContent="Show";periodEl.innerHTML="";chartEl.innerHTML="";summaryEl.innerHTML="";rangeEl.textContent="";setStatus("");}
  };
  toggle.onclick=()=>{const collapsed=section.classList.toggle("is-collapsed");toggle.setAttribute("aria-expanded",String(!collapsed));toggle.textContent=collapsed?"Show":"Hide";if(!collapsed)renderTrend_();};
