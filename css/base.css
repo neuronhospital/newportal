@@ -560,8 +560,12 @@ body.neuron-embedded{overflow-y:auto;overscroll-behavior-y:contain;-webkit-overf
 }
 
 /* v212.1: Statistics retrieval controls and unified Statistics table cards */
-.statistics-retrieval-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%}
-.statistics-retrieval-actions button{width:100%}
+.statistics-retrieval-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;width:100%;align-items:stretch}
+.statistics-retrieval-actions button{width:100%;min-height:44px;height:44px;border-radius:9px;box-sizing:border-box}
+.statistics-retrieval-actions button.is-selected{box-shadow:0 0 0 2px rgba(123,31,162,.16)}
+.statistics-retrieval-actions.is-retrieving{grid-template-columns:1fr}
+.statistics-retrieval-actions.is-retrieving button.is-hidden-during-retrieval{display:none!important}
+.statistics-retrieval-actions.is-retrieving button.is-retrieval-active{display:block;width:100%;grid-column:1}
 .statistics-table-card{margin-top:12px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff;box-shadow:var(--shadow)}
 .statistics-table-title{padding:11px 13px;font-size:15px;line-height:1.25;font-weight:600;color:var(--ink);background:#f7f7fb;border-bottom:1px solid var(--line)}
 .statistics-table-wrap{overflow-x:auto;overflow-y:hidden;width:100%;-webkit-overflow-scrolling:touch}
@@ -574,3 +578,4 @@ body.neuron-embedded{overflow-y:auto;overscroll-behavior-y:contain;-webkit-overf
 .statistics-table-card .combined-table-wrap{margin:0;border-radius:0}
 .statistics-table-card .combined-report{border-radius:0}
 @media(max-width:699px){.statistics-retrieval-actions{gap:8px}.statistics-summary-table{min-width:500px}.statistics-summary-table th,.statistics-summary-table td{padding:8px 9px;font-size:11px}.statistics-table-title{font-size:14px;padding:10px 12px}}
+
