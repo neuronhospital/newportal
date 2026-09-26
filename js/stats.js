@@ -238,9 +238,12 @@ document.addEventListener("DOMContentLoaded",()=>{
    await saveStatisticsRetrievalState_(state,"COMPLETED",{result:result,completedAt:Date.now()});
  }
 
- async function pollStatisticsRetrieval_(state){
+ async function pollStatisticsRetrieval_(state,waitForCompletion=false){
    if(!state||!state.retrievalKey)return;
    if(statisticsPollTimer)clearTimeout(statisticsPollTimer);
+   let resolveWait=null;
+   const completion=waitForCompletion?new Promise(resolve=>{resolveWait=resolve;}):null;
+   const finish=()=>{if(resolveWait){resolveWait();resolveWait=null;}};
    const poll=async()=>{
      if(!navigator.onLine){
        statisticsPollTimer=setTimeout(poll,3000);
@@ -248,16 +251,18 @@ document.addEventListener("DOMContentLoaded",()=>{
      }
      try{
        const r=await NeuronAPI.call("getStatisticsRetrievalStatus",{retrievalKey:state.retrievalKey},10000);
-       if(!r)return;
-       if(activeRetrieval && activeRetrieval.retrievalKey && activeRetrieval.retrievalKey!==state.retrievalKey)return;
+       if(!r){finish();return;}
+       if(activeRetrieval && activeRetrieval.retrievalKey && activeRetrieval.retrievalKey!==state.retrievalKey){finish();return;}
        if(r.status==="COMPLETED"&&r.result){
          await applyStatisticsResult_(state,r.result);
          if(state.source==="SPREADSHEET") setRetrievalStatus("Statistics retrieved from Spreadsheet.",5000);
+         finish();
          return;
        }
        if(r.status!=="RUNNING"&&r.status!=="COMPLETED"){
          await saveStatisticsRetrievalState_(state,"FAILED",{error:r.error||"Statistics retrieval is no longer active."});
          $("results").innerHTML=`<div class="status">${U.esc(r.error||"Statistics retrieval failed.")}</div>`;
+         finish();
          return;
        }
        await saveStatisticsRetrievalState_(state,"RUNNING",{requestId:r.requestId||state.requestId});
@@ -267,8 +272,8 @@ document.addEventListener("DOMContentLoaded",()=>{
      }
    };
    poll();
+   return completion;
  }
-
 
  async function cleanupStatisticsRetrievals_(){
    try{
@@ -387,124 +392,144 @@ document.addEventListener("DOMContentLoaded",()=>{
  }
 
  async function retrieveSelectedRecords(mode="instant"){
-   const btn=$("get");
    const citySelect=$("city");
    const periodSelect=$("period");
-   const old=btn.textContent;
+   const instantBtn=$("get");
+   const refreshBtn=$("refreshStats");
+   const clickedBtn=mode==="refresh"?refreshBtn:instantBtn;
+   const oldLabel=clickedBtn.textContent;
    const isRefresh=mode==="refresh";
    const selectedPeriod=periodSelect.value;
    let sourceCities=null;
-   if(selectedPeriod==="today" || selectedPeriod==="yesterday" || selectedPeriod==="daybefore")
-     sourceCities=sourceCitiesForDailyPeriod_(selectedPeriod);
+   if(selectedPeriod==="today" || selectedPeriod==="yesterday" || selectedPeriod==="daybefore"){
+     sourceCities=citySelect.value==="all"
+       ? sourceCitiesForDailyPeriod_(selectedPeriod)
+       : [citySelect.value];
+   }
    let request=statisticsRequest_(citySelect.value,selectedPeriod,"both",sourceCities||[]);
    let retrievalKey=statisticsCriteriaKey_(request.city,request.period,request.showMode,request.selectedCities);
+
+   const setRetrievalButtonState_=active=>{
+     const actions=document.querySelector(".statistics-retrieval-actions");
+     if(actions)actions.classList.toggle("is-retrieving",!!active);
+     instantBtn.classList.toggle("is-hidden-during-retrieval",!!active&&clickedBtn!==instantBtn);
+     refreshBtn.classList.toggle("is-hidden-during-retrieval",!!active&&clickedBtn!==refreshBtn);
+     instantBtn.classList.toggle("is-retrieval-active",!!active&&clickedBtn===instantBtn);
+     refreshBtn.classList.toggle("is-retrieval-active",!!active&&clickedBtn===refreshBtn);
+     instantBtn.classList.toggle("is-selected",!active);
+     refreshBtn.classList.toggle("is-selected",false);
+     instantBtn.setAttribute("aria-pressed",(!active).toString());
+     refreshBtn.setAttribute("aria-pressed",(active&&clickedBtn===refreshBtn).toString());
+   };
+
    setRetrievalControls(true);
+   setRetrievalButtonState_(true);
    $("historyGate").hidden=true;
-   btn.textContent=isRefresh?"Refreshing…":"Retrieving…";
+   clickedBtn.textContent=isRefresh?"Refreshing…":"Retrieving…";
    $("results").innerHTML=`<div class="status">Checking ${isRefresh?"ScriptProperties and OPD cache":"OPD cache"}…</div>`;
 
-   if(isRefresh){
-     try{
-       const refreshed=await retrieveFromScriptProperties_();
-       if(refreshed.handled){
-         setRetrievalStatus(refreshed.source==="SCRIPT_PROPERTIES"?"Statistics retrieved from ScriptProperties.":"Statistics retrieved from Spreadsheet.",5000);
+   try{
+     if(isRefresh){
+       try{
+         const refreshed=await retrieveFromScriptProperties_();
+         if(refreshed.handled){
+           setRetrievalStatus(refreshed.source==="SCRIPT_PROPERTIES"?"Statistics retrieved from ScriptProperties.":"Statistics retrieved from Spreadsheet.",5000);
+           return;
+         }
+       }catch(e){
+         // ScriptProperties could not supply a complete result; continue with the existing Spreadsheet retrieval path.
+       }
+     }
+
+     let cacheFallback=null;
+     if(!isRefresh && ["today","yesterday","daybefore"].includes(selectedPeriod)){
+       const cacheCheck=await tryDailyCacheStatistics_(request.city,selectedPeriod,sourceCities);
+       if(cacheCheck.handled){
+         const state={retrievalKey:retrievalKey,requestId:"",city:request.city,period:request.period,showMode:request.showMode,selectedCities:request.selectedCities,createdAt:Date.now(),updatedAt:Date.now()};
+         activeRetrieval=state;
+         await applyStatisticsResult_(state,cacheCheck.result);
+         activeRetrieval=null;
+         setRetrievalStatus("Statistics retrieved from OPD_TODAY cache.",5000);
          return;
        }
-     }catch(e){
-       // ScriptProperties could not supply a complete result; continue with the existing Spreadsheet retrieval path.
+       if(cacheCheck.cacheMissing){
+         cacheFallback=cacheCheck;
+         const missingText=cacheCheck.missing.map(U.esc).join(", ");
+         $("results").innerHTML=`<div class="status">OPD cache is not available for ${missingText} on ${U.esc(dailyDateLabel_(cacheCheck.dateKey))}. Scanning Google Sheet, this may take some time…</div>`;
+       }
      }
-   }
-
-   let cacheFallback=null;
-   if(!isRefresh && ["today","yesterday","daybefore"].includes(selectedPeriod)){
-     const cacheCheck=await tryDailyCacheStatistics_(request.city,selectedPeriod,sourceCities);
-     if(cacheCheck.handled){
-       const state={retrievalKey:retrievalKey,requestId:"",city:request.city,period:request.period,showMode:request.showMode,selectedCities:request.selectedCities,createdAt:Date.now(),updatedAt:Date.now()};
-       activeRetrieval=state;
-       await applyStatisticsResult_(state,cacheCheck.result);
-       activeRetrieval=null;
-       setRetrievalStatus("Statistics retrieved from OPD_TODAY cache.",5000);
-       setRetrievalControls(false);
-       btn.textContent=old;
-       return;
-     }
-     if(cacheCheck.cacheMissing){
-       cacheFallback=cacheCheck;
-       const missingText=cacheCheck.missing.map(U.esc).join(", ");
-       $("results").innerHTML=`<div class="status">OPD cache is not available for ${missingText} on ${U.esc(dailyDateLabel_(cacheCheck.dateKey))}. Scanning Google Sheet, this may take some time…</div>`;
-     }
-   }
-   if(cacheFallback && request.city==="all"){
-     request=statisticsRequest_("all",selectedPeriod,"both",cacheFallback.missing);
-     retrievalKey=statisticsCriteriaKey_(request.city,request.period,request.showMode,request.selectedCities);
-   }
-
-   try{
-     const start=await NeuronAPI.call("startStatisticsRetrieval",request,10000);
-     const state={
-       retrievalKey:start.retrievalKey||retrievalKey,
-       requestId:start.requestId||"",
-       city:request.city,
-       period:request.period,
-       showMode:request.showMode,
-       selectedCities:request.selectedCities,
-       createdAt:Date.now(),
-       updatedAt:Date.now(),
-       source:isRefresh?"SPREADSHEET":""
-     };
-     activeRetrieval=state;
-     await saveStatisticsRetrievalState_(state,start.status||"RUNNING",{reused:!!start.reused,source:isRefresh?"SPREADSHEET":""});
-
-     if(start.status==="COMPLETED"&&start.result){
-       await applyStatisticsResult_(state,start.result);
-       if(isRefresh) setRetrievalStatus("Statistics retrieved from Spreadsheet.",5000);
-       return;
-     }
-
-     if(start.reused){
-       $("results").innerHTML=`<div class="status">Reconnecting to the existing Statistics retrieval…</div>`;
-       await pollStatisticsRetrieval_(state);
-       return;
-     }
-
-     if(!cacheFallback){
-       $("results").innerHTML=`<div class="status">${
-         citySelect.value==="all"
-           ? ((selectedPeriod==="today" || selectedPeriod==="yesterday" || selectedPeriod==="daybefore")
-              ? "Determining city and retrieving records…"
-              : "Retrieving records from all cities…")
-           : "Retrieving records from Google Sheets…"
-       }</div>`;
+     if(cacheFallback && request.city==="all"){
+       request=statisticsRequest_("all",selectedPeriod,"both",cacheFallback.missing);
+       retrievalKey=statisticsCriteriaKey_(request.city,request.period,request.showMode,request.selectedCities);
      }
 
      try{
-       let r=await NeuronAPI.call("retrieveRecords",Object.assign({},request,{
-         retrievalKey:state.retrievalKey,requestId:state.requestId
-       }),30000);
-       if(cacheFallback && request.city==="all")r=mergeStatisticsResults_(cacheFallback.cachedResult,r);
-       await applyStatisticsResult_(state,r);
-       if(isRefresh) setRetrievalStatus("Statistics retrieved from Spreadsheet.",5000);
+       const start=await NeuronAPI.call("startStatisticsRetrieval",request,10000);
+       const state={
+         retrievalKey:start.retrievalKey||retrievalKey,
+         requestId:start.requestId||"",
+         city:request.city,
+         period:request.period,
+         showMode:request.showMode,
+         selectedCities:request.selectedCities,
+         createdAt:Date.now(),
+         updatedAt:Date.now(),
+         source:isRefresh?"SPREADSHEET":""
+       };
+       activeRetrieval=state;
+       await saveStatisticsRetrievalState_(state,start.status||"RUNNING",{reused:!!start.reused,source:isRefresh?"SPREADSHEET":""});
+
+       if(start.status==="COMPLETED"&&start.result){
+         await applyStatisticsResult_(state,start.result);
+         if(isRefresh) setRetrievalStatus("Statistics retrieved from Spreadsheet.",5000);
+         return;
+       }
+
+       if(start.reused){
+         $("results").innerHTML=`<div class="status">Reconnecting to the existing Statistics retrieval…</div>`;
+         await pollStatisticsRetrieval_(state,true);
+         return;
+       }
+
+       if(!cacheFallback){
+         $("results").innerHTML=`<div class="status">${
+           citySelect.value==="all"
+             ? ((selectedPeriod==="today" || selectedPeriod==="yesterday" || selectedPeriod==="daybefore")
+                ? "Determining city and retrieving records…"
+                : "Retrieving records from all cities…")
+             : "Retrieving records from Google Sheets…"
+         }</div>`;
+       }
+
+       try{
+         let r=await NeuronAPI.call("retrieveRecords",Object.assign({},request,{
+           retrievalKey:state.retrievalKey,requestId:state.requestId
+         }),30000);
+         if(cacheFallback && request.city==="all")r=mergeStatisticsResults_(cacheFallback.cachedResult,r);
+         await applyStatisticsResult_(state,r);
+         if(isRefresh) setRetrievalStatus("Statistics retrieved from Spreadsheet.",5000);
+       }catch(e){
+         const msg=String(e.message||e);
+         if(msg.indexOf("Network timeout")!==-1){
+           setRetrievalStatus("Retrieval timed out / connection lost. The backend retrieval is still being monitored.");
+           $("results").innerHTML=`<div class="status">Connection lost. Statistics retrieval continues in the background. You can leave this page and reconnect later.</div>`;
+         }else{
+           setRetrievalStatus(msg);
+           $("results").innerHTML=`<div class="status">${U.esc(msg)}</div>`;
+         }
+         if(msg.indexOf("Network timeout")!==-1 || !navigator.onLine) await pollStatisticsRetrieval_(state,true);
+       }
      }catch(e){
        const msg=String(e.message||e);
-       if(msg.indexOf("Network timeout")!==-1){
-         setRetrievalStatus("Retrieval timed out / connection lost. The backend retrieval is still being monitored.");
-         $("results").innerHTML=`<div class="status">Connection lost. Statistics retrieval continues in the background. You can leave this page and reconnect later.</div>`;
-       }else{
-         setRetrievalStatus(msg);
-         $("results").innerHTML=`<div class="status">${U.esc(msg)}</div>`;
-       }
-       if(msg.indexOf("Network timeout")!==-1 || !navigator.onLine) await pollStatisticsRetrieval_(state);
+       $("results").innerHTML=`<div class="status">${U.esc(msg)}</div>`;
+       setRetrievalStatus("Unable to start or reconnect to Statistics retrieval. If the connection was interrupted, retrying the same criteria will reuse any server-side running retrieval.");
      }
-   }catch(e){
-     const msg=String(e.message||e);
-     $("results").innerHTML=`<div class="status">${U.esc(msg)}</div>`;
-     setRetrievalStatus("Unable to start or reconnect to Statistics retrieval. If the connection was interrupted, retrying the same criteria will reuse any server-side running retrieval.");
    }finally{
      setRetrievalControls(false);
-     btn.textContent=old;
+     clickedBtn.textContent=oldLabel;
+     setRetrievalButtonState_(false);
    }
  }
-
  let historicalVerifyPending=false;
  let pendingRetrievalMode="instant";
  async function requestHistoricalAccess(){
