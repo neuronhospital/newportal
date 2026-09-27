@@ -156,20 +156,6 @@
     el.hidden = false;
   }
 
-  function showCacheStatus(record) {
-    const status = String(record?.status || "");
-    const stale = window.IDB?.opdTodayCacheStale_?.(record, record?.patients, "appointmentId") === true;
-    if (status === "CACHED_INCOMPLETE" || status === "STALE" || stale) {
-      setStatus("⚠ This list is not up to date. Please Update.", "warning");
-    } else if (status === "REFRESHING") {
-      setStatus("Updating from server…", "working");
-    } else if (status === "REFRESHED") {
-      setStatus("Server refreshed • Local cache updated", "success");
-    } else {
-      setStatus("Local cache • Up to date", "success");
-    }
-  }
-
   async function refresh(city, existingRecord = null) {
     if (popupState.updating) return existingRecord || await IDB.get("cache", popupState.key).catch(() => null);
     clearStatusTimer();
@@ -219,7 +205,6 @@
       const record = await IDB.getTodayOPDCache_(city);
       render(record);
       setLastUpdated(record);
-      showCacheStatus(record);
     } catch (_) {
       $("opdTodayScroll").innerHTML = '<div class="opd-today-empty">Unable to retrieve today’s OPD list.</div>';
     }
@@ -244,7 +229,6 @@
     if (!record) return;
     render(record);
     setLastUpdated(record);
-    if (!(popupState.manualStatusUntil > Date.now())) showCacheStatus(record);
   }
 
   async function handleUpdate() {
