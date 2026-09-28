@@ -111,7 +111,7 @@ function save(){
  if(status){status.style.color='';status.textContent='Wait we are Processing refund';}
  const p={appointmentId:selected.appointmentId,rowNumber:selected.rowNumber,city:selected.city,opdRefund:opdRaw,eegRefund:eegRaw,updateOPD:opdEntered,updateEEG:eegEntered};
  const tx={id:refundTxId_(p),type:"REFUND",status:"pending",startedAt:Date.now(),timeoutMs:25000,payload:p};
- api({action:'saveRefund',appointmentId:p.appointmentId,rowNumber:p.rowNumber,city:p.city,opdRefund:p.opdRefund,eegRefund:p.eegRefund,updateOPD:p.updateOPD,updateEEG:p.updateEEG}).then(async x=>{
+ api({action:'saveRefund',appointmentId:p.appointmentId,rowNumber:p.rowNumber,city:p.city,opdRefund:p.opdRefund,eegRefund:p.eegRefund,updateOPD:p.updateOPD,updateEEG:p.updateEEG,refundRequestId:tx.id}).then(async x=>{
   if(!x.ok)throw Error(x.error||'Refund failed.');
   let patched={updated:false,patient:null};try{patched=await IDB.updateTodayOPDFromMutation_({kind:"REFUND",result:x,payload:p})||patched;}catch(_){}
   try{await IDB.put("tx",{...tx,status:"complete",result:x,completedAt:Date.now()});}catch(_){}
