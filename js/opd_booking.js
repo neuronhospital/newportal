@@ -1138,6 +1138,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
         $("book").textContent="Book Appointment";
         $("book").className="cta";
       }
+      void NeuronAPI.flushDebugLog();
     }
   };
 

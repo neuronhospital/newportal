@@ -1,17 +1,39 @@
 window.NeuronAPI={
+ debugBuffer:[],
+ debugFlushInProgress:false,
  debugLog:(step,data={})=>{
   try{
+   NeuronAPI.debugBuffer.push({
+    timestamp:new Date().toISOString(),
+    step:String(step||"CLIENT_EVENT"),
+    source:"client",
+    ...data
+   });
+  }catch(_){}
+ },
+ flushDebugLog:async()=>{
+  try{
+   if(NeuronAPI.debugFlushInProgress)return;
+   if(!NeuronAPI.debugBuffer.length)return;
    const u=NEURON_CONFIG.apiUrl;
    if(!u||u.includes("PASTE_YOUR"))return;
-   const body=JSON.stringify({action:"debugLog",step,source:"client",...data});
-   void fetch(u,{
+   NeuronAPI.debugFlushInProgress=true;
+   const events=NeuronAPI.debugBuffer.splice(0,NeuronAPI.debugBuffer.length);
+   const body=JSON.stringify({
+    action:"debugLogBatch",
+    events
+   });
+   await fetch(u,{
     method:"POST",
     headers:{"Content-Type":"text/plain;charset=utf-8"},
     body,
     keepalive:true,
     cache:"no-store"
-   }).catch(()=>{});
+   });
   }catch(_){}
+  finally{
+   NeuronAPI.debugFlushInProgress=false;
+  }
  },
  call:async(action,data={},timeout=25000)=>{
   const u=NEURON_CONFIG.apiUrl;

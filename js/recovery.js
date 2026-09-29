@@ -396,6 +396,7 @@
     }finally{
       activeWorkers.delete(x.id);
       renderBar();
+      void NeuronAPI.flushDebugLog();
     }
   }
 
