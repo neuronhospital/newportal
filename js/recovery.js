@@ -140,7 +140,49 @@
     location.href=target;
   }
 
-  async function verifyOPDOnce(x,timeout){try{return await NeuronAPI.call("checkBookingRequest",{bookingRequestId:x.id,city:x.payload.city,appointmentDate:x.payload.appointmentDate||"",whatsapp:x.payload.whatsapp||"",childName:x.payload.childName||x.payload.patientName||""},timeout)}catch(_){return null}}
+  async function verifyOPDOnce(x,timeout){
+    const startedAt=Date.now();
+    NeuronAPI.debugLog("RECOVERY_API_START",{
+      requestId:x.id,
+      startedAt,
+      clientElapsedMs:0,
+      city:x.payload?.city||"",
+      status:"start",
+      details:{attempt:x._debugAttempt||0,timeoutMs:timeout,action:"checkBookingRequest"}
+    });
+    try{
+      const result=await NeuronAPI.call(
+        "checkBookingRequest",
+        {
+          bookingRequestId:x.id,
+          city:x.payload.city,
+          appointmentDate:x.payload.appointmentDate||"",
+          whatsapp:x.payload.whatsapp||"",
+          childName:x.payload.childName||x.payload.patientName||""
+        },
+        timeout
+      );
+      NeuronAPI.debugLog("RECOVERY_API_RESULT",{
+        requestId:x.id,
+        startedAt,
+        clientElapsedMs:Date.now()-startedAt,
+        city:x.payload?.city||"",
+        status:result?.found===true?"found":result?.found===false?"not_found":"success",
+        details:{attempt:x._debugAttempt||0,found:result?.found,ok:result?.ok}
+      });
+      return result;
+    }catch(error){
+      NeuronAPI.debugLog("RECOVERY_API_ERROR",{
+        requestId:x.id,
+        startedAt,
+        clientElapsedMs:Date.now()-startedAt,
+        city:x.payload?.city||"",
+        status:"error",
+        details:{attempt:x._debugAttempt||0,name:error?.name||"",message:error?.message||String(error)}
+      });
+      return null;
+    }
+  }
   async function verifyEEGOnce(x,timeout){try{return await NeuronAPI.call("checkEEGBookingRequest",{eegBookingRequestId:x.id,appointmentId:x.payload.appointmentId,rowNumber:x.payload.rowNumber,city:x.payload.city},timeout)}catch(_){return null}}
   async function verifyEEGCallsOnce(x,timeout){try{return await NeuronAPI.call("checkEEGCallsBookingRequest",{bookingRequestId:x.id},timeout)}catch(_){return null}}
   async function verifyOPDUpdateOnce(x,timeout){try{return await NeuronAPI.call("checkOPDUpdateStatus",x.payload,timeout)}catch(_){return null}}
@@ -278,8 +320,25 @@
 
         upsertState({id:x.id,status:"recovering",attempt,phase:attempt===3?"final":"verifying",updatedAt:Date.now()});
         renderBar();
+        NeuronAPI.debugLog("RECOVERY_ATTEMPT_START",{
+          requestId:x.id,
+          startedAt:Number(x.startedAt)||Date.now(),
+          clientElapsedMs:Date.now()-(Number(x.startedAt)||Date.now()),
+          city:x.payload?.city||"",
+          status:"start",
+          details:{attempt,timeoutMs:VERIFICATION_TIMEOUTS[attempt-1],type:x.type}
+        });
         const verify=x.type==="OPD_BOOKING"?verifyOPDOnce:x.type==="EEG_BOOKING"?verifyEEGOnce:x.type==="EEG_CALLS_BOOKING"?verifyEEGCallsOnce:x.type==="OPD_UPDATE"?verifyOPDUpdateOnce:x.type==="EEG_UPDATE"?verifyEEGUpdateOnce:verifyRefundOnce;
-        const result=await verify(x,VERIFICATION_TIMEOUTS[attempt-1]);
+        const verifyInput={...x,_debugAttempt:attempt};
+        const result=await verify(verifyInput,VERIFICATION_TIMEOUTS[attempt-1]);
+        NeuronAPI.debugLog("RECOVERY_ATTEMPT_RESULT",{
+          requestId:x.id,
+          startedAt:Number(x.startedAt)||Date.now(),
+          clientElapsedMs:Date.now()-(Number(x.startedAt)||Date.now()),
+          city:x.payload?.city||"",
+          status:result?.found===true?"found":result?.found===false?"not_found":"unknown",
+          details:{attempt,found:result?.found,ok:result?.ok}
+        });
 
         if(result?.ok===true&&result?.found===true){
           const matches=x.type==="OPD_BOOKING"||x.type==="EEG_BOOKING"||x.type==="EEG_CALLS_BOOKING"?matchesRecoveredBooking(x,result):matchesRecoveredOperation(x,result);

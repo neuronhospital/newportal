@@ -1026,22 +1026,88 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
         status:"success"
       });
       if(currentBookingSession!==bookingSessionId)return;
+      NeuronAPI.debugLog("BOOK_IDB_COMPLETE_START",{
+        requestId:id,
+        startedAt,
+        clientElapsedMs:Date.now()-startedAt,
+        city:payload.city,
+        appointmentId:r?.appointmentId,
+        status:"start"
+      });
       try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:r});}catch(_){ }
+      NeuronAPI.debugLog("BOOK_IDB_COMPLETE_END",{
+        requestId:id,
+        startedAt,
+        clientElapsedMs:Date.now()-startedAt,
+        city:payload.city,
+        appointmentId:r?.appointmentId,
+        status:"success"
+      });
+      NeuronAPI.debugLog("BOOK_CACHE_UPDATE_START",{
+        requestId:id,
+        startedAt,
+        clientElapsedMs:Date.now()-startedAt,
+        city:payload.city,
+        appointmentId:r?.appointmentId,
+        status:"start"
+      });
       try{await IDB.updateTodayOPDFromMutation_({kind:"OPD_BOOKING",result:r,payload:payload})}catch(_){ }
+      NeuronAPI.debugLog("BOOK_CACHE_UPDATE_END",{
+        requestId:id,
+        startedAt,
+        clientElapsedMs:Date.now()-startedAt,
+        city:payload.city,
+        appointmentId:r?.appointmentId,
+        status:"success"
+      });
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
       $("submitStatus").style.color="#168a4a";
+      NeuronAPI.debugLog("BOOK_CONFIRMATION_BUILD_START",{
+        requestId:id,
+        startedAt,
+        clientElapsedMs:Date.now()-startedAt,
+        city:payload.city,
+        appointmentId:r?.appointmentId,
+        status:"start"
+      });
       const confirmationHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Confirmed</h2><p class="city-confirm">For <b>${U.esc(payload.city||"")}</b> City</p><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(r.patientName)}</b></div><div class="confirm-row"><span>Age</span><b>${r.age} ${r.ageUnit}</b></div><div class="confirm-row"><span>Address</span><b>${U.esc(r.address||payload.address)}</b></div><div class="confirm-row"><span>Mobile Number</span><b>${U.esc(payload.whatsapp||r.whatsapp||"")}</b></div><div class="confirm-row"><span>Date of Booking</span><b>${U.date(r.date)}</b></div><div class="confirm-row"><span>OPD Charges</span><b>${U.money(r.opdCharges)}</b></div>${confirmationPaymentFields_(r.opdCashPaid,r.opdOnlinePaid)}<div class="confirm-row"><span>Next Follow-up City</span><b>${U.esc(r.nextFollowupCity||payload.nextFollowupCity)}</b></div></div>`;
       resetFields("New");
       // resetFields intentionally clears the booking form, so restore the
       // confirmation content AFTER the reset.
       $("confirmation").innerHTML=confirmationHTML;
+      NeuronAPI.debugLog("BOOK_CONFIRMATION_HTML_SET",{
+        requestId:id,
+        startedAt,
+        clientElapsedMs:Date.now()-startedAt,
+        city:payload.city,
+        appointmentId:r?.appointmentId,
+        status:"success"
+      });
       $("confirmation").hidden=false;
+      NeuronAPI.debugLog("BOOK_CONFIRMATION_VISIBLE_SET",{
+        requestId:id,
+        startedAt,
+        clientElapsedMs:Date.now()-startedAt,
+        city:payload.city,
+        appointmentId:r?.appointmentId,
+        status:"success"
+      });
       // Prepare the form for the next New appointment only after the current
       // booking confirmation is visible. Unlock fields through WhatsApp only;
       // post-verification fields remain locked until WhatsApp is verified.
       unlockBeforeWhatsApp();
       setPostVerifyFieldsLocked(true);
-      requestAnimationFrame(()=>$("confirmation").scrollIntoView({behavior:"smooth",block:"center"}));
+      requestAnimationFrame(()=>{
+        NeuronAPI.debugLog("BOOK_CONFIRMATION_RAF",{
+          requestId:id,
+          startedAt,
+          clientElapsedMs:Date.now()-startedAt,
+          city:payload.city,
+          appointmentId:r?.appointmentId,
+          status:"success"
+        });
+        $("confirmation").scrollIntoView({behavior:"smooth",block:"center"});
+      });
       NeuronAPI.debugLog("BOOK_CONFIRMATION_DISPLAYED",{
         requestId:id,
         startedAt,
