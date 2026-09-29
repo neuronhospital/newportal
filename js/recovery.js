@@ -253,7 +253,7 @@
     upsertState({id:x.id,type:x.type,status:"recovered",payload:x.payload||{},result,phase:"recovered",updatedAt:Date.now()});
     if(x.type==="OPD_BOOKING"&&booking.appointmentId) void NeuronAPI.dispatchFCM?.("OPD|"+booking.appointmentId);
     if(x.type==="EEG_BOOKING"&&booking.appointmentId&&booking.eegBookingRequestId) void NeuronAPI.dispatchFCM?.("EEG|"+booking.appointmentId+"|"+booking.eegBookingRequestId);
-    if(x.type==="REFUND"&&x.id) void NeuronAPI.dispatchFCM?.("REFUND|"+x.id);
+    if(x.type==="REFUND"&&result.fcmEventId) void NeuronAPI.dispatchFCM?.(result.fcmEventId);
     renderBar();
     window.dispatchEvent(new CustomEvent("neuron:recovery-result",{detail:{status:"recovered",type:x.type,patientName:nameOf(x),result,payload:x.payload,globalHandled:x.type!=="EEG_CALLS_BOOKING"}}));
   }

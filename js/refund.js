@@ -118,7 +118,7 @@ function save(){
   const saved={...(patched.patient||selected||{})};if(p.updateOPD) {saved.opdRefund=x.opdRefund??saved.opdRefund;saved.opdRefundProvided=true;}if(p.updateEEG) {saved.eegRefund=x.eegRefund??saved.eegRefund;saved.eegRefundProvided=true;}
   window.NeuronPatientActionContext?.notify?.("REFUND");
   showRefundConfirmation(saved);
-  void NeuronAPI.dispatchFCM?.("REFUND|"+String(tx.id||""));
+  void NeuronAPI.dispatchFCM?.(x.fcmEventId);
   const refund = window.NeuronPatientActionRules?.refundAvailability?.(saved) || {opd:false,eeg:false};
   saved.refundAvailable = refund;
   if(refund.opd||refund.eeg)render([saved]);
