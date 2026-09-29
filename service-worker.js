@@ -154,7 +154,7 @@ async function fullOPD_(city,date){
  const requestStartedAt=Date.now();
  const r=await apiCall_("getTodayOPDFromProperties",{city,date},25000);if(!r||r.ok!==true)throw new Error(r?.error||"Unable to retrieve today's OPD patient mirror.");
  const serverDate=/^\d{8}$/.test(String(r.date||""))?String(r.date):date,serverCity=String(r.city||city).trim()||city,patients=Array.isArray(r.patients)?r.patients:[],now=Date.now(),key=`OPD_TODAY|${serverDate}|${serverCity}`;
- const cache={key,type:"OPD_TODAY",date:serverDate,city:serverCity,patients,status:r.complete===false?"CACHED_INCOMPLETE":"REFRESHED",complete:r.complete===true,lastServerRefreshAt:now,lastServerCheckAt:now,cachedAt:now,lastSerial:Number(r.syncState?.serial)||null,lastRowNumber:Number(r.syncState?.rowNumber)||null,source:r.source||"SCRIPT_PROPERTIES"};
+ const cache={key,type:"OPD_TODAY",date:serverDate,city:serverCity,patients,status:r.complete===false?"CACHED_INCOMPLETE":"REFRESHED",complete:r.complete===true,lastServerRefreshAt:now,lastServerCheckAt:now,cachedAt:now,source:r.source||"SCRIPT_PROPERTIES"};
  if(r.serialGapDetected===true||serialGap_(patients))cache.status="STALE";
  const current=await idbGet_("cache",key).catch(()=>null);
  if(Math.max(Number(current?.authoritativeMutationAt||0),Number(current?.lastServerRefreshAt||0))>requestStartedAt)return {mode:"CACHE_NEWER_THAN_SNAPSHOT",city,rowsLoaded:Array.isArray(current?.patients)?current.patients.length:0,cache:current};
