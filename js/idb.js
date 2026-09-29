@@ -325,8 +325,7 @@ window.IDB={
     const serverKey=`OPD_TODAY|${serverDate}|${serverCity}`;
     const fresh={key:serverKey,type:"OPD_TODAY",date:serverDate,city:serverCity,patients,
       status:r.complete===false?"CACHED_INCOMPLETE":"REFRESHED",complete:r.complete===true,
-      lastServerRefreshAt:now,lastServerCheckAt:now,cachedAt:now,
-      lastSerial:Number(r.syncState?.serial)||null,lastRowNumber:Number(r.syncState?.rowNumber)||null};
+      lastServerRefreshAt:now,lastServerCheckAt:now,cachedAt:now};
     if(r.serialGapDetected===true||this.serialGap_(patients,"appointmentId"))fresh.status="STALE";
     const current=await this.get("cache",serverKey).catch(()=>null);
     if(Math.max(Number(current?.authoritativeMutationAt||0),Number(current?.lastServerRefreshAt||0))>Number(requestStartedAt||0))return current;
@@ -753,11 +752,6 @@ window.IDB={
     });
     const now=Date.now();
     const next={...cache,patients,cacheUpdatedAt:now,lastServerCheckAt:cache.lastServerCheckAt||now,authoritativeMutationAt:now};
-    if(kind==="OPD_BOOKING"){
-      const serial=Number(pick("serial",String(appointmentId).match(/-(\d+)$/)?.[1]))||null;
-      const row=Number(pick("rowNumber",null))||null;
-      if(serial&&row){next.lastSerial=Math.max(Number(next.lastSerial)||0,serial);next.lastRowNumber=Math.max(Number(next.lastRowNumber)||1,row);next.lastServerCheckAt=now;next.lastServerRefreshAt=now;}
-    }
     next.status=next.complete===true?"REFRESHED":next.status||"REFRESHED";
     if(next.complete===undefined)next.complete=true;
     await this.replace("cache",`OPD_TODAY|${date}|${city}`,next);
