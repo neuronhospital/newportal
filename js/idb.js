@@ -655,6 +655,10 @@ window.IDB={
 
     let cache=await this.get("cache",`OPD_TODAY|${date}|${city}`).catch(()=>null);
     const cacheInvalid=!cache||!Array.isArray(cache.patients)||cache.status==="CACHED_INCOMPLETE"||cache.status==="STALE";
+    if(cacheInvalid && kind==="OPD_BOOKING"){
+      void this.requestBackgroundSyncToServiceWorker_(city).catch(()=>{});
+      return {updated:false,reason:"cache_invalid",reconciliationScheduled:true};
+    }
     if(cacheInvalid){
       cache=await this.getTodayOPDCache_(city,{forceRefresh:true}).catch(()=>null);
     }
