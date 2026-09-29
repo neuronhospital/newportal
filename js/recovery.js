@@ -1,7 +1,7 @@
 (() => {
   const UI_KEY="neuronRecoveryStateV2";
   const PREFILL_KEY="neuronRecoveryPrefillV1";
-  const VERIFICATION_TIMEOUTS=[6500,9000,13000];
+  const VERIFICATION_TIMEOUTS=[7000,10000,15000];
   const NOT_FOUND_DELAY_MS=2000;
   const CACHE_SYNC_RETRY_DELAY_MS=1000;
   const FAILED_STATE_EXPIRY_MS=5*60*1000;

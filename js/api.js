@@ -1,4 +1,18 @@
 window.NeuronAPI={
+ debugLog:(step,data={})=>{
+  try{
+   const u=NEURON_CONFIG.apiUrl;
+   if(!u||u.includes("PASTE_YOUR"))return;
+   const body=JSON.stringify({action:"debugLog",step,source:"client",...data});
+   void fetch(u,{
+    method:"POST",
+    headers:{"Content-Type":"text/plain;charset=utf-8"},
+    body,
+    keepalive:true,
+    cache:"no-store"
+   }).catch(()=>{});
+  }catch(_){}
+ },
  call:async(action,data={},timeout=25000)=>{
   const u=NEURON_CONFIG.apiUrl;
   if(!u||u.includes("PASTE_YOUR"))throw Error("Configure the Apps Script /exec URL in js/config.js.");

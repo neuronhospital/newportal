@@ -964,7 +964,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     lockBookingFields(true);
 
     const id=U.requestId8();
-    const startedAt=Date.now(),timeoutMs=15000;
+    const startedAt=Date.now(),timeoutMs=20000;
     const payload={
       bookingRequestId:id,
       childName:U.title($("name").value),
@@ -1008,7 +1008,23 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       }catch(_){}
 
       const currentBookingSession=bookingSessionId;
+      NeuronAPI.debugLog("BOOK_API_SEND",{
+        requestId:id,
+        startedAt,
+        clientElapsedMs:Date.now()-startedAt,
+        city:payload.city,
+        status:"start",
+        details:{timeoutMs:timeoutMs}
+      });
       const r=await NeuronAPI.call("bookAppointment",payload,timeoutMs);
+      NeuronAPI.debugLog("BOOK_API_RESPONSE_RECEIVED",{
+        requestId:id,
+        startedAt,
+        clientElapsedMs:Date.now()-startedAt,
+        city:payload.city,
+        appointmentId:r?.appointmentId,
+        status:"success"
+      });
       if(currentBookingSession!==bookingSessionId)return;
       try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:r});}catch(_){ }
       try{await IDB.updateTodayOPDFromMutation_({kind:"OPD_BOOKING",result:r,payload:payload})}catch(_){ }
@@ -1026,6 +1042,14 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       unlockBeforeWhatsApp();
       setPostVerifyFieldsLocked(true);
       requestAnimationFrame(()=>$("confirmation").scrollIntoView({behavior:"smooth",block:"center"}));
+      NeuronAPI.debugLog("BOOK_CONFIRMATION_DISPLAYED",{
+        requestId:id,
+        startedAt,
+        clientElapsedMs:Date.now()-startedAt,
+        city:payload.city,
+        appointmentId:r?.appointmentId,
+        status:"success"
+      });
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
       $("submitStatus").style.color="#168a4a";
     }catch(e){
