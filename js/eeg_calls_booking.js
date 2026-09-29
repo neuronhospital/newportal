@@ -198,7 +198,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       return;
     }
 
-    const id=U.requestId8(),startedAt=Date.now(),timeoutMs=15000;
+    const id=U.requestId8(),startedAt=Date.now(),timeoutMs=API_TIMEOUT_MS;
     const payload={
       bookingRequestId:id,
       patientName:U.title($("patientName").value),

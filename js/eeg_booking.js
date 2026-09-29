@@ -195,7 +195,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     $('book').className='btn btn-success';
     $('bookMessage').hidden=false;
     $('bookMessage').textContent='Wait we are Confirming your EEG Booking...';
-    const id=U.requestId8(),startedAt=Date.now(),timeoutMs=15000,p={eegBookingRequestId:id,bookingRequestId:sel.bookingRequestId||"",appointmentId:sel.appointmentId,rowNumber:sel.rowNumber,patientName:sel.name,whatsapp:wa,city:$('city').value,eegCharges:total,eegPaymentMode:m,eegCashPaid:cPaid,eegOnlinePaid:oPaid};
+    const id=U.requestId8(),startedAt=Date.now(),timeoutMs=API_TIMEOUT_MS,p={eegBookingRequestId:id,bookingRequestId:sel.bookingRequestId||"",appointmentId:sel.appointmentId,rowNumber:sel.rowNumber,patientName:sel.name,whatsapp:wa,city:$('city').value,eegCharges:total,eegPaymentMode:m,eegCashPaid:cPaid,eegOnlinePaid:oPaid};
     try{
       try{await IDB.put('tx',{id,type:'EEG_BOOKING',status:'pending',startedAt,timeoutMs,payload:p});}catch(_){}
       const r=await NeuronAPI.call('bookEEG',p,timeoutMs);

@@ -1,15 +1,16 @@
+const API_TIMEOUT_MS=25000;
 window.NeuronAPI={
  dispatchFCM:async(eventId)=>{
   const id=String(eventId||"").trim();
   if(!id)return null;
   try{return await NeuronAPI.call("dispatchFCMEvent",{eventId:id},10000)}catch(_){return null}
  },
- call:async(action,data={},timeout=25000)=>{
+ call:async(action,data={},timeout=API_TIMEOUT_MS)=>{
   const u=NEURON_CONFIG.apiUrl;
   if(!u||u.includes("PASTE_YOUR"))throw Error("Configure the Apps Script /exec URL in js/config.js.");
   if(!navigator.onLine)throw Error("You are offline. The request is retained locally where supported.");
 
-  const ms=Math.max(1000,Number(timeout)||25000);
+  const ms=Math.max(1000,Number(timeout)||API_TIMEOUT_MS);
   const controller=new AbortController();
   let timeoutTimer=null;
 

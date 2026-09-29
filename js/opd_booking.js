@@ -964,7 +964,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     lockBookingFields(true);
 
     const id=U.requestId8();
-    const startedAt=Date.now(),timeoutMs=20000;
+    const startedAt=Date.now(),timeoutMs=API_TIMEOUT_MS;
     const payload={
       bookingRequestId:id,
       childName:U.title($("name").value),
