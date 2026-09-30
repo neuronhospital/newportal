@@ -79,7 +79,7 @@ window.TodayCity=window.TodayCity||(()=>{
   return {resolve};
 })();
 window.$=window.U?.$||((id)=>document.getElementById(id));
-if("serviceWorker"in navigator)window.addEventListener("load",()=>{const v=encodeURIComponent(window.NEURON_CONFIG.appVersion);navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!sessionStorage.getItem("neuron-sw-reloaded-"+v)){sessionStorage.setItem("neuron-sw-reloaded-"+v,"1");location.reload();}});navigator.serviceWorker.register("./service-worker.js?v="+v).catch(()=>{});});
+window.addEventListener("load",async()=>{const v=encodeURIComponent(window.NEURON_CONFIG.appVersion);try{await window.IDB?.ensureAppVersion_?.(window.NEURON_CONFIG.appVersion);}catch(_){};if("serviceWorker"in navigator){navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!sessionStorage.getItem("neuron-sw-reloaded-"+v)){sessionStorage.setItem("neuron-sw-reloaded-"+v,"1");location.reload();}});navigator.serviceWorker.register("./service-worker.js?v="+v).catch(()=>{});}});
 const setFooterCurrentSection_=()=>{
  const f=document.getElementById("footer");
  if(!f)return;

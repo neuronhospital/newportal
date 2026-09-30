@@ -41,12 +41,16 @@ window.IDB={
  },
  cacheStale_(cache,records,field="appointmentId"){
   if(!cache)return false;
+  const appVersion=String(window.NEURON_CONFIG?.appVersion||"");
+  if(appVersion&&String(cache.cacheGeneration||"")!==appVersion)return true;
   if(this.serialGap_(records,field))return true;
   const ts=Number(cache.lastServerCheckAt||cache.lastServerRefreshAt||cache.lastCheckedAt||0);
   return !!ts&&(Date.now()-ts>this.CACHE_FRESHNESS_MS);
  },
  opdTodayCacheStale_(cache,records,field="appointmentId"){
   if(!cache)return false;
+  const appVersion=String(window.NEURON_CONFIG?.appVersion||"");
+  if(appVersion&&String(cache.cacheGeneration||"")!==appVersion)return true;
   return this.serialGap_(records,field);
  },
  markCacheStale_(cache,records,field="appointmentId"){
@@ -144,6 +148,64 @@ window.IDB={
   const g=x=>p.find(a=>a.type===x)?.value||"";
   return `${g("year")}${g("month")}${g("day")}`===today;
  },
+ appVersionStateKey_(){return "APP_VERSION_STATE";},
+ async ensureAppVersion_(version){
+  const current=String(version||window.NEURON_CONFIG?.appVersion||"").trim();
+  if(!current)return {changed:false,syncRequired:false,appVersion:""};
+  return this.withConnectionRetry_(db=>new Promise((ok,no)=>{
+   const tx=db.transaction(["meta","cache","followupCache"],"readwrite");
+   const meta=tx.objectStore("meta"),cache=tx.objectStore("cache"),follow=tx.objectStore("followupCache");
+   const r=meta.get(this.appVersionStateKey_());
+   let result={changed:false,syncRequired:false,appVersion:current};
+   r.onsuccess=()=>{
+    const previous=r.result||null;
+    const changed=String(previous?.appVersion||"")!==current;
+    const pending=previous?.pendingSync===true;
+    if(!changed&&!pending)return;
+    if(changed){
+     const invalidateMetaCursor=meta.openCursor();
+     invalidateMetaCursor.onsuccess=()=>{
+      const c=invalidateMetaCursor.result;if(!c)return;
+      const k=String(c.key||"");
+      if(k.startsWith("CACHE_SYNC_STATUS|OPD_TODAY|")||k.startsWith("CACHE_SYNC_STATUS|FOLLOWUP|")||k.startsWith("CACHE_SYNC_STATUS|EEG_CALLS|")||k.startsWith("OPD_BACKGROUND_START|" )||k==="BACKGROUND_SYNC_REQUEST")c.delete();
+      invalidateMetaCursor.result?.continue();
+     };
+     invalidateMetaCursor.onerror=()=>no(invalidateMetaCursor.error);
+     const cacheCursor=cache.openCursor();
+     cacheCursor.onsuccess=()=>{
+      const c=cacheCursor.result;if(!c)return;
+      const k=String(c.key||"");
+      if(k.startsWith("OPD_TODAY|")){c.update({...c.value,status:"STALE",cacheGeneration:current,versionInvalidatedAt:Date.now()});}
+      else if(k==="eegCallsRawCache"||k==="eegCallsRawCacheV1")c.delete();
+      cacheCursor.result?.continue();
+     };
+     cacheCursor.onerror=()=>no(cacheCursor.error);
+     const followCursor=follow.openCursor();
+     followCursor.onsuccess=()=>{
+      const c=followCursor.result;if(!c)return;
+      const v=c.value||{};
+      if(v.type==="FOLLOWUP_META"){c.update({...v,lastServerCheckAt:0,lastServerCheckDate:"",lastSyncAt:0,cacheGeneration:current,versionInvalidatedAt:Date.now()});}
+      followCursor.result?.continue();
+     };
+     followCursor.onerror=()=>no(followCursor.error);
+    }
+    const now=Date.now();
+    meta.put({key:this.appVersionStateKey_(),type:"APP_VERSION_STATE",appVersion:current,previousAppVersion:String(previous?.appVersion||""),pendingSync:true,changedAt:changed?now:Number(previous?.changedAt)||now,updatedAt:now});
+    result={changed,syncRequired:true,appVersion:current};
+   };
+   r.onerror=()=>no(r.error);
+   tx.oncomplete=()=>ok(result);tx.onerror=()=>no(tx.error||new Error("Application version state update failed."));tx.onabort=()=>no(tx.error||new Error("Application version state update aborted."));
+  }));
+ },
+ async completeAppVersionSync_(version){
+  const current=String(version||window.NEURON_CONFIG?.appVersion||"").trim();if(!current)return false;
+  return this.withConnectionRetry_(db=>new Promise((ok,no)=>{const tx=db.transaction("meta","readwrite"),st=tx.objectStore("meta"),r=st.get(this.appVersionStateKey_());r.onsuccess=()=>{const x=r.result;if(x?.appVersion===current&&x.pendingSync===true)st.put({...x,pendingSync:false,syncCompletedAt:Date.now(),updatedAt:Date.now()});};r.onerror=()=>no(r.error);tx.oncomplete=()=>ok(true);tx.onerror=()=>no(tx.error||new Error("Application version sync completion failed."));tx.onabort=()=>no(tx.error||new Error("Application version sync completion aborted."));}));
+ },
+ async appVersionSyncPending_(version){
+  const current=String(version||window.NEURON_CONFIG?.appVersion||"").trim();if(!current)return false;
+  const state=await this.get("meta",this.appVersionStateKey_()).catch(()=>null);
+  return state?.appVersion===current&&state?.pendingSync===true;
+ },
  backgroundSyncStatusKey_(kind,city,date){
   return `CACHE_SYNC_STATUS|${String(kind||"").trim()}|${String(date||"").trim()}|${String(city||"").trim()}`;
  },
@@ -203,12 +265,14 @@ window.IDB={
  async shouldRequestBackgroundSync_(city,date){
   const c=String(city||"").trim(),d=/^\d{8}$/.test(String(date||""))?String(date):this.todayKey_();
   if(!c)return false;
-  const [opd,follow,gate,followMeta]=await Promise.all([
+  const [opd,follow,gate,followMeta,versionPending]=await Promise.all([
    this.getBackgroundSyncStatus_("OPD_TODAY",c,d),
    this.getBackgroundSyncStatus_("FOLLOWUP",c,d),
    this.get("meta",`OPD_BACKGROUND_START|${d}`),
-   this.get("followupCache",`META|${c}`)
+   this.get("followupCache",`META|${c}`),
+   this.appVersionSyncPending_(window.NEURON_CONFIG?.appVersion).catch(()=>false)
   ]);
+  if(versionPending)return true;
   if(opd?.status==="RUNNING"||follow?.status==="RUNNING")return true;
   const opdInterval=String(c).trim()==="Latur"?this.OPD_BACKGROUND_SYNC_INTERVAL_MS:this.OPD_BACKGROUND_SYNC_OTHER_INTERVAL_MS;
   const opdDue=!gate?.startedAt||(Date.now()-Number(gate.startedAt)>=opdInterval);
@@ -268,7 +332,8 @@ window.IDB={
     const timer=setTimeout(()=>{delete this._backgroundSyncAckWaiters[requestId];resolve(null)},3000);
     this._backgroundSyncAckWaiters[requestId]={resolve,timer};
    });
-   target.postMessage({type:"NEURON_START_BACKGROUND_SYNC",requestId,city:c,date});
+   const forceFresh=await this.appVersionSyncPending_(window.NEURON_CONFIG?.appVersion).catch(()=>false);
+   target.postMessage({type:"NEURON_START_BACKGROUND_SYNC",requestId,city:c,date,forceFresh});
    const accepted=await ack;
    if(accepted)return {sent:true,accepted:true,requestId};
    const durable=await this.get("meta","BACKGROUND_SYNC_REQUEST").catch(()=>null);
@@ -325,7 +390,7 @@ window.IDB={
     const serverKey=`OPD_TODAY|${serverDate}|${serverCity}`;
     const fresh={key:serverKey,type:"OPD_TODAY",date:serverDate,city:serverCity,patients,
       status:r.complete===false?"CACHED_INCOMPLETE":"REFRESHED",complete:r.complete===true,
-      lastServerRefreshAt:now,lastServerCheckAt:now,cachedAt:now};
+      lastServerRefreshAt:now,lastServerCheckAt:now,cachedAt:now,cacheGeneration:String(window.NEURON_CONFIG?.appVersion||"")};
     if(r.serialGapDetected===true||this.serialGap_(patients,"appointmentId"))fresh.status="STALE";
     const current=await this.get("cache",serverKey).catch(()=>null);
     if(Math.max(Number(current?.authoritativeMutationAt||0),Number(current?.lastServerRefreshAt||0))>Number(requestStartedAt||0))return current;
@@ -428,7 +493,7 @@ window.IDB={
     }));
   },
   setFollowupMeta(meta){const c=String(meta?.city||"").trim();return this.put("followupCache",{...meta,key:this.followupMetaKey_(c),type:"FOLLOWUP_META",city:c});},
-  finishFollowupCityBuild(city,meta){const c=String(city||"").trim();return this.setFollowupMeta({...meta,city:c,status:"READY",lastUpdatedAt:Date.now()});},
+  finishFollowupCityBuild(city,meta){const c=String(city||"").trim();return this.setFollowupMeta({...meta,city:c,status:"READY",cacheGeneration:String(window.NEURON_CONFIG?.appVersion||""),lastUpdatedAt:Date.now()});},
   async pruneFollowupCity(city,boundaryDate,lastCleanupMonth){
     const c=String(city||"").trim(),boundary=String(boundaryDate||"");if(!c||!/^[0-9]{8}$/.test(boundary))return;
     const d=await this.open();
@@ -448,6 +513,8 @@ window.IDB={
   followupMetaValid_(meta,city){
     const c=String(city||"").trim();
     if(!meta||meta.status!=="READY"||String(meta.city||"").trim()!==c)return false;
+    const appVersion=String(window.NEURON_CONFIG?.appVersion||"");
+    if(appVersion&&String(meta.cacheGeneration||"")!==appVersion)return false;
     const known=Number(meta.highestKnownSourceRow),contiguous=Number(meta.highestContiguousSourceRow),lowest=Number(meta.lowestSourceRow),count=Number(meta.recordCount);
     return Number.isInteger(known)&&known>=1&&Number.isInteger(contiguous)&&contiguous>=1&&Number.isInteger(lowest)&&lowest>=1&&Number.isInteger(count)&&count>=0&&contiguous<=known&&lowest<=known;
   },
@@ -755,7 +822,7 @@ window.IDB={
       return String(a?.time||"").localeCompare(String(b?.time||""));
     });
     const now=Date.now();
-    const next={...cache,patients,cacheUpdatedAt:now,lastServerCheckAt:cache.lastServerCheckAt||now,authoritativeMutationAt:now};
+    const next={...cache,patients,cacheUpdatedAt:now,lastServerCheckAt:cache.lastServerCheckAt||now,authoritativeMutationAt:now,cacheGeneration:String(window.NEURON_CONFIG?.appVersion||cache.cacheGeneration||"")};
     next.status=next.complete===true?"REFRESHED":next.status||"REFRESHED";
     if(next.complete===undefined)next.complete=true;
     await this.replace("cache",`OPD_TODAY|${date}|${city}`,next);
@@ -767,7 +834,7 @@ window.IDB={
     const rowNumber=Number(b.rowNumber);
     if(!Number.isInteger(rowNumber)||rowNumber<2)return {eegCallsUpdated:false};
     return this.withConnectionRetry_(d=>new Promise((ok,no)=>{
-      const t=d.transaction("cache","readwrite"),st=t.objectStore("cache"),key="eegCallsRawCacheV1";
+      const t=d.transaction("cache","readwrite"),st=t.objectStore("cache"),key="eegCallsRawCache";
       const r=st.get(key);
       r.onsuccess=()=>{
         const cache=r.result;
