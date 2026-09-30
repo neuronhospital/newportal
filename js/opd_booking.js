@@ -1036,6 +1036,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       clientDebugTrace.mark("C5","API request started");
       const r=await NeuronAPI.call("bookAppointment",payload,timeoutMs);
       clientDebugTrace.mark("C6","API response received");
+      clientDebugTrace.mark("C6.1","Response object received and execution resumed");
       // Debug trace is persisted only after the normal booking response has
       // arrived; it is never awaited and therefore cannot delay confirmation.
       const debugTrace=r&&r.debugTrace;
@@ -1045,40 +1046,67 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
           void NeuronAPI.call("writeBookingDebugLog",{trace:debugTrace,clientTotalMs:clientTotalMs},10000).catch(()=>{});
         },0);
       }
+      clientDebugTrace.mark("C6.2","Booking response accepted for current session");
       if(currentBookingSession!==bookingSessionId)return;
+      clientDebugTrace.mark("C6.3","Current booking session verified");
       clientDebugTrace.appointmentId=String(r?.appointmentId||"");
+      clientDebugTrace.mark("C6.4","Appointment ID extracted from response");
       clientDebugTrace.mark("C7","Response/result processing complete");
-      try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:r});}catch(_){ }
+      clientDebugTrace.mark("C7.1","IndexedDB completion update started");
+      try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:r}); clientDebugTrace.mark("C7.2","IndexedDB completion update succeeded");}catch(_){ clientDebugTrace.mark("C7.2","IndexedDB completion update failed (best effort)"); }
       clientDebugTrace.mark("C8","IndexedDB completion update complete");
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
+      clientDebugTrace.mark("C8.1","Success status text updated");
       $("submitStatus").style.color="#168a4a";
+      clientDebugTrace.mark("C8.2","Success status styling updated");
       clientDebugTrace.mark("C9","Confirmation HTML preparation started");
       const confirmationHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Confirmed</h2><p class="city-confirm">For <b>${U.esc(payload.city||"")}</b> City</p><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(r.patientName)}</b></div><div class="confirm-row"><span>Age</span><b>${r.age} ${r.ageUnit}</b></div><div class="confirm-row"><span>Address</span><b>${U.esc(r.address||payload.address)}</b></div><div class="confirm-row"><span>Mobile Number</span><b>${U.esc(payload.whatsapp||r.whatsapp||"")}</b></div><div class="confirm-row"><span>Date of Booking</span><b>${U.date(r.date)}</b></div><div class="confirm-row"><span>OPD Charges</span><b>${U.money(r.opdCharges)}</b></div>${confirmationPaymentFields_(r.opdCashPaid,r.opdOnlinePaid)}<div class="confirm-row"><span>Next Follow-up City</span><b>${U.esc(r.nextFollowupCity||payload.nextFollowupCity)}</b></div></div>`;
+      clientDebugTrace.mark("C9.1","Confirmation HTML constructed");
+      clientDebugTrace.mark("C9.2","Booking form reset started");
       resetFields("New");
+      clientDebugTrace.mark("C9.3","Booking form reset complete");
       // resetFields intentionally clears the booking form, so restore the
       // confirmation content AFTER the reset.
+      clientDebugTrace.mark("C9.4","Confirmation innerHTML assignment started");
       $("confirmation").innerHTML=confirmationHTML;
+      clientDebugTrace.mark("C9.5","Confirmation innerHTML assignment complete");
       $("confirmation").hidden=false;
       clientDebugTrace.mark("C10","Confirmation DOM inserted");
-      void IDB.updateTodayOPDFromMutation_({kind:"OPD_BOOKING",result:r,payload:payload}).catch(()=>{});
-      void NeuronAPI.dispatchFCM?.("OPD|"+String(r.appointmentId||""));
+      clientDebugTrace.mark("C10.1","Confirmation visibility enabled");
+      const todayOpdMutationPromise=IDB.updateTodayOPDFromMutation_({kind:"OPD_BOOKING",result:r,payload:payload})
+        .then(()=>{clientDebugTrace.mark("C10.2","Today OPD IDB mutation completed");})
+        .catch(()=>{clientDebugTrace.mark("C10.2","Today OPD IDB mutation failed (best effort)");});
+      clientDebugTrace.mark("C10.3","Today OPD IDB mutation dispatched");
+      try{void NeuronAPI.dispatchFCM?.("OPD|"+String(r.appointmentId||""));clientDebugTrace.mark("C10.4","FCM dispatch initiated");}
+      catch(_){clientDebugTrace.mark("C10.4","FCM dispatch initiation failed (best effort)");}
       // Prepare the form for the next New appointment only after the current
       // booking confirmation is visible. Unlock fields through WhatsApp only;
       // post-verification fields remain locked until WhatsApp is verified.
       unlockBeforeWhatsApp();
+      clientDebugTrace.mark("C10.5","Pre-WhatsApp fields unlocked");
       setPostVerifyFieldsLocked(true);
+      clientDebugTrace.mark("C10.6","Post-verification fields re-locked");
       requestAnimationFrame(()=>{
+        clientDebugTrace.mark("C10.7","First animation frame reached");
         requestAnimationFrame(()=>{
           clientDebugTrace.mark("C11","Confirmation box visible");
-          const clientTraceTotalMs=Number(clientDebugTrace.events.at(-1)?.elapsedMs)||0;
-          setTimeout(()=>{
-            void NeuronAPI.call("writeBookingDebugLog",{trace:clientDebugTrace,clientTotalMs:clientTraceTotalMs},10000).catch(()=>{});
-          },0);
+          clientDebugTrace.mark("C11.1","Second animation frame reached");
+          void todayOpdMutationPromise.finally(()=>{
+            const clientTraceTotalMs=Number(clientDebugTrace.events.at(-1)?.elapsedMs)||0;
+            setTimeout(()=>{
+              void NeuronAPI.call("writeBookingDebugLog",{trace:clientDebugTrace,clientTotalMs:clientTraceTotalMs},10000)
+                .then(()=>{})
+                .catch(err=>console.warn("[NEURON DEBUG] client timing log write failed",err));
+            },0);
+          });
         });
         $("confirmation").scrollIntoView({behavior:"smooth",block:"center"});
+        clientDebugTrace.mark("C10.8","Confirmation scrollIntoView dispatched");
       });
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
+      clientDebugTrace.mark("C10.9","Final success status text updated");
       $("submitStatus").style.color="#168a4a";
+      clientDebugTrace.mark("C10.10","Final success status styling updated");
     }catch(e){
       // The request outcome is unknown until the exact request ID is verified.
       // Keep it in IndexedDB and let the shared recovery service reconcile it
