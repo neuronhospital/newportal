@@ -1034,8 +1034,23 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       const currentBookingSession=bookingSessionId;
       const clientRequestStartedAt=startedAt;
       clientDebugTrace.mark("C5","API request started");
-      const r=await NeuronAPI.call("bookAppointment",payload,timeoutMs);
+      const apiTrace=createClientBookingDebugTrace_({bookingRequestId:id,city:payload.city,patientType:type});
+      apiTrace.mark("A-1","API transport trace started");
+      const r=await NeuronAPI.call("bookAppointment",payload,timeoutMs,apiTrace);
+      apiTrace.mark("A5","NeuronAPI.call returned to booking handler");
       clientDebugTrace.mark("C6","API response received");
+      clientDebugTrace.mark("C6.0","API transport trace merged after response");
+      if(apiTrace&&Array.isArray(apiTrace.events)){
+        apiTrace.events.forEach(e=>clientDebugTrace.events.push(e));
+        clientDebugTrace.events.sort((a,b)=>Number(a.at)-Number(b.at));
+        let previousAt=Number(clientDebugTrace.startedAt)||Date.now();
+        clientDebugTrace.events.forEach(e=>{
+          const at=Number(e.at)||previousAt;
+          e.elapsedMs=Math.max(0,at-(Number(clientDebugTrace.startedAt)||at));
+          e.deltaMs=Math.max(0,at-previousAt);
+          previousAt=at;
+        });
+      }
       clientDebugTrace.mark("C6.1","Response object received and execution resumed");
       // Debug trace is persisted only after the normal booking response has
       // arrived; it is never awaited and therefore cannot delay confirmation.
