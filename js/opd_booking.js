@@ -1008,7 +1008,17 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       }catch(_){}
 
       const currentBookingSession=bookingSessionId;
+      const clientRequestStartedAt=startedAt;
       const r=await NeuronAPI.call("bookAppointment",payload,timeoutMs);
+      // Debug trace is persisted only after the normal booking response has
+      // arrived; it is never awaited and therefore cannot delay confirmation.
+      const debugTrace=r&&r.debugTrace;
+      const clientTotalMs=Date.now()-clientRequestStartedAt;
+      if(debugTrace){
+        setTimeout(()=>{
+          void NeuronAPI.call("writeBookingDebugLog",{trace:debugTrace,clientTotalMs:clientTotalMs},10000).catch(()=>{});
+        },0);
+      }
       if(currentBookingSession!==bookingSessionId)return;
       try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:r});}catch(_){ }
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
