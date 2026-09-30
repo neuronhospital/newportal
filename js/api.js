@@ -37,6 +37,17 @@ window.NeuronAPI={
     apiMark("A1.3","fetch() promise returned");
     const r=await fetchPromise;
     apiMark("A2","HTTP Response object received");
+    try{
+      const entries=performance.getEntriesByName(u,"resource");
+      const e=entries&&entries.length?entries[entries.length-1]:null;
+      if(e){
+        apiMark("A2.10","Resource Timing: "+JSON.stringify({startTime:e.startTime,fetchStart:e.fetchStart,domainLookupStart:e.domainLookupStart,domainLookupEnd:e.domainLookupEnd,connectStart:e.connectStart,connectEnd:e.connectEnd,secureConnectionStart:e.secureConnectionStart,requestStart:e.requestStart,responseStart:e.responseStart,responseEnd:e.responseEnd,duration:e.duration,transferSize:e.transferSize,encodedBodySize:e.encodedBodySize,decodedBodySize:e.decodedBodySize}));
+      }else{
+        apiMark("A2.10","Resource Timing entry unavailable for API URL");
+      }
+    }catch(e){
+      apiMark("A2.10","Resource Timing inspection failed: "+String(e?.message||e||"Unknown error"));
+    }
     apiMark("A2.1","HTTP status available: "+String(r.status));
     apiMark("A2.2","Response.ok available: "+String(!!r.ok));
     apiMark("A2.3","Response body text read started");
