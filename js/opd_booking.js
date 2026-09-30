@@ -8,6 +8,20 @@ document.addEventListener("DOMContentLoaded",()=>{
   let bookingSessionId=0;
   let followStatusTimer=null;
 
+  // Client-only booking timing diagnostic. Uses performance.now() for precise
+  // elapsed timing and persists asynchronously only after the confirmation is
+  // visible, so it cannot block the booking path.
+  const createClientBookingDebugTrace_=({bookingRequestId,city,patientType})=>{
+    const startedAt=Date.now(),perfStartedAt=performance.now();
+    const trace={startedAt,bookingRequestId:String(bookingRequestId||""),city:String(city||""),patientType:String(patientType||""),appointmentId:"",events:[]};
+    trace.mark=(step,event)=>{
+      const elapsedMs=Math.max(0,performance.now()-perfStartedAt);
+      const previous=trace.events.length?Number(trace.events[trace.events.length-1].elapsedMs)||0:0;
+      trace.events.push({step:String(step||""),event:String(event||""),at:startedAt+Math.round(elapsedMs),elapsedMs:Math.round(elapsedMs),deltaMs:Math.round(elapsedMs-previous)});
+    };
+    return trace;
+  };
+
 
   // Show today's India-local date in the appointment field. The field is
   // display-only; OPD Booking accepts today as the only appointment date.
@@ -833,6 +847,9 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
   $("book").onclick=async()=>{
     if($("book").disabled || bookingInProgress)return;
 
+    const clientDebugTrace=createClientBookingDebugTrace_({bookingRequestId:"",city:String($("city")?.value||""),patientType:type});
+    clientDebugTrace.mark("C0","Book button clicked");
+
     $("confirmation").hidden=true;
     $("confirmation").innerHTML="";
 
@@ -932,6 +949,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       resetAfterValidationError();
       return;
     }
+    clientDebugTrace.mark("C1","Frontend validation complete");
     if(type==="New" && !verified){
       $("submitStatus").textContent="Please verify the WhatsApp number.";
       $("submitStatus").style.color="#b42318";
@@ -939,6 +957,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       resetAfterValidationError();
       return;
     }
+    clientDebugTrace.mark("C2","WhatsApp verification complete");
     if(total>2000){$("submitStatus").textContent="OPD total cannot exceed ₹2000.";$("submitStatus").style.color="#b42318";resetAfterValidationError();return;}
     if(total<0){$("submitStatus").textContent="Enter a valid OPD amount.";$("submitStatus").style.color="#b42318";resetAfterValidationError();return;}
 
@@ -964,6 +983,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
     lockBookingFields(true);
 
     const id=U.requestId8();
+    clientDebugTrace.bookingRequestId=id;
     const startedAt=Date.now(),timeoutMs=25000;
     const payload={
       bookingRequestId:id,
@@ -997,6 +1017,7 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       // Local recovery journaling is best-effort only. It must NEVER block
       // the actual online booking request or leave the UI stuck on Confirming.
       try{
+        clientDebugTrace.mark("C3","IndexedDB pending transaction started");
         await IDB.put("tx",{
           id,
           type:"OPD_BOOKING",
@@ -1005,11 +1026,16 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
           timeoutMs,
           payload
         });
-      }catch(_){}
+        clientDebugTrace.mark("C4","IndexedDB pending transaction completed");
+      }catch(_){
+        clientDebugTrace.mark("C4","IndexedDB pending transaction completed (best effort)");
+      }
 
       const currentBookingSession=bookingSessionId;
       const clientRequestStartedAt=startedAt;
+      clientDebugTrace.mark("C5","API request started");
       const r=await NeuronAPI.call("bookAppointment",payload,timeoutMs);
+      clientDebugTrace.mark("C6","API response received");
       // Debug trace is persisted only after the normal booking response has
       // arrived; it is never awaited and therefore cannot delay confirmation.
       const debugTrace=r&&r.debugTrace;
@@ -1020,15 +1046,20 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
         },0);
       }
       if(currentBookingSession!==bookingSessionId)return;
+      clientDebugTrace.appointmentId=String(r?.appointmentId||"");
+      clientDebugTrace.mark("C7","Response/result processing complete");
       try{await IDB.put("tx",{id,type:"OPD_BOOKING",status:"complete",payload,result:r});}catch(_){ }
+      clientDebugTrace.mark("C8","IndexedDB completion update complete");
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
       $("submitStatus").style.color="#168a4a";
+      clientDebugTrace.mark("C9","Confirmation HTML preparation started");
       const confirmationHTML=`<div class="success"><div class="success-icon">✓</div><h2>OPD Appointment Confirmed</h2><p class="city-confirm">For <b>${U.esc(payload.city||"")}</b> City</p><div class="confirm-row"><span>Appointment ID</span><b>${U.esc(r.appointmentId)}</b></div><div class="confirm-row"><span>Patient</span><b>${U.esc(r.patientName)}</b></div><div class="confirm-row"><span>Age</span><b>${r.age} ${r.ageUnit}</b></div><div class="confirm-row"><span>Address</span><b>${U.esc(r.address||payload.address)}</b></div><div class="confirm-row"><span>Mobile Number</span><b>${U.esc(payload.whatsapp||r.whatsapp||"")}</b></div><div class="confirm-row"><span>Date of Booking</span><b>${U.date(r.date)}</b></div><div class="confirm-row"><span>OPD Charges</span><b>${U.money(r.opdCharges)}</b></div>${confirmationPaymentFields_(r.opdCashPaid,r.opdOnlinePaid)}<div class="confirm-row"><span>Next Follow-up City</span><b>${U.esc(r.nextFollowupCity||payload.nextFollowupCity)}</b></div></div>`;
       resetFields("New");
       // resetFields intentionally clears the booking form, so restore the
       // confirmation content AFTER the reset.
       $("confirmation").innerHTML=confirmationHTML;
       $("confirmation").hidden=false;
+      clientDebugTrace.mark("C10","Confirmation DOM inserted");
       void IDB.updateTodayOPDFromMutation_({kind:"OPD_BOOKING",result:r,payload:payload}).catch(()=>{});
       void NeuronAPI.dispatchFCM?.("OPD|"+String(r.appointmentId||""));
       // Prepare the form for the next New appointment only after the current
@@ -1036,7 +1067,16 @@ if(patients.length===1) $("patients").querySelector(".patient-option").click();
       // post-verification fields remain locked until WhatsApp is verified.
       unlockBeforeWhatsApp();
       setPostVerifyFieldsLocked(true);
-      requestAnimationFrame(()=>$("confirmation").scrollIntoView({behavior:"smooth",block:"center"}));
+      requestAnimationFrame(()=>{
+        requestAnimationFrame(()=>{
+          clientDebugTrace.mark("C11","Confirmation box visible");
+          const clientTraceTotalMs=Number(clientDebugTrace.events.at(-1)?.elapsedMs)||0;
+          setTimeout(()=>{
+            void NeuronAPI.call("writeBookingDebugLog",{trace:clientDebugTrace,clientTotalMs:clientTraceTotalMs},10000).catch(()=>{});
+          },0);
+        });
+        $("confirmation").scrollIntoView({behavior:"smooth",block:"center"});
+      });
       $("submitStatus").textContent="✓ Appointment submitted successfully.";
       $("submitStatus").style.color="#168a4a";
     }catch(e){
