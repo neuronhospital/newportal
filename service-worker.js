@@ -1,6 +1,6 @@
 const APP_VERSION=new URL(self.location.href).searchParams.get("v")||"unknown";
 const C="neuron-static-"+APP_VERSION;
-const A=["./","./index.html","./assets/doctor_photo.svg","./opd_booking.html","./eeg_booking.html","./opd_update.html","./eeg_update.html","./statistics.html","./eeg_calls_booking.html","./eeg_calls_update_stats.html","./refund.html","./css/base.css","./js/config.js","./js/api.js","./js/utils.js","./js/idb.js","./js/common.js","./js/schedule.js","./js/opd_update.js","./js/opd_booking.js","./js/opd_patient_list.js","./js/eeg_patient_list.js","./assets/icons/home.svg","./assets/icons/opd-booking.svg","./assets/icons/opd-update.svg","./assets/icons/eeg-booking.svg","./assets/icons/eeg_calls.svg","./assets/icons/eeg-update.svg","./assets/icons/statistics.svg","./assets/neuron_logo.svg","./assets/icons/calendar.svg","./js/eeg_booking.js","./js/eeg_update.js","./js/secure.js","./js/stats.js","./js/recovery.js","./js/eeg_calls_booking.js","./js/eeg_calls_update_stats.js","./manifest.webmanifest"];
+const A=["./","./index.html","./assets/doctor_photo.svg","./assets/preview.jpg","./opd_booking.html","./eeg_booking.html","./opd_update.html","./eeg_update.html","./statistics.html","./eeg_calls_booking.html","./eeg_calls_update_stats.html","./refund.html","./css/base.css","./js/config.js","./js/api.js","./js/utils.js","./js/idb.js","./js/common.js","./js/schedule.js","./js/opd_update.js","./js/opd_booking.js","./js/refund.js","./js/opd_patient_list.js","./js/eeg_patient_list.js","./assets/icons/home.svg","./assets/icons/opd-booking.svg","./assets/icons/opd-update.svg","./assets/icons/refund.svg","./assets/icons/eeg-booking.svg","./assets/icons/eeg_calls.svg","./assets/icons/eeg-update.svg","./assets/icons/statistics.svg","./assets/neuron_logo.svg","./assets/icons/calendar.svg","./js/eeg_booking.js","./js/eeg_update.js","./js/secure.js","./js/stats.js","./js/recovery.js","./js/eeg_calls_booking.js","./js/eeg_calls_update_stats.js","./js/secure-preload.js","./js/patient_action.js","./manifest.webmanifest"];
 const V=u=>{const x=new URL(u,self.location.href);if(!x.searchParams.has("v"))x.searchParams.set("v",APP_VERSION);return x.href};
 const R=u=>new Request(V(u),u instanceof Request?u:{method:"GET",credentials:"same-origin"});
 
@@ -24,9 +24,12 @@ self.addEventListener("fetch",e=>{
  }));
 });
 
-const BG={MAX_ATTEMPTS:3,RETRY_DELAY_MS:3000,LEASE_MS:15000,HEARTBEAT_MS:5000,OPD_GATE_MS:15*60*1000,OPD_OTHER_GATE_MS:5*60*1000,DB_VERSION:7};
+const BG={MAX_ATTEMPTS:3,RETRY_DELAY_MS:3000,LEASE_MS:15000,HEARTBEAT_MS:5000,OPD_GATE_MS:15*60*1000,OPD_OTHER_GATE_MS:5*60*1000,DB_VERSION:7,EEG_CALLS_CITY:"GLOBAL"};
+const APP_VERSION_STATE_KEY="APP_VERSION_STATE";
+const EEG_CALLS_CACHE_KEY="eegCallsRawCache";
 let dbPromise=null;
 let apiUrl=null;
+let activeAppVersion=APP_VERSION;
 let requestedCity="";
 
 function todayKey_(ts=Date.now()){
@@ -64,6 +67,34 @@ function idbDelete_(store,key){return openDb_().then(d=>new Promise((ok,no)=>{co
 function idbReplace_(store,key,value){return openDb_().then(d=>new Promise((ok,no)=>{const t=d.transaction(store,"readwrite"),st=t.objectStore(store);st.delete(key);st.put({...value,key,updatedAt:Date.now()});t.oncomplete=ok;t.onerror=()=>no(t.error)}));}
 function idbKeys_(store,index,range){return openDb_().then(d=>new Promise((ok,no)=>{const r=d.transaction(store).objectStore(store).index(index).getAllKeys(range);r.onsuccess=()=>ok(r.result||[]);r.onerror=()=>no(r.error)}));}
 function idbDeleteKeys_(store,keys){if(!keys.length)return Promise.resolve();return openDb_().then(d=>new Promise((ok,no)=>{const t=d.transaction(store,"readwrite"),st=t.objectStore(store);keys.forEach(k=>st.delete(k));t.oncomplete=ok;t.onerror=()=>no(t.error)}));}
+
+async function ensureAppVersion_(){
+ let current=String(APP_VERSION||"").trim();
+ try{const r=await fetch(new URL("./js/config.js",self.location.href).href,{cache:"no-store"});const text=await r.text();const m=text.match(/appVersion\s*:\s*["']([^"']+)["']/);if(m?.[1])current=String(m[1]).trim();}catch(_){}
+ if(!current)return {changed:false,syncRequired:false,appVersion:""};
+ activeAppVersion=current;
+ const db=await openDb_();
+ return new Promise((ok,no)=>{
+  const tx=db.transaction(["meta","cache","followupCache"],"readwrite");
+  const meta=tx.objectStore("meta"),cache=tx.objectStore("cache"),follow=tx.objectStore("followupCache");
+  const r=meta.get(APP_VERSION_STATE_KEY);
+  let result={changed:false,syncRequired:false,appVersion:current};
+  r.onsuccess=()=>{
+   const previous=r.result||null,changed=String(previous?.appVersion||"")!==current,pending=previous?.pendingSync===true;
+   if(!changed&&!pending)return;
+   if(changed){
+    const m=meta.openCursor();m.onsuccess=()=>{const c=m.result;if(!c)return;const k=String(c.key||"");if(k.startsWith("CACHE_SYNC_STATUS|OPD_TODAY|")||k.startsWith("CACHE_SYNC_STATUS|FOLLOWUP|")||k.startsWith("CACHE_SYNC_STATUS|EEG_CALLS|")||k.startsWith("OPD_BACKGROUND_START|")||k==="BACKGROUND_SYNC_REQUEST")c.delete();m.result?.continue();};m.onerror=()=>no(m.error);
+    const c=cache.openCursor();c.onsuccess=()=>{const x=c.result;if(!x)return;const k=String(x.key||"");if(k.startsWith("OPD_TODAY|"))x.update({...x.value,status:"STALE",cacheGeneration:current,versionInvalidatedAt:Date.now()});else if(k===EEG_CALLS_CACHE_KEY)x.delete();c.result?.continue();};c.onerror=()=>no(c.error);
+    const f=follow.openCursor();f.onsuccess=()=>{const x=f.result;if(!x)return;const v=x.value||{};if(v.type==="FOLLOWUP_META")x.update({...v,lastServerCheckAt:0,lastServerCheckDate:"",lastSyncAt:0,cacheGeneration:current,versionInvalidatedAt:Date.now()});f.result?.continue();};f.onerror=()=>no(f.error);
+   }
+   const now=Date.now();meta.put({key:APP_VERSION_STATE_KEY,type:"APP_VERSION_STATE",appVersion:current,previousAppVersion:String(previous?.appVersion||""),pendingSync:true,changedAt:changed?now:Number(previous?.changedAt)||now,updatedAt:now});result={changed,syncRequired:true,appVersion:current};
+  };
+  r.onerror=()=>no(r.error);tx.oncomplete=()=>ok(result);tx.onerror=()=>no(tx.error||new Error("Application version state update failed."));tx.onabort=()=>no(tx.error||new Error("Application version state update aborted."));
+ });
+}
+async function completeAppVersionSync_(version){
+ const current=String(version||activeAppVersion||APP_VERSION||"").trim();if(!current)return;const db=await openDb_();await new Promise((ok,no)=>{const tx=db.transaction("meta","readwrite"),st=tx.objectStore("meta"),r=st.get(APP_VERSION_STATE_KEY);r.onsuccess=()=>{const x=r.result;if(x?.appVersion===current&&x.pendingSync===true)st.put({...x,pendingSync:false,syncCompletedAt:Date.now(),updatedAt:Date.now()});};r.onerror=()=>no(r.error);tx.oncomplete=ok;tx.onerror=()=>no(tx.error||new Error("Application version sync completion failed."));tx.onabort=()=>no(tx.error||new Error("Application version sync completion aborted."));});
+}
 
 async function getApiUrl_(){
  if(apiUrl)return apiUrl;
@@ -125,7 +156,7 @@ async function heartbeat_(key,owner){
 async function updateAttempt_(key,owner,attempt,error=null){const x=await idbGet_("meta",key);if(!x||x.owner!==owner||x.status!=="RUNNING")return null;const now=Date.now();const next={...x,attemptCount:attempt,lastHeartbeatAt:now,leaseExpiresAt:now+BG.LEASE_MS,error:error?String(error):null,retryAt:error?now+BG.RETRY_DELAY_MS:0,updatedAt:now};await setStatus_(next);return next;}
 async function finish_(key,owner,status,error=null,extra={}){const x=await idbGet_("meta",key);if(!x||x.owner!==owner)return null;const now=Date.now(),next={...x,status,completedAt:now,durationMs:Math.max(0,now-(Number(x.startedAt)||now)),lastHeartbeatAt:now,leaseExpiresAt:0,error:error?String(error):null,updatedAt:now,...extra};await setStatus_(next);postUpdate_();return next;}
 
-async function claimNewOPDCycle_(city,date,mode,requestId=null){
+async function claimNewOPDCycle_(city,date,mode,requestId=null,forceFresh=false){
  const c=String(city||"").trim(),d=String(date||"").trim(),now=Date.now();
  if(!c||!/^\d{8}$/.test(d))return {allowed:false,reason:"INVALID"};
  const db=await openDb_(),statusKey=metaKey_("OPD_TODAY",c,d),gateKey=`OPD_BACKGROUND_START|${d}`;
@@ -136,7 +167,7 @@ async function claimNewOPDCycle_(city,date,mode,requestId=null){
    const running=current?.status==="RUNNING";
    if(running){result={allowed:false,reason:"RUNNING",status:current};return;}
    const gateMs=c==="Latur"?BG.OPD_GATE_MS:BG.OPD_OTHER_GATE_MS;
-   if(gate?.startedAt&&now-Number(gate.startedAt)<gateMs){result={allowed:false,reason:"WINDOW_ACTIVE",status:current||null};return;}
+   if(!forceFresh&&gate?.startedAt&&now-Number(gate.startedAt)<gateMs){result={allowed:false,reason:"WINDOW_ACTIVE",status:current||null};return;}
    const cycleId=`OPD_TODAY:${d}:${c}:${now}`,next={key:statusKey,cacheType:"OPD_TODAY",city:c,date:d,status:"RUNNING",mode,requestId:requestId?String(requestId):"",owner:`SW-${now}-${Math.random().toString(36).slice(2)}`,cycleId,startedAt:now,completedAt:null,durationMs:null,attemptCount:0,maxAttempts:BG.MAX_ATTEMPTS,rowsProcessed:0,rowsAdded:0,lastHeartbeatAt:now,leaseExpiresAt:now+BG.LEASE_MS,error:null,retryAt:0,resumeAttempt:1,updatedAt:now};
    st.put({key:gateKey,type:"OPD_BACKGROUND_START",date:d,startedAt:now,cycleId,updatedAt:now});st.put(next);result={allowed:true,claim:{claimed:true,status:next}};
   };
@@ -154,7 +185,7 @@ async function fullOPD_(city,date){
  const requestStartedAt=Date.now();
  const r=await apiCall_("getTodayOPDFromProperties",{city,date},25000);if(!r||r.ok!==true)throw new Error(r?.error||"Unable to retrieve today's OPD patient mirror.");
  const serverDate=/^\d{8}$/.test(String(r.date||""))?String(r.date):date,serverCity=String(r.city||city).trim()||city,patients=Array.isArray(r.patients)?r.patients:[],now=Date.now(),key=`OPD_TODAY|${serverDate}|${serverCity}`;
- const cache={key,type:"OPD_TODAY",date:serverDate,city:serverCity,patients,status:r.complete===false?"CACHED_INCOMPLETE":"REFRESHED",complete:r.complete===true,lastServerRefreshAt:now,lastServerCheckAt:now,cachedAt:now,source:r.source||"SCRIPT_PROPERTIES"};
+ const cache={key,type:"OPD_TODAY",date:serverDate,city:serverCity,patients,status:r.complete===false?"CACHED_INCOMPLETE":"REFRESHED",complete:r.complete===true,lastServerRefreshAt:now,lastServerCheckAt:now,cachedAt:now,cacheGeneration:activeAppVersion,source:r.source||"SCRIPT_PROPERTIES"};
  if(r.serialGapDetected===true||serialGap_(patients))cache.status="STALE";
  const current=await idbGet_("cache",key).catch(()=>null);
  if(Math.max(Number(current?.authoritativeMutationAt||0),Number(current?.lastServerRefreshAt||0))>requestStartedAt)return {mode:"CACHE_NEWER_THAN_SNAPSHOT",city,rowsLoaded:Array.isArray(current?.patients)?current.patients.length:0,cache:current};
@@ -163,9 +194,16 @@ async function fullOPD_(city,date){
 async function syncOPD_(city,date){
  return fullOPD_(city,date);
 }
+async function syncEEGCalls_(){
+ const r=await apiCall_("getEEGCallsRawRecords",{mode:"initial"},25000);
+ if(!r||r.ok===false||!Array.isArray(r.records))throw new Error("The EEG Calls data response was incomplete or invalid.");
+ const now=Date.now(),cache={key:EEG_CALLS_CACHE_KEY,records:r.records,lastDataUpdatedAt:now,lastCheckedAt:now,lastServerCheckAt:now,lastScannedRow:Number(r.lastScannedRow)||0,cacheGeneration:activeAppVersion};
+ await idbReplace_("cache",EEG_CALLS_CACHE_KEY,cache);
+ return {mode:"REFRESHED",city:BG.EEG_CALLS_CITY,rowsLoaded:cache.records.length};
+}
 
 async function followMeta_(city){return idbGet_("followupCache",followMetaKey_(city));}
-function followMetaValid_(m,c){if(!m||m.status!=="READY"||String(m.city||"").trim()!==c)return false;const known=Number(m.highestKnownSourceRow),cont=Number(m.highestContiguousSourceRow),low=Number(m.lowestSourceRow),count=Number(m.recordCount);return Number.isInteger(known)&&known>=1&&Number.isInteger(cont)&&cont>=1&&Number.isInteger(low)&&low>=1&&Number.isInteger(count)&&count>=0&&cont<=known&&low<=known;}
+function followMetaValid_(m,c){if(!m||m.status!=="READY"||String(m.city||"").trim()!==c)return false;const appVersion=String(activeAppVersion||"");if(appVersion&&String(m.cacheGeneration||"")!==appVersion)return false;const known=Number(m.highestKnownSourceRow),cont=Number(m.highestContiguousSourceRow),low=Number(m.lowestSourceRow),count=Number(m.recordCount);return Number.isInteger(known)&&known>=1&&Number.isInteger(cont)&&cont>=1&&Number.isInteger(low)&&low>=1&&Number.isInteger(count)&&count>=0&&cont<=known&&low<=known;}
 async function putFollowBatch_(city,records){
  if(!records.length)return {inserted:0,updated:0};
  const d=await openDb_();
@@ -194,7 +232,7 @@ async function buildFollow_(city){
   const r=await apiCall_("getFollowupCityHistory",{city},100000);if(!r||r.ok!==true)throw new Error(r?.error||"Unable to build Follow-up history.");
   await clearFollowCity_(city);const records=Array.isArray(r.records)?r.records:[];for(let i=0;i<records.length;i+=500)await putFollowBatch_(city,records.slice(i,i+500));
   const count=await idbKeys_("followupCache","citySourceRow",IDBKeyRange.bound([city,2],[city,Number.MAX_SAFE_INTEGER]));if(count.length!==records.length)throw new Error("Follow-up cache build verification failed.");
-  const builtAt=Date.now(),meta={city,boundaryDate:String(r.boundaryDate||""),oldestDate:records[0]?.date||"",newestDate:records[records.length-1]?.date||"",recordCount:records.length,lowestSourceRow:Number(records[0]?.sourceRow)||1,highestKnownSourceRow:Number(r.highestKnownSourceRow)||1,highestContiguousSourceRow:Number(r.highestContiguousSourceRow)||1,createdAt:builtAt,lastFullBuildAt:builtAt,lastServerCheckAt:builtAt,lastUpdatedAt:builtAt,lastServerCheckDate:todayKey_(),status:"READY",type:"FOLLOWUP_META",key:followMetaKey_(city)};await idbPut_("followupCache",meta);return {mode:"FULL_BUILD",city,rowsLoaded:records.length};
+  const builtAt=Date.now(),meta={city,boundaryDate:String(r.boundaryDate||""),oldestDate:records[0]?.date||"",newestDate:records[records.length-1]?.date||"",recordCount:records.length,lowestSourceRow:Number(records[0]?.sourceRow)||1,highestKnownSourceRow:Number(r.highestKnownSourceRow)||1,highestContiguousSourceRow:Number(r.highestContiguousSourceRow)||1,createdAt:builtAt,lastFullBuildAt:builtAt,lastServerCheckAt:builtAt,lastUpdatedAt:builtAt,lastServerCheckDate:todayKey_(),status:"READY",type:"FOLLOWUP_META",cacheGeneration:activeAppVersion,key:followMetaKey_(city)};await idbPut_("followupCache",meta);return {mode:"FULL_BUILD",city,rowsLoaded:records.length};
  }catch(e){await idbPut_("followupCache",{key:followMetaKey_(city),type:"FOLLOWUP_META",city,status:"BUILD_FAILED",lastUpdatedAt:Date.now()}).catch(()=>{});throw e;}
 }
 async function syncFollow_(city){
@@ -238,35 +276,47 @@ async function runCycle_(kind,city,date,operation,mode,preclaimed=null,requestId
  }finally{if(timer)clearInterval(timer)}
 }
 
-async function runBackgroundSync_(city,date=todayKey_(),requestId=null){
+async function runBackgroundSync_(city,date=todayKey_(),requestId=null,forceFresh=false){
  const c=String(city||"").trim(),d=/^\d{8}$/.test(String(date))?String(date):todayKey_();if(!c)return;
  requestedCity=c;
+ const versionState=await ensureAppVersion_();
+ const forced=forceFresh||versionState.syncRequired===true;
  const existingOPD=await getStatus_("OPD_TODAY",c,d);
  const opdPromise=(async()=>{
+  if(forced){
+   const initialized=await claimNewOPDCycle_(c,d,"VERSION_REFRESH",requestId,true);
+   if(initialized.allowed)return runCycle_("OPD_TODAY",c,d,()=>syncOPD_(c,d),"VERSION_REFRESH",initialized.claim,requestId);
+   if(initialized.reason==="RUNNING")return runCycle_("OPD_TODAY",c,d,()=>syncOPD_(c,d),"VERSION_REFRESH",{claimed:true,status:initialized.status},requestId);
+   return initialized.status||{status:"SKIPPED",reason:initialized.reason};
+  }
   if(existingOPD?.status==="RUNNING")return runCycle_("OPD_TODAY",c,d,()=>syncOPD_(c,d),"INCREMENTAL",null,requestId);
   const initialized=await claimNewOPDCycle_(c,d,"INCREMENTAL",requestId);
   if(!initialized.allowed)return initialized.status||{status:"SKIPPED",reason:initialized.reason};
   return runCycle_("OPD_TODAY",c,d,()=>syncOPD_(c,d),"INCREMENTAL",initialized.claim,requestId);
  })();
  const followPromise=runCycle_("FOLLOWUP",c,d,async()=>{
-  const meta=await followMeta_(c);if(followMetaValid_(meta,c)&&String(meta.lastServerCheckDate||"")===d)return {mode:"ALREADY_CHECKED",city:c};
+  const meta=await followMeta_(c);
+  if(!forced&&followMetaValid_(meta,c)&&String(meta.lastServerCheckDate||"")===d)return {mode:"ALREADY_CHECKED",city:c};
   const result=followMetaValid_(meta,c)?await syncFollow_(c):await buildFollow_(c);if(result?.mode==="FAILED")return result;
-  const verified=await followMeta_(c);if(!followMetaValid_(verified,c))throw new Error("Follow-up synchronization final validation failed.");const now=Date.now();await idbPut_("followupCache",{...verified,lastServerCheckAt:now,lastServerCheckDate:d,lastUpdatedAt:now});return result;
+  const verified=await followMeta_(c);if(!followMetaValid_(verified,c))throw new Error("Follow-up synchronization final validation failed.");const now=Date.now();await idbPut_("followupCache",{...verified,lastServerCheckAt:now,lastServerCheckDate:d,lastUpdatedAt:now,cacheGeneration:activeAppVersion});return result;
  },"INCREMENTAL",null,requestId);
- const results=await Promise.allSettled([opdPromise,followPromise]);postUpdate_();
- const rejected=results.find(x=>x.status==="rejected");
- if(rejected)throw rejected.reason||new Error("Background synchronization cycle could not be started.");
+ const eegPromise=forced?runCycle_("EEG_CALLS",BG.EEG_CALLS_CITY,d,()=>syncEEGCalls_(),"VERSION_REFRESH",null,requestId):Promise.resolve({mode:"SKIPPED",city:BG.EEG_CALLS_CITY});
+ const results=await Promise.allSettled([opdPromise,followPromise,eegPromise]);
+ const failed=results.find(x=>x.status==="rejected"||x.value?.mode==="FAILED");
+ if(failed){if(forced)throw failed.reason||new Error(failed.value?.error||"Version cache synchronization failed.");throw failed.reason||new Error("Background synchronization cycle could not be started.");}
+ if(forced)await completeAppVersionSync_(versionState.appVersion);
+ postUpdate_();
 }
 
-async function registerBackgroundRequest_(city,date,requestId,source){
+async function registerBackgroundRequest_(city,date,requestId,source,forceFresh=false){
  requestedCity=String(city||"").trim();if(!requestedCity)return;
  const normalizedDate=/^\d{8}$/.test(String(date||""))?String(date):todayKey_();
  const durableRequestId=String(requestId||`REQ-${Date.now()}-${Math.random().toString(36).slice(2)}`);
- await idbPut_("meta",{key:"BACKGROUND_SYNC_REQUEST",type:"BACKGROUND_SYNC_REQUEST",requestId:durableRequestId,city:requestedCity,date:normalizedDate,createdAt:Date.now(),updatedAt:Date.now()});
+ await idbPut_("meta",{key:"BACKGROUND_SYNC_REQUEST",type:"BACKGROUND_SYNC_REQUEST",requestId:durableRequestId,city:requestedCity,date:normalizedDate,forceFresh:forceFresh===true,createdAt:Date.now(),updatedAt:Date.now()});
  try{source?.postMessage?.({type:"NEURON_BACKGROUND_SYNC_ACCEPTED",requestId:durableRequestId,city:requestedCity,date:normalizedDate,acceptedAt:Date.now()});}catch(_){}
  try{await self.registration.sync?.register("neuron-background-sync")}catch(_){}
  try{const gateMs=String(requestedCity||"").trim()==="Latur"?BG.OPD_GATE_MS:BG.OPD_OTHER_GATE_MS;await self.registration.periodicSync?.register("neuron-periodic-background-sync",{minInterval:gateMs})}catch(_){}
- try{await runBackgroundSync_(requestedCity,normalizedDate,durableRequestId)}catch(e){postUpdate_();return;}
+ try{await runBackgroundSync_(requestedCity,normalizedDate,durableRequestId,forceFresh===true)}catch(e){postUpdate_();return;}
  const latest=await idbGet_("meta","BACKGROUND_SYNC_REQUEST").catch(()=>null);
  if(latest?.requestId===durableRequestId)await idbDelete_("meta","BACKGROUND_SYNC_REQUEST").catch(()=>{});
 }
@@ -274,11 +324,11 @@ async function runStoredRequest_(){
  const q=await idbGet_("meta","BACKGROUND_SYNC_REQUEST");
  if(!q)return;
  const city=String(q?.city||requestedCity||"").trim();if(!city)throw new Error("Persisted Background Sync request has no city.");
- try{await runBackgroundSync_(city,q?.date||todayKey_(),q?.requestId||null);}catch(e){postUpdate_();return;}
+ try{await runBackgroundSync_(city,q?.date||todayKey_(),q?.requestId||null,q?.forceFresh===true);}catch(e){postUpdate_();return;}
  const latest=await idbGet_("meta","BACKGROUND_SYNC_REQUEST").catch(()=>null);
  if(q?.requestId&&latest?.requestId===q.requestId)await idbDelete_("meta","BACKGROUND_SYNC_REQUEST").catch(()=>{});
 }
 
-self.addEventListener("message",e=>{if(e.data?.type!=="NEURON_START_BACKGROUND_SYNC")return;e.waitUntil(registerBackgroundRequest_(e.data.city,e.data.date,e.data.requestId,e.source));});
+self.addEventListener("message",e=>{if(e.data?.type!=="NEURON_START_BACKGROUND_SYNC")return;e.waitUntil(registerBackgroundRequest_(e.data.city,e.data.date,e.data.requestId,e.source,e.data.forceFresh===true));});
 self.addEventListener("sync",e=>{if(e.tag!=="neuron-background-sync")return;e.waitUntil(runStoredRequest_());});
 self.addEventListener("periodicsync",e=>{if(e.tag!=="neuron-periodic-background-sync")return;e.waitUntil(runStoredRequest_());});
