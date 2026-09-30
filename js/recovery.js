@@ -2,7 +2,7 @@
   const UI_KEY="neuronRecoveryStateV2";
   const PREFILL_KEY="neuronRecoveryPrefillV1";
   const VERIFICATION_TIMEOUTS=[7000,10000,15000];
-  const NOT_FOUND_DELAY_MS=2000;
+  const NOT_FOUND_DELAY_MS=3000;
   const CACHE_SYNC_RETRY_DELAY_MS=1000;
   const FAILED_STATE_EXPIRY_MS=5*60*1000;
   let bar=null;
@@ -295,7 +295,7 @@
           }
           // A positive response that does not match the original request is
           // an unresolved verification result. Consume this attempt and move
-          // to the next verification after the fixed 2 second gap.
+          // to the next verification after the fixed 3 second gap.
           if(attempt===3){await failRecovery(x);return;}
           upsertState({id:x.id,status:"recovering",attempt,phase:"retry_wait",updatedAt:Date.now()});
           renderBar();
@@ -319,19 +319,9 @@
           continue;
         }
 
-        // UNKNOWN means the server outcome could not be established. It is not
-        // equivalent to NOT_FOUND. After the final unknown result, keep the
-        // transaction pending and let the next background reconciliation retry it.
-        if(result?.unknown===true && attempt===3){
-          upsertState({id:x.id,status:"pending",payload:x.payload||{},attempt,phase:"confirmation_pending",updatedAt:Date.now(),lastError:result.error||""});
-          renderBar();
-          setTimeout(()=>{
-            const current=getState(x.id);
-            if(current?.status!=="pending"||current.phase!=="confirmation_pending")return;
-            runRecovery(x);
-          },30000);
-          return;
-        }
+        // UNKNOWN means the server outcome could not be established. After
+        // the third verification attempt, all unresolved outcomes are terminal.
+        if(result?.unknown===true && attempt===3){await failRecovery(x);return;}
         if(!navigator.onLine){
           upsertState({id:x.id,status:"recovering",attempt,phase:"waiting_network",updatedAt:Date.now()});
           renderBar();
