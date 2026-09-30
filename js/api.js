@@ -35,19 +35,43 @@ window.NeuronAPI={
       cache:"no-store"
     });
     apiMark("A1.3","fetch() promise returned");
+    const fetchPromiseReturnedAt=performance.now();
     const r=await fetchPromise;
+    const responseObjectReceivedAt=performance.now();
     apiMark("A2","HTTP Response object received");
     try{
-      const entries=performance.getEntriesByName(u,"resource");
-      const e=entries&&entries.length?entries[entries.length-1]:null;
-      if(e){
-        apiMark("A2.10","Resource Timing: "+JSON.stringify({startTime:e.startTime,fetchStart:e.fetchStart,domainLookupStart:e.domainLookupStart,domainLookupEnd:e.domainLookupEnd,connectStart:e.connectStart,connectEnd:e.connectEnd,secureConnectionStart:e.secureConnectionStart,requestStart:e.requestStart,responseStart:e.responseStart,responseEnd:e.responseEnd,duration:e.duration,transferSize:e.transferSize,encodedBodySize:e.encodedBodySize,decodedBodySize:e.decodedBodySize}));
-      }else{
-        apiMark("A2.10","Resource Timing entry unavailable for API URL");
-      }
+      const entries=performance.getEntriesByType("resource")||[];
+      const apiEntries=entries.filter(e=>{
+        try{return String(e.name||"").includes("script.google.com") || String(e.name||"").includes("googleusercontent.com") || String(e.name||"")===String(u);}catch(_){return false;}
+      });
+      const e=apiEntries.length?apiEntries[apiEntries.length-1]:null;
+      const nav=performance.getEntriesByType("navigation")[0]||null;
+      const connection=navigator.connection||navigator.mozConnection||navigator.webkitConnection||null;
+      const resourceSummary={
+        exactUrlEntryCount:(performance.getEntriesByName(u,"resource")||[]).length,
+        matchingEntryCount:apiEntries.length,
+        lastMatchingEntry:e?{name:e.name,startTime:e.startTime,fetchStart:e.fetchStart,domainLookupStart:e.domainLookupStart,domainLookupEnd:e.domainLookupEnd,connectStart:e.connectStart,connectEnd:e.connectEnd,secureConnectionStart:e.secureConnectionStart,requestStart:e.requestStart,responseStart:e.responseStart,responseEnd:e.responseEnd,duration:e.duration,transferSize:e.transferSize,encodedBodySize:e.encodedBodySize,decodedBodySize:e.decodedBodySize}:null,
+        recentResourceNames:entries.slice(-12).map(x=>String(x.name||"")),
+        navigation:nav?{type:nav.type,startTime:nav.startTime}:null,
+        connection:connection?{effectiveType:connection.effectiveType,rtt:connection.rtt,downlink:connection.downlink,saveData:connection.saveData}:null,
+        visibilityState:document.visibilityState,
+        online:navigator.onLine,
+        fetchPromiseReturnedAt,
+        responseObjectReceivedAt,
+        fetchToResponseMs:Math.max(0,responseObjectReceivedAt-fetchPromiseReturnedAt),
+        responseUrl:String(r.url||""),
+        redirected:!!r.redirected,
+        responseType:String(r.type||""),
+        responseStatus:Number(r.status)||0,
+        responseOk:!!r.ok,
+        contentType:String(r.headers?.get("content-type")||""),
+        contentLength:String(r.headers?.get("content-length")||"")
+      };
+      apiMark("A2.10","Transport boundary diagnostics: "+JSON.stringify(resourceSummary));
     }catch(e){
-      apiMark("A2.10","Resource Timing inspection failed: "+String(e?.message||e||"Unknown error"));
+      apiMark("A2.10","Transport boundary diagnostics failed: "+String(e?.message||e||"Unknown error"));
     }
+    apiMark("A2.11","Response metadata captured");
     apiMark("A2.1","HTTP status available: "+String(r.status));
     apiMark("A2.2","Response.ok available: "+String(!!r.ok));
     apiMark("A2.3","Response body text read started");
