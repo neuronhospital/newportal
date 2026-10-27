@@ -4,9 +4,9 @@
   "sha256": "24b9a2a0f5a8291dd350a47d575764d91a3daacffa322f8be0adb97b51ed550a",
   "changelog": [
     "• Improved Pre-Booking: Added WhatsApp number verification to help reduce incorrect contact details.",
-"• Enhanced Notifications: Improved the home screen notification cards for clearer and more convenient updates.",
-"• Better Statistics & Reports: Improved the display of patient records, follow-up information, and empty search results.",
-"• Improved Reliability: Enhanced app configuration updates and local data handling for a smoother experience."
-"• Bug Fixes & Improvements: General performance, usability, and stability improvements"
+    "• Enhanced Notifications: Improved the home screen notification cards for clearer and more convenient updates.",
+    "• Better Statistics & Reports: Improved the display of patient records, follow-up information, and empty search results.",
+    "• Improved Reliability: Enhanced app configuration updates and local data handling for a smoother experience.",
+    "• Bug Fixes & Improvements: General performance, usability, and stability improvements."
   ]
 }
