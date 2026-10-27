@@ -1,7 +1,7 @@
 {
-  "versionName": "1.8.4",
-  "versionCode": 21,
-  "sha256": "0849cbe35194bfb7afc724632675531db2097f6ff857b9c9e8edfee7c34a54a9",
+  "versionName": "1.8.5",
+  "versionCode": 217,
+  "sha256": "24b9a2a0f5a8291dd350a47d575764d91a3daacffa322f8be0adb97b51ed550a",
   "changelog": [
     "• Improved Pre-Booking: Added WhatsApp number verification to help reduce incorrect contact details.",
 "• Enhanced Notifications: Improved the home screen notification cards for clearer and more convenient updates.",
