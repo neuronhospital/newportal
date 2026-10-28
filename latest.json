@@ -1,14 +1,10 @@
 {
-  "versionName": "1.9.6",
-  "versionCode": 223,
-  "sha256": "6c2e781b11a5a805a45ba08642741ecee17fdd9e29cfcc36e3d4e25131861fab",
+  "versionName": "1.9.7",
+  "versionCode": 224,
+  "sha256": "0c080d2fa02d37536578d779bc1c8025d63e22e895faff9bf18eb407c560d0b7",
   "changelog": [
-    "• Auto Notification Card: Automatically displays upcoming doctor visits based on user city preferences and the existing schedule.",
-    "• Special Day Mode: Uses existing Special Day Mode configuration when determining upcoming visits.",
-    "• Cancellation Alerts: Shows cancelled visit announcements and the next valid visit in the same card.",
-    "• City-Specific Details: Adds Marathi city names, fixed visiting hours, and clickable contact numbers for all eight cities.",
-    "• Smart Refresh: Recalculates notifications on app opening and refreshes shared configuration periodically, including for non-logged-in users.",
-    "• Improved Scheduling: Prioritizes the earliest visit time when multiple cities have visits on the same date and waits for valid configuration before displaying a card.",
-    "• Backend Unchanged: No changes to code.gs or backend endpoints."
+    "Improved Latur OPD Booking: follow-up city must be selected manually for every booking",
+    "Added validation to prevent booking without selecting a follow-up city",
+    "Preserved automatic same-city follow-up selection for all other visiting cities"
   ]
 }
