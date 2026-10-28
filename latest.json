@@ -1,7 +1,7 @@
 {
-  "versionName": "1.9",
-  "versionCode": 218,
-  "sha256": "cadebf26ece83a968a2f5b7b5610891e6b3b7302f3b7b363c2a15812b0323ff4",
+  "versionName": "1.9.2",
+  "versionCode": 219,
+  "sha256": "71ca6d03ab1a1ff1e4d852def6a010e8c63371aa64e01117f2ff80c19fb4bc23",
   "changelog": [
     "• Auto Notification Card: Automatically displays upcoming doctor visits based on user city preferences and the existing schedule.",
     "• Special Day Mode: Uses existing Special Day Mode configuration when determining upcoming visits.",
