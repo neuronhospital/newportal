@@ -1,10 +1,10 @@
 {
-  "versionName": "1.9.7",
-  "versionCode": 224,
-  "sha256": "0c080d2fa02d37536578d779bc1c8025d63e22e895faff9bf18eb407c560d0b7",
+  "versionName": "1.9.9",
+  "versionCode": 226,
+  "sha256": "0782cb52823e786d717da31c772ceae28e0edcc9782cdd891f22f2bc31bdfffe",
   "changelog": [
-    "Improved Latur OPD Booking: follow-up city must be selected manually for every booking",
-    "Added validation to prevent booking without selecting a follow-up city",
-    "Preserved automatic same-city follow-up selection for all other visiting cities"
+    "Patient name validation updated in OPD Booking/Update and Latur & Ambajogai EEG Calls",
+    "Now allows / and digits 1, 2, 3 while retaining existing restrictions",
+    "Backend code.gs updated"
   ]
 }
