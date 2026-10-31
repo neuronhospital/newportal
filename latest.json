@@ -1,10 +1,10 @@
 {
-  "versionName": "1.9.9",
-  "versionCode": 226,
-  "sha256": "0782cb52823e786d717da31c772ceae28e0edcc9782cdd891f22f2bc31bdfffe",
+  "versionName": "1.9.9.2",
+  "versionCode": 228,
+  "sha256": "1643a791beebdc44dba043b14e38f19873956e2a1e7f2559a602a0d3481f345b",
   "changelog": [
-    "Patient name validation updated in OPD Booking/Update and Latur & Ambajogai EEG Calls",
-    "Now allows / and digits 1, 2, 3 while retaining existing restrictions",
-    "Backend code.gs updated"
+    "Made Referred By compulsory with Doctor / Hospital and Direct / Self options",
+    "Follow-up Booking now defaults to the patient's previously recorded Next Follow-up City.",
+    "Manual city selection remains available when needed"
   ]
 }
