@@ -1,10 +1,11 @@
 {
-  "versionName": "1.9.9.2",
-  "versionCode": 228,
-  "sha256": "1643a791beebdc44dba043b14e38f19873956e2a1e7f2559a602a0d3481f345b",
+  "versionName": "2.0",
+  "versionCode": 229,
+  "sha256": "f714e23fd02dcf88d87a6df633c62dbd26fc213dab58588c186cb6d540b734a2",
   "changelog": [
     "Made Referred By compulsory with Doctor / Hospital and Direct / Self options",
     "Follow-up Booking now defaults to the patient's previously recorded Next Follow-up City.",
-    "Manual city selection remains available when needed"
+    "Manual city selection remains available when needed",
+    "Added Update checker"
   ]
 }
