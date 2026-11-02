@@ -157,7 +157,7 @@
   <ul>
     <li>A randomly generated App installation identifier used to associate a particular installation with device registration and notification operations.</li>
     <li>Firebase Cloud Messaging registration token used to route push notifications to the installation.</li>
-    <li>App version and operational state information needed for update checks, compatibility, synchronisation and troubleshooting.</li>
+    <li>App version and operational state information used for compatibility, synchronisation and troubleshooting.</li>
     <li>Booking request IDs, event IDs, timestamps, retry and synchronisation status, and similar technical records used to prevent duplicate operations and reconcile results.</li>
     <li>Network connectivity state, to determine whether network-dependent operations can run.</li>
   </ul>
@@ -218,7 +218,6 @@
     <li><strong>Notifications:</strong> to display operational notifications. On supported Android versions, the user can grant or deny notification permission.</li>
     <li><strong>Receive boot completed:</strong> to support eligible background work or notification-related tasks after the device restarts.</li>
     <li><strong>Ignore battery optimisations request:</strong> the App may ask the user to exempt it from certain battery restrictions to improve the reliability of background synchronisation and notifications. This is optional and controlled through Android settings.</li>
-    <li><strong>Request package installs:</strong> the App may use Android's package-install flow for an app update where that update mechanism is used. Android controls the installation permission and confirmation.</li>
   </ul>
   <p>Permission availability and behaviour depend on Android version, device manufacturer and user settings. Users can manage permissions in Android Settings. Disabling a permission may limit the related feature without necessarily disabling unrelated App features.</p>
 
@@ -317,7 +316,7 @@
   <ul>
     <li><strong>Google Firebase Cloud Messaging:</strong> used for push notifications and data messages. <a href="https://firebase.google.com/support/privacy" target="_blank" rel="noopener noreferrer">Firebase privacy and security information</a>.</li>
     <li><strong>Google services:</strong> Google Apps Script and Google Sheets support the NEURON backend; Google/Android platform services may support location resolution and app functionality. <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google Privacy Policy</a>.</li>
-    <li><strong>Android operating system:</strong> controls app permissions, app-private storage, notifications, backup behaviour and package installation flows. See the privacy and settings information provided by your device manufacturer and Google.</li>
+    <li><strong>Android operating system:</strong> controls app permissions, app-private storage, notifications and backup behaviour. See the privacy and settings information provided by your device manufacturer and Google.</li>
   </ul>
   <p>These providers operate under their own terms and privacy policies. NEURON Hospital does not control the privacy practices of third-party services outside the services configured for the App.</p>
 
