@@ -1,11 +1,16 @@
 {
-  "versionName": "2.0",
-  "versionCode": 229,
-  "sha256": "f714e23fd02dcf88d87a6df633c62dbd26fc213dab58588c186cb6d540b734a2",
+  "versionName": "2.0.1",
+  "versionCode": 230,
+  "sha256": "a8bec71e413ea1754d98483e5ec3561d01060d92a85300b226a503c31eff6c3d",
   "changelog": [
-    "Made Referred By compulsory with Doctor / Hospital and Direct / Self options",
-    "Follow-up Booking now defaults to the patient's previously recorded Next Follow-up City.",
-    "Manual city selection remains available when needed",
-    "Added Update checker"
+    "Improved OPD Follow-up keyboard handling and automatic scrolling.",
+    "Added conditional keyboard dismissal and keyboard Search support.",
+    "Removed duplicate Follow-up validation messages.",
+    "Added date-based automatic city selection in Statistics & Report.",
+    "Improved schedule handling for Special Day Mode and cancelled visits.",
+    "Added dynamic Notification Card height with a 4-line display limit.",
+    "Added bottom-right Read More and full-notification popup.",
+    "No changes to code.gs.",
+    "Historical Special Day Mode detection remains limited to locally recorded history."
   ]
 }
