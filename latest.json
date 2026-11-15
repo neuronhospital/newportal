@@ -1,7 +1,7 @@
 {
-  "versionName": "2.0.4",
-  "versionCode": 233,
-  "sha256": "2c0621c03e2305e71f8812c7816cbfe576a15ad911a12676d19d2a49fc3fee92",
+  "versionName": "2.0.5",
+  "versionCode": 234,
+  "sha256": "7aa40bbfb22750625e0bbcc3609e4eb192330ff90e10e2ebde892f36d1896bda",
   "changelog": [
     "Improved OPD Follow-up keyboard handling and automatic scrolling.",
     "Added conditional keyboard dismissal and keyboard Search support.",
