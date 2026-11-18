@@ -1,16 +1,10 @@
 {
-  "versionName": "2.0.5",
-  "versionCode": 234,
-  "sha256": "7aa40bbfb22750625e0bbcc3609e4eb192330ff90e10e2ebde892f36d1896bda",
+  "versionName": "2.0.7",
+  "versionCode": 236,
+  "sha256": "3c1827ba031aaee8617f6aefa4027e715e261ffc4126eae0004b9ef26ca2c3d9",
   "changelog": [
-    "Improved OPD Follow-up keyboard handling and automatic scrolling.",
-    "Added conditional keyboard dismissal and keyboard Search support.",
-    "Removed duplicate Follow-up validation messages.",
-    "Added date-based automatic city selection in Statistics & Report.",
-    "Improved schedule handling for Special Day Mode and cancelled visits.",
-    "Added dynamic Notification Card height with a 4-line display limit.",
-    "Added bottom-right Read More and full-notification popup.",
-    "No changes to code.gs.",
-    "Historical Special Day Mode detection remains limited to locally recorded history."
+    "Location prompts only on multi-city scheduled days.",
+    "Exclude cancelled visits from city count.",
+    "Separate once-per-day prompt tracking for permissions and GPS."
   ]
 }
