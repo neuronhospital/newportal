@@ -3,9 +3,12 @@
   "versionCode": 241,
   "sha256": "86d9faa45ad0f156bdfe0268ed1808ac669d40db65268f64fd089558740a6b98",
   "changelog": [
-    "Follow-up sync respects logged-in session and assigned-city restrictions.",
-    "Applies schedule, cancelled-visit and Special Day Mode rules to FCM sync.",
-    "Prevents queued sync work from running under a different login session.",
-    "Preserves daily, app-update and multi-city follow-up synchronization."
+    "Migrated FCM notification delivery from registration tokens to Firebase Installation IDs (FID).",
+    "Added acknowledged FID registration, retry handling and updated backend device registration.",
+    "Redesigned follow-up sync with session-aware, city-specific and event-driven workflows.",
+    "Applied visit schedule, cancelled-visit and Special Day Mode eligibility rules to follow-up synchronization.",
+    "Prevented queued sync work from executing under a different login session.",
+    "Improved APK verification and installation using Android PackageInstaller with installation status handling.",
+    "Improved notification WebView measurement and layout handling."
   ]
 }
