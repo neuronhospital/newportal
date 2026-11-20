@@ -1,11 +1,11 @@
 {
-  "versionName": "2.0.8",
-  "versionCode": 237,
-  "sha256": "c1d225e08832e02f432bed8dafddcfe8a9e4848ff14fb4d852b926313e5362d8",
+  "versionName": "2.0.8.4",
+  "versionCode": 241,
+  "sha256": "86d9faa45ad0f156bdfe0268ed1808ac669d40db65268f64fd089558740a6b98",
   "changelog": [
-    "Location prompts only on multi-city scheduled days.",
-    "Exclude cancelled visits from city count.",
-    "Fixed Kotlin compilation errors along with updated fcm api",
-    "Separate once-per-day prompt tracking for permissions and GPS."
+    "Follow-up sync respects logged-in session and assigned-city restrictions.",
+    "Applies schedule, cancelled-visit and Special Day Mode rules to FCM sync.",
+    "Prevents queued sync work from running under a different login session.",
+    "Preserves daily, app-update and multi-city follow-up synchronization."
   ]
 }
