@@ -1,7 +1,7 @@
 {
-  "versionName": "2.0.8.7",
-  "versionCode": 244,
-  "sha256": "415d636176245b7004a20a8a03d4fb406f952e0a211187b56d0e95437702bfd0",
+  "versionName": "2.0.8.8",
+  "versionCode": 245,
+  "sha256": "9dd18183283c0776b4fa47d7f1536f95dcab97dbbb9bc70807ad803b8f91060a",
   "changelog": [
     "Migrated FCM notification delivery from registration tokens to Firebase Installation IDs (FID).",
     "Differntiate ReferralSource in OPD Booking and OPD Update Properly",
