@@ -1,9 +1,10 @@
 {
-  "versionName": "2.0.8.4",
-  "versionCode": 241,
-  "sha256": "86d9faa45ad0f156bdfe0268ed1808ac669d40db65268f64fd089558740a6b98",
+  "versionName": "2.0.8.7",
+  "versionCode": 244,
+  "sha256": "415d636176245b7004a20a8a03d4fb406f952e0a211187b56d0e95437702bfd0",
   "changelog": [
     "Migrated FCM notification delivery from registration tokens to Firebase Installation IDs (FID).",
+    "Differntiate ReferralSource in OPD Booking and OPD Update Properly",
     "Added acknowledged FID registration, retry handling and updated backend device registration.",
     "Redesigned follow-up sync with session-aware, city-specific and event-driven workflows.",
     "Applied visit schedule, cancelled-visit and Special Day Mode eligibility rules to follow-up synchronization.",
