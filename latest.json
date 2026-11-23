@@ -1,15 +1,17 @@
 {
-  "versionName": "2.0.8.8",
-  "versionCode": 245,
-  "sha256": "9dd18183283c0776b4fa47d7f1536f95dcab97dbbb9bc70807ad803b8f91060a",
+  "versionName": "2.0.9",
+  "versionCode": 247,
+  "sha256": "174db1ec1bd5a0394b7cb3d9887f4b9c7a927074926a13668e6d17963ac33ffa",
   "changelog": [
-    "Migrated FCM notification delivery from registration tokens to Firebase Installation IDs (FID).",
-    "Differntiate ReferralSource in OPD Booking and OPD Update Properly",
-    "Added acknowledged FID registration, retry handling and updated backend device registration.",
-    "Redesigned follow-up sync with session-aware, city-specific and event-driven workflows.",
-    "Applied visit schedule, cancelled-visit and Special Day Mode eligibility rules to follow-up synchronization.",
-    "Prevented queued sync work from executing under a different login session.",
-    "Improved APK verification and installation using Android PackageInstaller with installation status handling.",
-    "Improved notification WebView measurement and layout handling."
+    "Migrated notification delivery to Firebase Installation IDs (FID), with acknowledged registration and retry handling for improved device registration reliability.",
+    "Updated backend device registration and notification delivery to use the new FID-based system. Compatible backend deployment and app upgrade are required.",
+    "Improved OPD Booking and OPD Update referral-source handling so Direct/Self referral information is normalized and displayed more consistently.",
+    "Redesigned follow-up synchronization to be session-aware, city-specific, and event-driven, reducing the risk of stale background work running after a login change.",
+    "Follow-up refresh now considers the visit schedule, cancelled visits, Special Day Mode, and city eligibility to determine which data should be synchronized.",
+    "Added date- and app-version-aware sync checks so updated app versions can refresh follow-up data even when a same-day sync was already completed.",
+    "Improved APK verification and update installation using Android PackageInstaller sessions, including installation confirmation and status/failure handling.",
+    "Refined location-permission prompts to better reflect multi-city availability and avoid unnecessary repeated prompts during the same day.",
+    "Improved notification-card WebView measurement and layout handling.",
+    "Cleaned up follow-up age display by removing unnecessary trailing decimal zeros."
   ]
 }
