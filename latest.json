@@ -1,7 +1,7 @@
 {
-  "versionName": "2.0.9",
-  "versionCode": 247,
-  "sha256": "174db1ec1bd5a0394b7cb3d9887f4b9c7a927074926a13668e6d17963ac33ffa",
+  "versionName": "2.0.9.2",
+  "versionCode": 249,
+  "sha256": "0091806e6320b4d77130624e8a3b81b1144cf5a2b59c7efd8073f74f5349de41",
   "changelog": [
     "Migrated notification delivery to Firebase Installation IDs (FID), with acknowledged registration and retry handling for improved device registration reliability.",
     "Updated backend device registration and notification delivery to use the new FID-based system. Compatible backend deployment and app upgrade are required.",
