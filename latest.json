@@ -1,17 +1,13 @@
 {
-  "versionName": "2.0.9.2",
-  "versionCode": 249,
-  "sha256": "0091806e6320b4d77130624e8a3b81b1144cf5a2b59c7efd8073f74f5349de41",
+  "versionName": "2.0.9.4",
+  "versionCode": 251,
+  "sha256": "8df84029f4cd691a453dcc057329673fab2392a7ce82ce540d7d27055777d78d",
   "changelog": [
-    "Migrated notification delivery to Firebase Installation IDs (FID), with acknowledged registration and retry handling for improved device registration reliability.",
-    "Updated backend device registration and notification delivery to use the new FID-based system. Compatible backend deployment and app upgrade are required.",
-    "Improved OPD Booking and OPD Update referral-source handling so Direct/Self referral information is normalized and displayed more consistently.",
-    "Redesigned follow-up synchronization to be session-aware, city-specific, and event-driven, reducing the risk of stale background work running after a login change.",
-    "Follow-up refresh now considers the visit schedule, cancelled visits, Special Day Mode, and city eligibility to determine which data should be synchronized.",
-    "Added date- and app-version-aware sync checks so updated app versions can refresh follow-up data even when a same-day sync was already completed.",
-    "Improved APK verification and update installation using Android PackageInstaller sessions, including installation confirmation and status/failure handling.",
-    "Refined location-permission prompts to better reflect multi-city availability and avoid unnecessary repeated prompts during the same day.",
-    "Improved notification-card WebView measurement and layout handling.",
-    "Cleaned up follow-up age display by removing unnecessary trailing decimal zeros."
+    "More reliable notifications with improved device registration and retry handling.",
+    "Improved referral information handling in OPD Booking and OPD Update.",
+    "More reliable follow-up synchronization that adapts to the doctor’s schedule and active city.",
+    "Improved app update installation and verification.",
+    "Refined location prompts, notification-card layout, and follow-up age display.",
+    "Ambajogai EEG Calls now support mandatory mobile numbers for booking and updates, with numbers shown in statistics and patient details."
   ]
 }
